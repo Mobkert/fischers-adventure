@@ -1,0 +1,364 @@
+/**
+ * Generate free procedural ambient music loops (~32s) as 16-bit mono WAVs.
+ * Island: chill piano + soft guitar plucks
+ * Ocean: sparse piano only
+ * Jungle: rainforest-ish percussion + melody
+ */
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const OUT = path.join(__dirname, "..", "public", "audio");
+const SR = 22050;
+const DURATION = 32; // seconds — loops cleanly
+const N = SR * DURATION;
+
+function freq(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+function clamp(v) {
+  return Math.max(-1, Math.min(1, v));
+}
+
+/** Soft piano-ish tone (additive + decay). */
+function piano(t, f, vel = 0.35) {
+  const d = Math.exp(-2.2 * t);
+  const a = Math.min(1, t * 80);
+  const s =
+    Math.sin(2 * Math.PI * f * t) * 0.55 +
+    Math.sin(2 * Math.PI * f * 2 * t) * 0.22 +
+    Math.sin(2 * Math.PI * f * 3 * t) * 0.1 +
+    Math.sin(2 * Math.PI * f * 4.01 * t) * 0.05;
+  return s * d * a * vel;
+}
+
+/** Plucked guitar-ish (brighter, quicker decay). */
+function guitar(t, f, vel = 0.28) {
+  const d = Math.exp(-3.8 * t);
+  const a = Math.min(1, t * 120);
+  const s =
+    Math.sin(2 * Math.PI * f * t) * 0.4 +
+    Math.sin(2 * Math.PI * f * 2 * t) * 0.28 +
+    Math.sin(2 * Math.PI * f * 3 * t) * 0.14 +
+    Math.sin(2 * Math.PI * f * 5 * t) * 0.06;
+  return s * d * a * vel;
+}
+
+function noise() {
+  return Math.random() * 2 - 1;
+}
+
+function writeWav(filePath, samples) {
+  const dataSize = samples.length * 2;
+  const buf = Buffer.alloc(44 + dataSize);
+  buf.write("RIFF", 0);
+  buf.writeUInt32LE(36 + dataSize, 4);
+  buf.write("WAVE", 8);
+  buf.write("fmt ", 12);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(1, 22); // mono
+  buf.writeUInt32LE(SR, 24);
+  buf.writeUInt32LE(SR * 2, 28);
+  buf.writeUInt16LE(2, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write("data", 36);
+  buf.writeUInt32LE(dataSize, 40);
+  for (let i = 0; i < samples.length; i++) {
+    const s = clamp(samples[i]);
+    buf.writeInt16LE((s * 32767) | 0, 44 + i * 2);
+  }
+  fs.writeFileSync(filePath, buf);
+  console.log("wrote", filePath, `(${(buf.length / 1024 / 1024).toFixed(2)} MB)`);
+}
+
+/** Island — Cmaj7 chill loop, piano chords + guitar arpeggios */
+function makeIsland() {
+  const samples = new Float32Array(N);
+  const bpm = 72;
+  const beat = 60 / bpm;
+  // Chord tones (MIDI): Cmaj7, Am7, Fmaj7, G6 — 8 bars each feel
+  const progression = [
+    [60, 64, 67, 71], // C E G B
+    [57, 60, 64, 67], // A C E G
+    [53, 57, 60, 64], // F A C E
+    [55, 59, 62, 67], // G B D G
+  ];
+  const events = [];
+  const bars = 8; // 8 bars * 4 beats * beat ≈ covers ~32s at 72bpm: 8*4*(60/72)=26.6, add more
+  for (let bar = 0; bar < 10; bar++) {
+    const chord = progression[bar % 4];
+    const t0 = bar * 4 * beat;
+    // Piano block chord on beat 1
+    for (const m of chord) {
+      events.push({ t: t0, type: "piano", midi: m, vel: 0.22 });
+      events.push({ t: t0 + beat * 2, type: "piano", midi: m, vel: 0.14 });
+    }
+    // Soft bass
+    events.push({ t: t0, type: "piano", midi: chord[0] - 12, vel: 0.18 });
+    // Guitar arpeggio
+    const arp = [chord[0], chord[1], chord[2], chord[3], chord[2], chord[1]];
+    arp.forEach((m, i) => {
+      events.push({
+        t: t0 + beat * 0.5 + i * (beat / 3),
+        type: "guitar",
+        midi: m + 12,
+        vel: 0.16,
+      });
+    });
+  }
+
+  for (let i = 0; i < N; i++) {
+    const t = i / SR;
+    let v = 0;
+    for (const e of events) {
+      const age = t - e.t;
+      if (age < 0 || age > 3.5) continue;
+      const f = freq(e.midi);
+      v += e.type === "guitar" ? guitar(age, f, e.vel) : piano(age, f, e.vel);
+    }
+    // gentle bed pad
+    const pad =
+      Math.sin(2 * Math.PI * freq(60) * t) * 0.015 * Math.sin(Math.PI * t / DURATION) +
+      Math.sin(2 * Math.PI * freq(67) * t) * 0.012;
+    samples[i] = v + pad;
+  }
+  // Fade ends for seamless loop
+  const fade = Math.floor(SR * 0.4);
+  for (let i = 0; i < fade; i++) {
+    const w = i / fade;
+    samples[i] *= w;
+    samples[N - 1 - i] *= w;
+  }
+  return samples;
+}
+
+/** Deterministic RNG so tracks stay the same each generate. */
+function mulberry32(seed) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function pick(rng, arr) {
+  return arr[Math.floor(rng() * arr.length)];
+}
+
+/** Soft sustained pad tone. */
+function padTone(tAbs, f, amp) {
+  return (
+    (Math.sin(2 * Math.PI * f * tAbs) * 0.55 +
+      Math.sin(2 * Math.PI * f * 1.997 * tAbs) * 0.25 +
+      Math.sin(2 * Math.PI * f * 0.5 * tAbs) * 0.2) *
+    amp
+  );
+}
+
+/** Ocean — airy pads + irregular piano phrases (no looping motif). */
+function makeOcean() {
+  const samples = new Float32Array(N);
+  const rng = mulberry32(0x0cea142);
+  const scale = [48, 50, 52, 55, 57, 59, 60, 62, 64, 67, 69, 71, 72];
+  const events = [];
+
+  // Evolving chord bed changes every ~8s (different each section)
+  const sections = [
+    [48, 55, 60, 67],
+    [45, 52, 59, 64],
+    [50, 57, 62, 69],
+    [47, 54, 59, 66],
+  ];
+
+  // Irregular piano phrases — different shapes, long rests between
+  let t = 0.8 + rng() * 1.5;
+  let phrase = 0;
+  while (t < DURATION - 3) {
+    const len = 3 + Math.floor(rng() * 5); // 3–7 notes
+    const startDeg = Math.floor(rng() * 5);
+    const rising = rng() > 0.45;
+    for (let i = 0; i < len; i++) {
+      const idx = Math.max(
+        0,
+        Math.min(scale.length - 1, startDeg + (rising ? i : -i) + Math.floor(rng() * 2))
+      );
+      const midi = scale[idx] + (rng() > 0.7 ? 12 : 0);
+      const vel = 0.1 + rng() * 0.12;
+      events.push({ t, midi, vel });
+      // sometimes a soft dyad
+      if (rng() > 0.75) {
+        events.push({ t: t + 0.04, midi: midi + (rng() > 0.5 ? 3 : 7), vel: vel * 0.55 });
+      }
+      t += 0.35 + rng() * 0.85; // uneven rhythm
+    }
+    // long breathing rest — grows slightly over the track
+    t += 2.2 + rng() * 2.8 + phrase * 0.15;
+    phrase++;
+  }
+
+  for (let i = 0; i < N; i++) {
+    const time = i / SR;
+    let v = 0;
+
+    // Section pad (crossfade between chord sets)
+    const secF = (time / DURATION) * sections.length;
+    const s0 = Math.min(sections.length - 1, Math.floor(secF));
+    const s1 = Math.min(sections.length - 1, s0 + 1);
+    const blend = secF - s0;
+    const ampEnv = 0.35 + 0.15 * Math.sin(time * 0.2);
+    for (let k = 0; k < 4; k++) {
+      const a0 = padTone(time, freq(sections[s0][k]), 0.012 * ampEnv * (1 - blend));
+      const a1 = padTone(time, freq(sections[s1][k]), 0.012 * ampEnv * blend);
+      v += a0 + a1;
+    }
+
+    for (const e of events) {
+      const age = time - e.t;
+      if (age < 0 || age > 5) continue;
+      v += piano(age, freq(e.midi), e.vel);
+    }
+
+    // very soft sea wash (filtered noise swell, not rhythmic)
+    const wash =
+      (noise() * 0.015 + Math.sin(2 * Math.PI * 0.05 * time) * 0.01) *
+      (0.4 + 0.3 * Math.sin(2 * Math.PI * 0.03 * time));
+    // simple one-pole feel
+    v += wash * 0.35;
+
+    samples[i] = v;
+  }
+  const fade = Math.floor(SR * 0.8);
+  for (let i = 0; i < fade; i++) {
+    const w = i / fade;
+    samples[i] *= w;
+    samples[N - 1 - i] *= w;
+  }
+  return samples;
+}
+
+/** Jungle — humid drones, sparse wildlife, rare drums (not a grid loop). */
+function makeJungle() {
+  const samples = new Float32Array(N);
+  const rng = mulberry32(0x5a117e7);
+  const pent = [55, 57, 60, 62, 64, 67, 69, 72, 74, 76];
+  const events = [];
+
+  // Sparse, irregular percussion — clusters then silence
+  let t = 1.5;
+  while (t < DURATION - 2) {
+    const cluster = 1 + Math.floor(rng() * 3);
+    for (let c = 0; c < cluster; c++) {
+      events.push({
+        t: t + c * (0.15 + rng() * 0.25),
+        type: "drum",
+        vel: 0.08 + rng() * 0.1,
+      });
+      if (rng() > 0.5) {
+        events.push({
+          t: t + c * 0.2 + 0.08,
+          type: "shaker",
+          vel: 0.04 + rng() * 0.05,
+        });
+      }
+    }
+    t += 3.5 + rng() * 5.5; // long gaps
+  }
+
+  // Bird / flute chirps — unique each time, not on a beat
+  t = 0.5 + rng();
+  while (t < DURATION - 1) {
+    const nNotes = 1 + Math.floor(rng() * 4);
+    let tt = t;
+    for (let i = 0; i < nNotes; i++) {
+      events.push({
+        t: tt,
+        type: "flute",
+        midi: pick(rng, pent) + (rng() > 0.6 ? 12 : 0),
+        vel: 0.08 + rng() * 0.1,
+      });
+      tt += 0.12 + rng() * 0.35;
+    }
+    t += 2.0 + rng() * 4.5;
+  }
+
+  // Occasional soft marimba drops — different phrases
+  t = 2 + rng() * 2;
+  while (t < DURATION - 2) {
+    const phrase = [
+      pick(rng, pent),
+      pick(rng, pent),
+      pick(rng, pent.slice(2)),
+    ];
+    phrase.forEach((m, i) => {
+      events.push({
+        t: t + i * (0.4 + rng() * 0.3),
+        type: "marimba",
+        midi: m,
+        vel: 0.09 + rng() * 0.08,
+      });
+    });
+    t += 5 + rng() * 7;
+  }
+
+  let lp = 0;
+  for (let i = 0; i < N; i++) {
+    const time = i / SR;
+    let v = 0;
+
+    // Slow-moving humid drones (pitch drifts over the track)
+    const drift = Math.sin(time * 0.07) * 3;
+    v += Math.sin(2 * Math.PI * (52 + drift) * time) * 0.018;
+    v += Math.sin(2 * Math.PI * (78 + drift * 0.5) * time) * 0.01;
+    v += Math.sin(2 * Math.PI * (98 - drift) * time) * 0.007;
+    // soft noise canopy (leaves), not rhythmic
+    const canopy =
+      noise() * 0.02 * (0.5 + 0.5 * Math.sin(time * 0.11 + 1.7));
+    v += canopy;
+
+    for (const e of events) {
+      const age = time - e.t;
+      if (age < 0 || age > 1.4) continue;
+      if (e.type === "shaker") {
+        const env = Math.exp(-14 * age) * e.vel;
+        v += noise() * env * 0.4;
+      } else if (e.type === "drum") {
+        const env = Math.exp(-7 * age) * e.vel;
+        v += Math.sin(2 * Math.PI * (65 + age * -30) * age) * env;
+        v += noise() * Math.exp(-22 * age) * e.vel * 0.2;
+      } else if (e.type === "flute") {
+        const env = Math.min(1, age * 30) * Math.exp(-2.4 * age) * e.vel;
+        const f = freq(e.midi);
+        // slight vibrato — birdlike
+        const vib = 1 + 0.004 * Math.sin(2 * Math.PI * 5.5 * time);
+        v += Math.sin(2 * Math.PI * f * vib * time) * env * 0.85;
+      } else if (e.type === "marimba") {
+        const env = Math.exp(-4.2 * age) * e.vel;
+        const f = freq(e.midi);
+        v +=
+          (Math.sin(2 * Math.PI * f * age) * 0.65 +
+            Math.sin(2 * Math.PI * f * 2.01 * age) * 0.2) *
+          env;
+      }
+    }
+
+    lp = lp * 0.9 + v * 0.1;
+    samples[i] = lp * 0.65 + v * 0.4;
+  }
+  const fade = Math.floor(SR * 0.7);
+  for (let i = 0; i < fade; i++) {
+    const w = i / fade;
+    samples[i] *= w;
+    samples[N - 1 - i] *= w;
+  }
+  return samples;
+}
+
+fs.mkdirSync(OUT, { recursive: true });
+writeWav(path.join(OUT, "music_island.wav"), makeIsland());
+writeWav(path.join(OUT, "music_ocean.wav"), makeOcean());
+writeWav(path.join(OUT, "music_jungle.wav"), makeJungle());
+console.log("done");
