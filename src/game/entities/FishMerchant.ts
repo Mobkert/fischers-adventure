@@ -46,13 +46,16 @@ export class FishMerchant {
   /** Start or advance dialogue. Returns true if F was consumed. */
   interact(
     fishCount: number,
-    onSell: () => { sold: number; earned: number }
+    onSell: () => { sold: number; earned: number },
+    keptCount = 0
   ): boolean {
     if (this.mode === "idle" || this.mode === "sold" || this.mode === "nofish") {
       if (fishCount <= 0) {
         this.mode = "nofish";
         this.showBubble(
-          "Got any fish?\nCome back when you've caught some!",
+          keptCount > 0
+            ? "All your fish are kept!\nRight-click them in your inventory\nto unlock selling."
+            : "Got any fish?\nCome back when you've caught some!",
           "#ffffff"
         );
         this.scheduleClose(2800);
@@ -61,7 +64,7 @@ export class FishMerchant {
       this.mode = "offer";
       this.talking = true;
       this.showBubble(
-        "Would you like to sell your fish?\nSalmon $19 · Flounder $40 · Tuna $90/$223\nEel $600 · Sunfish $1335\n\n[F] Sell all    [X] No thanks",
+        "Would you like to sell your fish?\n\n[F] Sell all    [X] No thanks",
         "#ffffff"
       );
       return true;
@@ -71,7 +74,12 @@ export class FishMerchant {
       const result = onSell();
       this.mode = "sold";
       if (result.sold <= 0) {
-        this.showBubble("Looks like you're out of fish!", "#ffffff");
+        this.showBubble(
+          keptCount > 0
+            ? "Nothing to sell — your fish are kept.\nRight-click in inventory to unlock."
+            : "Looks like you're out of fish!",
+          "#ffffff"
+        );
       } else {
         this.showBubble(
           `Pleasure doing business!\nSold ${result.sold} fish for $${result.earned}.`,

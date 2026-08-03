@@ -2,8 +2,12 @@ import Phaser from "phaser";
 import {
   ITEMS,
   ItemId,
+  FishHabitat,
+  FishSizeId,
   rollSpawnDepthOffset,
   rollFishSpecies,
+  rollFishSize,
+  sizeScale,
 } from "../data/items";
 
 export type FishState = "idle" | "approaching" | "bitten" | "caught";
@@ -12,6 +16,8 @@ export class Fish {
   sprite: Phaser.Physics.Arcade.Sprite;
   state: FishState = "idle";
   speciesId: ItemId;
+  size: FishSizeId = "normal";
+  readonly habitat: FishHabitat;
   private idleMinX: number;
   private idleMaxX: number;
   private surfaceY: number;
@@ -24,6 +30,8 @@ export class Fish {
   private nextDecisionAt = 0;
   private pauseUntil = 0;
   private getLuck: () => number;
+  /** Species blocked from spawning (e.g. only one mushroom cluster). */
+  private getExcludeSpecies: (self: Fish) => ItemId[];
 
   private approachTargetX = 0;
   private approachTargetY = 0;
@@ -42,10 +50,17 @@ export class Fish {
     idleMaxX: number,
     waterSurfaceY: number,
     getLuck: () => number = () => 0,
-    speciesId?: ItemId
+    habitat: FishHabitat = "ocean",
+    speciesId?: ItemId,
+    getExcludeSpecies: (self: Fish) => ItemId[] = () => []
   ) {
     this.getLuck = getLuck;
-    this.speciesId = speciesId ?? rollFishSpecies(this.getLuck());
+    this.getExcludeSpecies = getExcludeSpecies;
+    this.habitat = habitat;
+    this.speciesId =
+      speciesId ??
+      rollFishSpecies(this.getLuck(), habitat, this.getExcludeSpecies(this));
+    this.size = rollFishSize();
     const def = ITEMS[this.speciesId];
     this.idleMinX = idleMinX;
     this.idleMaxX = idleMaxX;
@@ -61,20 +76,39 @@ export class Fish {
     this.scheduleDespawn();
   }
 
+  ignoresBobber(): boolean {
+    return !!ITEMS[this.speciesId].ignoresBobber;
+  }
+
   /** Depth below surface for this species (rarer → deeper, but legends/mythics can go shallow). */
   private depthForSpecies(): number {
     const rarity = ITEMS[this.speciesId].rarity ?? "common";
-    return this.surfaceY + rollSpawnDepthOffset(rarity);
+    const maxDepth = this.habitat === "pond" ? 90 : undefined;
+    const y = this.surfaceY + rollSpawnDepthOffset(rarity);
+    if (maxDepth != null) {
+      return Math.min(y, this.surfaceY + maxDepth);
+    }
+    return y;
   }
 
   private applySpeciesVisual(): void {
     const def = ITEMS[this.speciesId];
+    const s = sizeScale(this.size);
     this.sprite.setTexture(def.textureKey);
-    this.sprite.setDisplaySize(def.displayWidth ?? 48, def.displayHeight ?? 16);
+    this.sprite.setDisplaySize(
+      (def.displayWidth ?? 48) * s,
+      (def.displayHeight ?? 16) * s
+    );
   }
 
   private applySpeciesSwimStats(): void {
     const speed = ITEMS[this.speciesId].minigameSpeed ?? 1;
+    // Mushrooms drift slowly back and forth
+    if (this.ignoresBobber()) {
+      this.accel = 30;
+      this.maxSpeed = 28;
+      return;
+    }
     this.accel = 55 * (0.85 + speed * 0.2);
     this.maxSpeed = 70 * (0.9 + speed * 0.25);
   }
@@ -82,12 +116,21 @@ export class Fish {
   /** Bite radius scales with sprite size so big fish (sunfish) still hook. */
   biteRadius(): number {
     const def = ITEMS[this.speciesId];
-    const w = def.displayWidth ?? 48;
-    const h = def.displayHeight ?? 16;
+    const s = sizeScale(this.size);
+    const w = (def.displayWidth ?? 48) * s;
+    const h = (def.displayHeight ?? 16) * s;
     return 16 + Math.max(w, h) * 0.22;
   }
 
+  /** Flip so the snout leads — most fish face right; some (croc) face left. */
+  private setFacing(dirX: number): void {
+    if (Math.abs(dirX) < 0.5) return;
+    const facesLeft = !!ITEMS[this.speciesId].facesLeft;
+    this.sprite.setFlipX(facesLeft ? dirX > 0 : dirX < 0);
+  }
+
   approachBobber(bobberX: number, bobberY: number, speedMult = 1): void {
+    if (this.ignoresBobber()) return;
     // Cancel any fade-out despawn if this fish gets a bite chance
     if (this.despawning) {
       this.sprite.scene.tweens.killTweensOf(this.sprite);
@@ -124,10 +167,11 @@ export class Fish {
   private setApproachTarget(bobberX: number, bobberY: number): void {
     this.approachTargetX = bobberX;
     // Stay underwater — never aim above the surface
+    const maxDepth = this.habitat === "pond" ? 100 : 165;
     this.approachTargetY = Phaser.Math.Clamp(
       bobberY + 10,
       this.surfaceY + 16,
-      this.surfaceY + 165
+      this.surfaceY + maxDepth
     );
   }
 
@@ -151,7 +195,12 @@ export class Fish {
   resetIdle(x?: number, y?: number): void {
     this.despawning = false;
     this.state = "idle";
-    this.speciesId = rollFishSpecies(this.getLuck());
+    this.speciesId = rollFishSpecies(
+      this.getLuck(),
+      this.habitat,
+      this.getExcludeSpecies(this)
+    );
+    this.size = rollFishSize();
     this.applySpeciesVisual();
     this.applySpeciesSwimStats();
     this.sprite.setVisible(true);
@@ -173,8 +222,17 @@ export class Fish {
 
   private scheduleDespawn(): void {
     const now = this.sprite.scene.time.now;
-    // ~2 minutes with a little variance
-    this.despawnAt = now + Phaser.Math.Between(110_000, 130_000);
+    // Mushrooms cycle out fast; other fish ~2 minutes
+    if (this.ignoresBobber()) {
+      this.despawnAt = now + Phaser.Math.Between(14_000, 26_000);
+    } else {
+      this.despawnAt = now + Phaser.Math.Between(110_000, 130_000);
+    }
+  }
+
+  /** True while fading out / about to respawn. */
+  isDespawning(): boolean {
+    return this.despawning;
   }
 
   /** How far below the surface this fish is swimming. */
@@ -262,7 +320,7 @@ export class Fish {
 
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     if (Math.abs(body.velocity.x) > 4) {
-      this.sprite.setFlipX(body.velocity.x < 0);
+      this.setFacing(body.velocity.x);
     }
   }
 
@@ -284,12 +342,12 @@ export class Fish {
     }
     this.velX = vx;
     this.targetVelX = vx;
-    this.sprite.setFlipX(dx < 0);
+    this.setFacing(dx);
   }
 
   private clampUnderwater(): void {
     const minY = this.surfaceY + 12;
-    const maxY = this.surfaceY + 165;
+    const maxY = this.surfaceY + (this.habitat === "pond" ? 100 : 165);
     if (this.sprite.y < minY) {
       this.sprite.y = minY;
       const body = this.sprite.body as Phaser.Physics.Arcade.Body;
@@ -340,7 +398,7 @@ export class Fish {
     }
 
     if (Math.abs(this.velX) > 6) {
-      this.sprite.setFlipX(this.velX < 0);
+      this.setFacing(this.velX);
     }
 
     const bobAmp = Math.abs(this.velX) < 8 ? 3 : 6;
@@ -351,6 +409,26 @@ export class Fish {
 
   private pickNewIdleBehavior(immediate: boolean): void {
     const now = this.sprite.scene.time.now;
+
+    // Mushroom clusters: only patrol back and forth, no mid-swim pauses
+    if (this.ignoresBobber()) {
+      const dir =
+        this.targetVelX === 0
+          ? Math.random() > 0.5
+            ? 1
+            : -1
+          : Math.sign(this.targetVelX || this.velX || 1);
+      this.targetVelX = dir * Phaser.Math.FloatBetween(14, this.maxSpeed);
+      this.pauseUntil = 0;
+      this.nextDecisionAt = now + Phaser.Math.Between(1800, 3200);
+      if (immediate) {
+        this.velX = this.targetVelX * 0.5;
+        this.sprite.setVelocityX(this.velX);
+        this.setFacing(this.velX);
+      }
+      return;
+    }
+
     const roll = Math.random();
 
     if (roll < 0.22) {
@@ -380,7 +458,7 @@ export class Fish {
       this.velX = this.targetVelX * 0.4;
       this.sprite.setVelocityX(this.velX);
       if (Math.abs(this.velX) > 4) {
-        this.sprite.setFlipX(this.velX < 0);
+        this.setFacing(this.velX);
       }
     }
   }

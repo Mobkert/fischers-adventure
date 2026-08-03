@@ -5,6 +5,9 @@ import {
   ItemId,
   InventorySlot,
   FishMutationId,
+  FishSizeId,
+  MUTATIONS,
+  FISH_SIZES,
   ROD_ITEM_IDS,
 } from "../data/items";
 
@@ -45,7 +48,18 @@ const DEFAULT_PLAYER_X = 640 + 420;
 const DEFAULT_PLAYER_Y = 560 - 40;
 
 function emptySlot(): InventorySlot {
-  return { itemId: null, count: 0, mutation: null };
+  return { itemId: null, count: 0, mutation: null, size: null, keep: false };
+}
+
+function parseMutation(raw: unknown): FishMutationId | null {
+  if (typeof raw !== "string") return null;
+  return raw in MUTATIONS ? (raw as FishMutationId) : null;
+}
+
+function parseSize(raw: unknown): FishSizeId | null {
+  if (typeof raw !== "string") return null;
+  if (raw === "normal" || !(raw in FISH_SIZES)) return null;
+  return raw as FishSizeId;
 }
 
 function cloneSlot(raw: unknown): InventorySlot {
@@ -55,12 +69,12 @@ function cloneSlot(raw: unknown): InventorySlot {
     typeof s.itemId === "string" && s.itemId in ITEMS
       ? (s.itemId as ItemId)
       : null;
-  const mutation =
-    s.mutation === "bloom" ? ("bloom" as FishMutationId) : null;
   return {
     itemId,
     count: itemId ? Math.max(0, Number(s.count) || 0) : 0,
-    mutation: itemId ? mutation : null,
+    mutation: itemId ? parseMutation(s.mutation) : null,
+    size: itemId ? parseSize(s.size) : null,
+    keep: itemId ? Boolean(s.keep) : false,
   };
 }
 
@@ -71,8 +85,8 @@ function cloneSlots(raw: unknown, size: number): InventorySlot[] {
 
 export function defaultSave(): SaveData {
   const hotbar = Array.from({ length: HOTBAR_SIZE }, emptySlot);
-  hotbar[0] = { itemId: "starter_rod", count: 1, mutation: null };
-  hotbar[1] = { itemId: "equipment_bag", count: 1, mutation: null };
+  hotbar[0] = { itemId: "starter_rod", count: 1, mutation: null, size: null, keep: false };
+  hotbar[1] = { itemId: "equipment_bag", count: 1, mutation: null, size: null, keep: false };
   return {
     v: 1,
     coins: 0,
@@ -113,9 +127,9 @@ export function cloneSave(raw: unknown): SaveData {
 
   const hotbar = cloneSlots(s.hotbar, HOTBAR_SIZE);
   // Always keep equipment bag on slot 2
-  hotbar[1] = { itemId: "equipment_bag", count: 1, mutation: null };
+  hotbar[1] = { itemId: "equipment_bag", count: 1, mutation: null, size: null, keep: false };
   if (!hotbar[0].itemId || !ITEMS[hotbar[0].itemId]?.isRod) {
-    hotbar[0] = { itemId: equipped, count: 1, mutation: null };
+    hotbar[0] = { itemId: equipped, count: 1, mutation: null, size: null, keep: false };
   }
 
   return {

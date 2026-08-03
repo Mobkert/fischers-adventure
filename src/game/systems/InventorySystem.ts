@@ -9,7 +9,9 @@ import {
   ZERO_ROD_STATS,
   ROD_ITEM_IDS,
   FishMutationId,
+  FishSizeId,
   mutationSellMult,
+  sizeSellMult,
 } from "../data/items";
 import { SaveData, cloneSave, defaultSave } from "../save/SaveBank";
 
@@ -20,17 +22,28 @@ function sameMutation(
   return (a ?? null) === (b ?? null);
 }
 
+function sameSize(
+  a: FishSizeId | null | undefined,
+  b: FishSizeId | null | undefined
+): boolean {
+  return (a ?? "normal") === (b ?? "normal");
+}
+
 export class InventorySystem {
   hotbar: InventorySlot[] = Array.from({ length: HOTBAR_SIZE }, () => ({
     itemId: null,
     count: 0,
     mutation: null,
+    size: null,
+    keep: false,
   }));
 
   bag: InventorySlot[] = Array.from({ length: INVENTORY_SIZE }, () => ({
     itemId: null,
     count: 0,
     mutation: null,
+    size: null,
+    keep: false,
   }));
 
   /** Rods the player owns (shown in the equipment bag). */
@@ -44,8 +57,20 @@ export class InventorySystem {
     if (save) {
       this.applySave(save);
     } else {
-      this.hotbar[0] = { itemId: "starter_rod", count: 1, mutation: null };
-      this.hotbar[1] = { itemId: "equipment_bag", count: 1, mutation: null };
+      this.hotbar[0] = {
+        itemId: "starter_rod",
+        count: 1,
+        mutation: null,
+        size: null,
+        keep: false,
+      };
+      this.hotbar[1] = {
+        itemId: "equipment_bag",
+        count: 1,
+        mutation: null,
+        size: null,
+        keep: false,
+      };
     }
   }
 
@@ -58,7 +83,13 @@ export class InventorySystem {
     this.hotbar = save.hotbar.map((s) => ({ ...s }));
     this.bag = save.bag.map((s) => ({ ...s }));
     // Keep bag / equipment bag consistent
-    this.hotbar[1] = { itemId: "equipment_bag", count: 1, mutation: null };
+    this.hotbar[1] = {
+      itemId: "equipment_bag",
+      count: 1,
+      mutation: null,
+      size: null,
+      keep: false,
+    };
     if (!this.ownsRod(this.equippedRodId)) {
       this.equippedRodId = "starter_rod";
     }
@@ -66,6 +97,8 @@ export class InventorySystem {
       itemId: this.equippedRodId,
       count: 1,
       mutation: null,
+      size: null,
+      keep: false,
     };
   }
 
@@ -114,7 +147,13 @@ export class InventorySystem {
   equipRod(rodId: ItemId): boolean {
     if (!ITEMS[rodId]?.isRod || !this.ownsRod(rodId)) return false;
     this.equippedRodId = rodId;
-    this.hotbar[0] = { itemId: rodId, count: 1, mutation: null };
+    this.hotbar[0] = {
+      itemId: rodId,
+      count: 1,
+      mutation: null,
+      size: null,
+      keep: false,
+    };
     this.selectedHotbarIndex = 0;
     return true;
   }
@@ -142,7 +181,8 @@ export class InventorySystem {
   addItem(
     itemId: ItemId,
     count = 1,
-    mutation: FishMutationId | null = null
+    mutation: FishMutationId | null = null,
+    size: FishSizeId | null = null
   ): boolean {
     if (ITEMS[itemId].isRod) {
       if (this.ownsRod(itemId)) return false;
@@ -151,7 +191,8 @@ export class InventorySystem {
     }
 
     if (ITEMS[itemId].stackable) {
-      const stack = this.findStack(itemId, mutation);
+      // Prefer an unlocked matching stack so kept stacks stay separate
+      const stack = this.findStack(itemId, mutation, size, false);
       if (stack) {
         stack.count += count;
         return true;
@@ -163,15 +204,38 @@ export class InventorySystem {
     empty.itemId = itemId;
     empty.count = count;
     empty.mutation = mutation;
+    empty.size = size;
+    empty.keep = false;
     return true;
+  }
+
+  /** Toggle keep on a bag fish slot (won't be sold). Returns new keep state or null. */
+  toggleKeepBag(index: number): boolean | null {
+    const slot = this.bag[index];
+    if (!slot?.itemId || !FISH_ITEM_IDS.includes(slot.itemId)) return null;
+    slot.keep = !slot.keep;
+    return !!slot.keep;
+  }
+
+  /** Toggle keep on a hotbar fish slot. */
+  toggleKeepHotbar(index: number): boolean | null {
+    const slot = this.hotbar[index];
+    if (!slot?.itemId || !FISH_ITEM_IDS.includes(slot.itemId)) return null;
+    slot.keep = !slot.keep;
+    return !!slot.keep;
   }
 
   private findStack(
     itemId: ItemId,
-    mutation: FishMutationId | null = null
+    mutation: FishMutationId | null = null,
+    size: FishSizeId | null = null,
+    allowKept = false
   ): InventorySlot | undefined {
     const match = (s: InventorySlot) =>
-      s.itemId === itemId && sameMutation(s.mutation, mutation);
+      s.itemId === itemId &&
+      sameMutation(s.mutation, mutation) &&
+      sameSize(s.size, size) &&
+      (allowKept || !s.keep);
     return this.bag.find(match) ?? this.hotbar.find(match);
   }
 
@@ -181,7 +245,29 @@ export class InventorySystem {
       .reduce((sum, s) => sum + s.count, 0);
   }
 
-  /** Sell all fish at their item sell prices (mutation multipliers apply). */
+  getSellableFishCount(): number {
+    return [...this.bag, ...this.hotbar]
+      .filter(
+        (s) =>
+          s.itemId != null &&
+          FISH_ITEM_IDS.includes(s.itemId) &&
+          !s.keep
+      )
+      .reduce((sum, s) => sum + s.count, 0);
+  }
+
+  getKeptFishCount(): number {
+    return [...this.bag, ...this.hotbar]
+      .filter(
+        (s) =>
+          s.itemId != null &&
+          FISH_ITEM_IDS.includes(s.itemId) &&
+          !!s.keep
+      )
+      .reduce((sum, s) => sum + s.count, 0);
+  }
+
+  /** Sell all unlocked fish at their item sell prices (mutation + size multipliers). */
   sellAllFish(): { sold: number; earned: number } {
     let sold = 0;
     let earned = 0;
@@ -189,17 +275,20 @@ export class InventorySystem {
       if (
         !slot.itemId ||
         !FISH_ITEM_IDS.includes(slot.itemId) ||
-        slot.count <= 0
+        slot.count <= 0 ||
+        slot.keep
       ) {
         continue;
       }
       const price = ITEMS[slot.itemId].sellPrice ?? 0;
-      const mult = mutationSellMult(slot.mutation);
+      const mult = mutationSellMult(slot.mutation) * sizeSellMult(slot.size);
       sold += slot.count;
       earned += slot.count * price * mult;
       slot.itemId = null;
       slot.count = 0;
       slot.mutation = null;
+      slot.size = null;
+      slot.keep = false;
     }
     this.coins += earned;
     return { sold, earned };

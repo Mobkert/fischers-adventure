@@ -108,51 +108,169 @@ export class MenuScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const root = this.add.container(width / 2, height / 2).setDepth(50);
 
+    const panelW = 520;
+    const panelH = 520;
+    const viewH = 360;
+    const viewTop = -170;
+
     const dim = this.add
       .rectangle(0, 0, width, height, 0x000000, 0.55)
       .setInteractive();
 
     const panel = this.add
-      .rectangle(0, 0, 420, 240, 0x1a241c, 0.97)
+      .rectangle(0, 0, panelW, panelH, 0x1a241c, 0.97)
       .setStrokeStyle(2, 0xc4a86a);
 
     const title = this.add
-      .text(0, -78, "Update Log", {
+      .text(0, -panelH / 2 + 28, "The Swamp Update", {
         fontFamily: "Georgia, serif",
-        fontSize: "28px",
+        fontSize: "26px",
         color: "#f0e6d2",
       })
       .setOrigin(0.5);
 
-    const body = this.add
-      .text(0, -10, "Next update expected tomorrow.", {
+    const subtitle = this.add
+      .text(0, -panelH / 2 + 56, "Update Log · Scroll for more", {
         fontFamily: "Arial",
-        fontSize: "18px",
-        color: "#d0d8d0",
-        align: "center",
-        wordWrap: { width: 360 },
+        fontSize: "13px",
+        color: "#9aaa9a",
       })
       .setOrigin(0.5);
 
+    const listRoot = this.add.container(0, viewTop);
+    const listContent = this.add.container(0, 0);
+    listRoot.add(listContent);
+
+    const maskShape = this.make.graphics({ x: 0, y: 0 });
+    maskShape.fillStyle(0xffffff);
+    maskShape.fillRect(
+      width / 2 - panelW / 2 + 24,
+      height / 2 + viewTop,
+      panelW - 48,
+      viewH
+    );
+    maskShape.setVisible(false);
+    listRoot.setMask(maskShape.createGeometryMask());
+
+    const bodyText =
+      "WHAT'S NEW\n\n" +
+      "• Fishable swamp pond with six new catches:\n" +
+      "  Swamp Frog, Whisker Catfish, White Perch,\n" +
+      "  Mushroom Cluster, Arapaima, and Alligator\n" +
+      "• Amber Rod ($7000) in Bluefin Tackle Shop —\n" +
+      "  balanced luck, resilience, control, and depth\n" +
+      "• New catch mutations: Glowing, Earthly,\n" +
+      "  Starlight, Albino, and Neon\n" +
+      "• Big & Giant size effects on swimming fish\n" +
+      "  (2× / 4× sell) — shown in water and inventory\n" +
+      "• Inventory hover tooltips: name, rarity,\n" +
+      "  mutation, size effect, and sell price\n" +
+      "• Spawn luck retuned — epics, legendaries, and\n" +
+      "  mythicals use fixed rates that rise with luck\n" +
+      "• Pond fishing: max 3 fish, half ocean rates\n" +
+      "  for epic / legendary / mythical\n\n" +
+      "CHANGES / FIXES\n\n" +
+      "• Merchant no longer lists fish prices —\n" +
+      "  check sell value in your inventory tooltip\n" +
+      "• Bluefin shop rod list is scrollable\n" +
+      "• Equipment bag scrolls when you own more rods\n" +
+      "• Only one mushroom cluster in the pond at a time\n" +
+      "• Mushroom clusters despawn much faster\n" +
+      "• Alligator faces the right way and is no longer\n" +
+      "  squished\n" +
+      "• Swamp Frog is smaller; Arapaima is larger\n" +
+      "• Jungle island presented as a swamp with pond,\n" +
+      "  bridge, and swamp merchant";
+
+    const body = this.add
+      .text(0, 0, bodyText, {
+        fontFamily: "Arial",
+        fontSize: "14px",
+        color: "#d0d8d0",
+        align: "left",
+        lineSpacing: 4,
+        wordWrap: { width: panelW - 64 },
+      })
+      .setOrigin(0.5, 0);
+    listContent.add(body);
+
+    const contentH = body.height + 16;
+    let scrollY = 0;
+    const maxScroll = () => Math.max(0, contentH - viewH);
+
+    const scrollTrack = this.add
+      .rectangle(panelW / 2 - 22, viewTop + viewH / 2, 6, viewH, 0x2a3a30, 0.9)
+      .setVisible(false);
+    const scrollThumb = this.add
+      .rectangle(panelW / 2 - 22, viewTop, 6, 40, 0xc4a86a, 0.9)
+      .setOrigin(0.5, 0)
+      .setVisible(false);
+
+    const applyScroll = () => {
+      scrollY = Phaser.Math.Clamp(scrollY, 0, maxScroll());
+      listContent.setY(-scrollY);
+      const max = maxScroll();
+      const show = max > 0;
+      scrollTrack.setVisible(show);
+      scrollThumb.setVisible(show);
+      if (!show) return;
+      const thumbH = Math.max(28, (viewH / contentH) * viewH);
+      const travel = viewH - thumbH;
+      scrollThumb.setY(viewTop + (scrollY / max) * travel);
+      scrollThumb.setSize(6, thumbH);
+    };
+    applyScroll();
+
+    const wheelHandler = (
+      pointer: Phaser.Input.Pointer,
+      _gos: unknown,
+      _dx: number,
+      dy: number
+    ) => {
+      if (
+        Math.abs(pointer.x - width / 2) > panelW / 2 ||
+        Math.abs(pointer.y - height / 2) > panelH / 2
+      ) {
+        return;
+      }
+      scrollY += dy * 0.5;
+      applyScroll();
+    };
+    this.input.on("wheel", wheelHandler);
+
     const closeBg = this.add
-      .rectangle(0, 78, 140, 40, 0x2a6b4a)
+      .rectangle(0, panelH / 2 - 36, 140, 40, 0x2a6b4a)
       .setStrokeStyle(1, 0xf0e6d2)
       .setInteractive({ useHandCursor: true });
     const closeLabel = this.add
-      .text(0, 78, "OK", {
+      .text(0, panelH / 2 - 36, "OK", {
         fontFamily: "Arial",
         fontSize: "18px",
         color: "#ffffff",
       })
       .setOrigin(0.5);
 
-    const close = () => root.destroy(true);
+    const close = () => {
+      this.input.off("wheel", wheelHandler);
+      maskShape.destroy();
+      root.destroy(true);
+    };
     closeBg.on("pointerover", () => closeBg.setFillStyle(0x3a8a5a));
     closeBg.on("pointerout", () => closeBg.setFillStyle(0x2a6b4a));
     closeBg.on("pointerdown", close);
     dim.on("pointerdown", close);
 
-    root.add([dim, panel, title, body, closeBg, closeLabel]);
+    root.add([
+      dim,
+      panel,
+      title,
+      subtitle,
+      listRoot,
+      scrollTrack,
+      scrollThumb,
+      closeBg,
+      closeLabel,
+    ]);
   }
 
   private startGame(): void {

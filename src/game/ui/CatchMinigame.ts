@@ -28,6 +28,9 @@ export class CatchMinigame {
   private speedMult = 1;
   private jerky = false;
   private jerkyChaos = 1;
+  /** Override idle pause chance in soft AI (null = default 0.2). */
+  private pauseChance: number | null = null;
+  private facesLeft = false;
   private progress = 0.2;
   private fillRate = 0.12; // ~6.5s of solid tracking from 20% → 100%
   private readonly baseFillRate = 0.12;
@@ -125,6 +128,10 @@ export class CatchMinigame {
       drainMult?: number;
       /** Keep jerky even under high resilience. */
       unstoppableJerky?: boolean;
+      /** Override soft/jerky pause chance (0–1). */
+      pauseChance?: number;
+      /** Texture faces left by default. */
+      facesLeft?: boolean;
     }
   ): void {
     this.onResult = onResult;
@@ -136,6 +143,9 @@ export class CatchMinigame {
     this.whiteVel = 0;
     this.fishX = 0;
     this.fishVel = 0;
+    this.pauseChance =
+      options?.pauseChance != null ? options.pauseChance : null;
+    this.facesLeft = !!options?.facesLeft;
 
     const control = options?.control ?? 0;
     const resilience = options?.resilience ?? 0;
@@ -365,7 +375,10 @@ export class CatchMinigame {
 
     if (this.jerky) {
       const roll = Math.random();
-      const pauseChance = Math.max(0.02, 0.05 * Math.min(1, this.jerkyChaos));
+      const pauseChance =
+        this.pauseChance != null
+          ? this.pauseChance
+          : Math.max(0.02, 0.05 * Math.min(1, this.jerkyChaos));
       if (roll < pauseChance) {
         // Rare pause
         this.fishTargetVel = 0;
@@ -402,18 +415,19 @@ export class CatchMinigame {
     }
 
     const roll = Math.random();
-    if (roll < 0.2) {
+    const pauseChance = this.pauseChance != null ? this.pauseChance : 0.2;
+    if (roll < pauseChance) {
       // Full stop
       this.fishTargetVel = 0;
       this.fishPauseTimer = Phaser.Math.FloatBetween(0.35, 1.1) / m;
       this.fishDecisionTimer =
         this.fishPauseTimer + Phaser.Math.FloatBetween(0.2, 0.7) / m;
-    } else if (roll < 0.4) {
+    } else if (roll < pauseChance + 0.2) {
       // Slow drift
       const dir = Math.random() > 0.5 ? 1 : -1;
       this.fishTargetVel = dir * Phaser.Math.FloatBetween(15, 45) * m;
       this.fishDecisionTimer = Phaser.Math.FloatBetween(0.7, 1.8) / m;
-    } else if (roll < 0.55) {
+    } else if (roll < pauseChance + 0.35) {
       // Smooth reverse
       const dir =
         this.fishVel === 0
@@ -423,7 +437,7 @@ export class CatchMinigame {
           : -Math.sign(this.fishVel);
       this.fishTargetVel = dir * Phaser.Math.FloatBetween(40, this.fishMaxSpeed);
       this.fishDecisionTimer = Phaser.Math.FloatBetween(0.6, 1.6) / m;
-    } else if (roll < 0.75) {
+    } else if (roll < pauseChance + 0.55) {
       // Dash
       const dir = Math.random() > 0.5 ? 1 : -1;
       this.fishTargetVel = dir * Phaser.Math.FloatBetween(90, this.fishMaxSpeed);
@@ -440,7 +454,9 @@ export class CatchMinigame {
     this.whiteBar.setX(this.whiteX);
     this.fishIcon.setX(this.fishX);
     if (Math.abs(this.fishVel) > 8) {
-      this.fishIcon.setFlipX(this.fishVel < 0);
+      this.fishIcon.setFlipX(
+        this.facesLeft ? this.fishVel > 0 : this.fishVel < 0
+      );
     }
     this.progressFill.width = this.barWidth * this.progress;
   }

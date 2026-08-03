@@ -4,7 +4,7 @@ import { InventoryPanel } from "../ui/InventoryPanel";
 import { CatchMinigame } from "../ui/CatchMinigame";
 import { EquipmentBag } from "../ui/EquipmentBag";
 import { FishingTutorial } from "../ui/FishingTutorial";
-import { ITEMS, RARITY_COLOR, RARITY_LABEL, MUTATIONS } from "../data/items";
+import { ITEMS, RARITY_COLOR, RARITY_LABEL, MUTATIONS, FISH_SIZES, sizeScale } from "../data/items";
 import { BoatMenu } from "../ui/BoatMenu";
 import { CoinDisplay } from "../ui/CoinDisplay";
 import { WildflowerBuyPanel } from "../ui/WildflowerBuyPanel";
@@ -93,6 +93,9 @@ export class UIScene extends Phaser.Scene {
   create(): void {
     this.hotbar = new Hotbar(this, this.inventory);
     this.inventoryPanel = new InventoryPanel(this, this.inventory);
+    this.inventoryPanel.setOnChanged(() => {
+      this.persistSave();
+    });
     this.equipmentBag = new EquipmentBag(this, this.inventory);
     this.equipmentBag.setOnChanged(() => {
       this.hotbar.refresh();
@@ -280,6 +283,7 @@ export class UIScene extends Phaser.Scene {
       const def = ITEMS[speciesId];
       const rod = this.inventory.getEquippedRodStats();
       const rarity = def.rarity ?? "common";
+      const sizeMult = sizeScale(this.fishing.getTargetSize());
       this.equipmentBag.setOpen(false);
       this.hotbar.setVisible(false);
       this.minigame.start(
@@ -291,9 +295,14 @@ export class UIScene extends Phaser.Scene {
             const article = /^[aeiou]/i.test(def.name) ? "an" : "a";
             const mut = this.fishing.lastCatchMutation;
             const mutDef = mut ? MUTATIONS[mut] : null;
-            const prefix = mutDef
-              ? `${mutDef.label}${RARITY_LABEL[rarity]}`
-              : RARITY_LABEL[rarity];
+            const size = this.fishing.lastCatchSize;
+            const sizeDef =
+              size && size !== "normal" ? FISH_SIZES[size] : null;
+            const bits: string[] = [];
+            if (mutDef) bits.push(mutDef.label.trim());
+            if (sizeDef) bits.push(sizeDef.name);
+            bits.push(RARITY_LABEL[rarity].trim());
+            const prefix = bits.length ? `${bits.join(" ")} ` : "";
             this.showToast(
               `${prefix}Caught ${article} ${def.name}!`,
               mutDef?.toastColor ?? RARITY_COLOR[rarity]
@@ -311,8 +320,10 @@ export class UIScene extends Phaser.Scene {
           chaos: def.minigameChaos ?? 1,
           drainMult: def.drainMult ?? 1,
           unstoppableJerky: def.unstoppableJerky ?? false,
-          displayWidth: Math.round((def.displayWidth ?? 48) * 0.9),
-          displayHeight: Math.round((def.displayHeight ?? 16) * 0.9),
+          pauseChance: def.minigamePauseChance,
+          facesLeft: def.facesLeft ?? false,
+          displayWidth: Math.round((def.displayWidth ?? 48) * 0.9 * sizeMult),
+          displayHeight: Math.round((def.displayHeight ?? 16) * 0.9 * sizeMult),
           control: rod.control,
           resilience: rod.resilience,
           // Rod progress + fish catch penalty (e.g. Bluefin -20%)

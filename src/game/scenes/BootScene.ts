@@ -114,6 +114,42 @@ function generateRodTextures(scene: Phaser.Scene): void {
   g.fillCircle(52, 10, 1.5);
   g.generateTexture("rod_firm", S, S);
 
+  // —— Amber rod: yellow blank, warm wraps, balanced ——
+  g.clear();
+  g.fillStyle(0x000000, 0.18);
+  g.fillEllipse(22, 56, 28, 8);
+  g.lineStyle(5, 0xc9a227);
+  g.lineBetween(12, 52, 50, 12);
+  g.lineStyle(3, 0xe8c547);
+  g.lineBetween(14, 50, 48, 14);
+  g.lineStyle(1.5, 0xffe066, 0.75);
+  g.lineBetween(18, 46, 46, 16);
+  // warm amber wraps
+  g.lineStyle(2, 0xf0a020);
+  g.lineBetween(20, 44, 24, 40);
+  g.lineBetween(28, 36, 32, 32);
+  g.lineBetween(36, 28, 40, 24);
+  g.lineStyle(2, 0xffd54a);
+  g.lineBetween(24, 40, 28, 36);
+  // cork + amber butt
+  g.fillStyle(0xc4a574);
+  g.fillRoundedRect(8, 44, 14, 12, 3);
+  g.fillStyle(0xe8a020);
+  g.fillRect(8, 54, 14, 3);
+  g.fillStyle(0xd4af37);
+  g.fillRect(18, 40, 5, 6);
+  // tip eyelet
+  g.lineStyle(2, 0xffe066);
+  g.strokeCircle(50, 12, 3.5);
+  g.fillStyle(0xfff3c4);
+  g.fillCircle(50, 12, 1.2);
+  // small amber gem at tip
+  g.fillStyle(0xffb020);
+  g.fillCircle(56, 7, 3.2);
+  g.fillStyle(0xffe066);
+  g.fillCircle(55, 6, 1.4);
+  g.generateTexture("rod_amber", S, S);
+
   // —— Wildflower rod: orange blank, pink wraps, blossom tip ——
   g.clear();
   g.fillStyle(0x000000, 0.18);
@@ -236,6 +272,12 @@ export class BootScene extends Phaser.Scene {
     this.load.image("bluefin_tuna", "images/bluefin_tuna.png");
     this.load.image("phantom_eel", "images/phantom_eel.png");
     this.load.image("sunfish", "images/sunfish.png");
+    this.load.image("swamp_frog", "images/swamp_frog.png");
+    this.load.image("whisker_catfish", "images/whisker_catfish.png");
+    this.load.image("pale_minnow", "images/pale_minnow.png");
+    this.load.image("spotted_mushrooms", "images/spotted_mushrooms.png");
+    this.load.image("brown_gar", "images/brown_gar.png");
+    this.load.image("crocodile", "images/crocodile.png");
     // Free procedural ambient loops (~32s each)
     this.load.audio("music_island", "audio/music_island.wav");
     this.load.audio("music_ocean", "audio/music_ocean.wav");

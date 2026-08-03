@@ -1,14 +1,44 @@
 import Phaser from "phaser";
-import { ITEMS, INVENTORY_SIZE, HOTBAR_SIZE, MUTATIONS } from "../data/items";
+import {
+  ITEMS,
+  INVENTORY_SIZE,
+  HOTBAR_SIZE,
+  MUTATIONS,
+  FISH_SIZES,
+  FISH_ITEM_IDS,
+  sizeScale,
+  mutationSellMult,
+  sizeSellMult,
+  InventorySlot,
+} from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
+
+const RARITY_NAME: Record<string, string> = {
+  common: "Common",
+  uncommon: "Uncommon",
+  rare: "Rare",
+  epic: "Epic",
+  legendary: "Legendary",
+  mythical: "Mythical",
+};
+
+const KEEP_COLOR = 0xffe066;
+const BAG_BORDER = 0x777777;
+const HOTBAR_BORDER = 0xc4a86a;
 
 export class InventoryPanel {
   private root: Phaser.GameObjects.Container;
+  private slotFrames: Phaser.GameObjects.Rectangle[] = [];
   private slotTexts: Phaser.GameObjects.Text[] = [];
   private slotIcons: Phaser.GameObjects.Image[] = [];
+  private slotHits: Phaser.GameObjects.Rectangle[] = [];
+  private hotbarFrames: Phaser.GameObjects.Rectangle[] = [];
   private hotbarIcons: Phaser.GameObjects.Image[] = [];
   private hotbarTexts: Phaser.GameObjects.Text[] = [];
+  private hotbarHits: Phaser.GameObjects.Rectangle[] = [];
+  private tooltip: Phaser.GameObjects.Text;
   private inventory: InventorySystem;
+  private onChanged?: () => void;
   visible = false;
 
   constructor(scene: Phaser.Scene, inventory: InventorySystem) {
@@ -46,9 +76,9 @@ export class InventoryPanel {
       })
       .setOrigin(0.5);
     const hint = scene.add
-      .text(0, h / 2 - 22, "Press E to close", {
+      .text(0, h / 2 - 22, "E close · Right-click fish to keep (won't sell)", {
         fontFamily: "Arial",
-        fontSize: "14px",
+        fontSize: "12px",
         color: "#aaaaaa",
       })
       .setOrigin(0.5);
@@ -64,9 +94,12 @@ export class InventoryPanel {
     for (let i = 0; i < HOTBAR_SIZE; i++) {
       const x = startX + i * (slotSize + gap);
       const y = -h / 2 + 96;
-      const slot = scene.add
+      const frame = scene.add
         .rectangle(x, y, slotSize, slotSize, 0x2f2f3a, 0.95)
-        .setStrokeStyle(1, 0xc4a86a);
+        .setStrokeStyle(1, HOTBAR_BORDER);
+      const hit = scene.add
+        .rectangle(x, y, slotSize, slotSize, 0xffffff, 0.001)
+        .setInteractive({ useHandCursor: false });
       const icon = scene.add.image(x, y - 6, "rod").setVisible(false).setScale(0.65);
       const text = scene.add
         .text(x + 20, y + 16, "", {
@@ -75,9 +108,17 @@ export class InventoryPanel {
           color: "#ffffff",
         })
         .setOrigin(1, 0.5);
+      this.hotbarFrames.push(frame);
       this.hotbarIcons.push(icon);
       this.hotbarTexts.push(text);
-      this.root.add([slot, icon, text]);
+      this.hotbarHits.push(hit);
+      this.root.add([frame, hit, icon, text]);
+      this.bindSlot(hit, () => this.inventory.hotbar[i], () => {
+        if (this.inventory.toggleKeepHotbar(i) != null) {
+          this.refresh();
+          this.onChanged?.();
+        }
+      });
     }
 
     const bagStartY = -10;
@@ -87,9 +128,12 @@ export class InventoryPanel {
       const x = startX + col * (slotSize + gap);
       const y = bagStartY + row * (slotSize + gap);
 
-      const slot = scene.add
+      const frame = scene.add
         .rectangle(x, y, slotSize, slotSize, 0x2f2f3a, 0.95)
-        .setStrokeStyle(1, 0x777777);
+        .setStrokeStyle(1, BAG_BORDER);
+      const hit = scene.add
+        .rectangle(x, y, slotSize, slotSize, 0xffffff, 0.001)
+        .setInteractive({ useHandCursor: false });
       const icon = scene.add
         .image(x, y - 6, "fish")
         .setVisible(false)
@@ -102,27 +146,134 @@ export class InventoryPanel {
         })
         .setOrigin(1, 0.5);
 
+      this.slotFrames.push(frame);
       this.slotIcons.push(icon);
       this.slotTexts.push(text);
-      this.root.add([slot, icon, text]);
+      this.slotHits.push(hit);
+      this.root.add([frame, hit, icon, text]);
+      this.bindSlot(hit, () => this.inventory.bag[i], () => {
+        if (this.inventory.toggleKeepBag(i) != null) {
+          this.refresh();
+          this.onChanged?.();
+        }
+      });
     }
+
+    this.tooltip = scene.add
+      .text(0, 0, "", {
+        fontFamily: "Arial",
+        fontSize: "13px",
+        color: "#f0e6d2",
+        backgroundColor: "#1a1a22ee",
+        padding: { x: 8, y: 6 },
+        align: "left",
+      })
+      .setOrigin(0, 0)
+      .setDepth(200)
+      .setScrollFactor(0)
+      .setVisible(false);
+
+    scene.input.on("pointermove", (p: Phaser.Input.Pointer) => {
+      if (!this.visible || !this.tooltip.visible) return;
+      this.tooltip.setPosition(p.x + 14, p.y + 14);
+    });
+  }
+
+  setOnChanged(cb: () => void): void {
+    this.onChanged = cb;
+  }
+
+  private bindSlot(
+    hit: Phaser.GameObjects.Rectangle,
+    getSlot: () => InventorySlot,
+    onRightClick: () => void
+  ): void {
+    hit.on("pointerover", (p: Phaser.Input.Pointer) => {
+      if (!this.visible) return;
+      const text = this.formatTooltip(getSlot());
+      if (!text) {
+        this.tooltip.setVisible(false);
+        return;
+      }
+      this.tooltip.setText(text);
+      this.tooltip.setPosition(p.x + 14, p.y + 14);
+      this.tooltip.setVisible(true);
+    });
+    hit.on("pointerout", () => {
+      this.tooltip.setVisible(false);
+    });
+    hit.on("pointerdown", (p: Phaser.Input.Pointer) => {
+      if (!this.visible) return;
+      if (p.rightButtonDown()) {
+        onRightClick();
+        // Refresh tooltip after toggle
+        const text = this.formatTooltip(getSlot());
+        if (text) {
+          this.tooltip.setText(text);
+          this.tooltip.setVisible(true);
+        }
+      }
+    });
+  }
+
+  private formatTooltip(slot: InventorySlot): string | null {
+    if (!slot.itemId) return null;
+    const def = ITEMS[slot.itemId];
+    const lines: string[] = [def.name];
+
+    if (def.sellPrice != null) {
+      const rarity = def.rarity ?? "common";
+      lines.push(RARITY_NAME[rarity] ?? rarity);
+      if (slot.mutation && MUTATIONS[slot.mutation]) {
+        lines.push(`Mutation: ${MUTATIONS[slot.mutation].name}`);
+      } else {
+        lines.push("Mutation: None");
+      }
+      const sizeId = slot.size && slot.size !== "normal" ? slot.size : null;
+      if (sizeId && FISH_SIZES[sizeId]) {
+        lines.push(`Effect: ${FISH_SIZES[sizeId].name}`);
+      } else {
+        lines.push("Effect: None");
+      }
+      const unit =
+        def.sellPrice *
+        mutationSellMult(slot.mutation) *
+        sizeSellMult(slot.size);
+      lines.push(`Sell: $${Math.round(unit)}`);
+      if (slot.keep) {
+        lines.push("Kept — won't sell");
+      }
+    } else {
+      lines.push(def.description);
+    }
+
+    return lines.join("\n");
   }
 
   toggle(): void {
     this.visible = !this.visible;
     this.root.setVisible(this.visible);
     if (this.visible) this.refresh();
+    else this.tooltip.setVisible(false);
   }
 
   setOpen(open: boolean): void {
     this.visible = open;
     this.root.setVisible(open);
     if (open) this.refresh();
+    else this.tooltip.setVisible(false);
   }
 
   refresh(): void {
     for (let i = 0; i < HOTBAR_SIZE; i++) {
       const slot = this.inventory.hotbar[i];
+      const isFish = !!slot.itemId && FISH_ITEM_IDS.includes(slot.itemId);
+      const kept = isFish && !!slot.keep;
+      this.hotbarFrames[i].setStrokeStyle(
+        kept ? 3 : 1,
+        kept ? KEEP_COLOR : HOTBAR_BORDER
+      );
+
       if (slot.itemId) {
         const def = ITEMS[slot.itemId];
         this.hotbarIcons[i].setTexture(def.textureKey).setVisible(true);
@@ -141,18 +292,29 @@ export class InventoryPanel {
 
     for (let i = 0; i < INVENTORY_SIZE; i++) {
       const slot = this.inventory.bag[i];
+      const isFish = !!slot.itemId && FISH_ITEM_IDS.includes(slot.itemId);
+      const kept = isFish && !!slot.keep;
+      this.slotFrames[i].setStrokeStyle(
+        kept ? 3 : 1,
+        kept ? KEEP_COLOR : BAG_BORDER
+      );
+
       if (slot.itemId) {
         const def = ITEMS[slot.itemId];
         const icon = this.slotIcons[i];
         icon.setTexture(def.textureKey).setVisible(true);
+        const s = sizeScale(slot.size);
         if (def.displayWidth && def.displayHeight) {
-          const scale = Math.min(40 / def.displayWidth, 28 / def.displayHeight);
+          const fit = Math.min(
+            40 / (def.displayWidth * Math.min(s, 1.35)),
+            28 / (def.displayHeight * Math.min(s, 1.35))
+          );
           icon.setDisplaySize(
-            Math.round(def.displayWidth * scale),
-            Math.round(def.displayHeight * scale)
+            Math.round(def.displayWidth * Math.min(s, 1.35) * fit),
+            Math.round(def.displayHeight * Math.min(s, 1.35) * fit)
           );
         } else {
-          icon.setDisplaySize(28, 28);
+          icon.setDisplaySize(28 * Math.min(s, 1.25), 28 * Math.min(s, 1.25));
         }
         if (slot.mutation && MUTATIONS[slot.mutation]) {
           icon.setTint(MUTATIONS[slot.mutation].tint);

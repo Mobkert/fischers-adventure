@@ -12,11 +12,17 @@ export const ROD_TIP_LOCAL = { x: 58, y: 18 };
 const FW = PLAYER_FRAME_W;
 const FH = PLAYER_FRAME_H;
 
-export type RodDrawStyle = "starter" | "lucky" | "firm" | "wildflower";
+export type RodDrawStyle =
+  | "starter"
+  | "lucky"
+  | "firm"
+  | "amber"
+  | "wildflower";
 
 export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "lucky_rod") return "lucky";
   if (itemId === "firm_rod") return "firm";
+  if (itemId === "amber_rod") return "amber";
   if (itemId === "wildflower_rod") return "wildflower";
   return "starter";
 }
@@ -147,7 +153,13 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
   });
 
   // Idle / walk / jump with rod resting over the shoulder (hotbar selected)
-  const rodStyles: RodDrawStyle[] = ["starter", "lucky", "firm", "wildflower"];
+  const rodStyles: RodDrawStyle[] = [
+    "starter",
+    "lucky",
+    "firm",
+    "amber",
+    "wildflower",
+  ];
   const withCarry = (pose: PlayerPose): PlayerPose => ({
     ...pose,
     rod: true,
@@ -386,6 +398,37 @@ function drawHeldRod(
     return;
   }
 
+  if (style === "amber") {
+    g.lineStyle(5, 0xc9a227, 1);
+    g.lineBetween(handX, handY, tipX, tipY);
+    g.lineStyle(3, 0xe8c547, 1);
+    g.lineBetween(handX, handY, tipX, tipY);
+    g.lineStyle(1.5, 0xffe066, 0.7);
+    g.lineBetween(handX, handY - 1, tipX, tipY - 1);
+    const mx = (handX + tipX) / 2;
+    const my = (handY + tipY) / 2;
+    g.lineStyle(2, 0xf0a020, 1);
+    g.lineBetween(handX + 3, handY - 3, handX + 7, handY - 6);
+    g.lineBetween(mx - 2, my + 1, mx + 2, my - 2);
+    g.lineStyle(2, 0xffd54a, 1);
+    g.lineBetween(mx + 2, my - 2, mx + 6, my - 5);
+    g.fillStyle(0xc4a574);
+    g.fillRect(handX - 3, handY - 2, 8, 8);
+    g.fillStyle(0xe8a020);
+    g.fillRect(handX - 3, handY + 5, 8, 3);
+    g.fillStyle(0xd4af37);
+    g.fillCircle(handX + 1, handY + 6, 3.5);
+    g.fillStyle(0xffe066);
+    g.fillCircle(handX + 1, handY + 6, 1.5);
+    g.lineStyle(2, 0xffe066);
+    g.strokeCircle(tipX, tipY, 2.8);
+    g.fillStyle(0xffb020);
+    g.fillCircle(tipX + 4, tipY - 3, 2.6);
+    g.fillStyle(0xffe066);
+    g.fillCircle(tipX + 3.5, tipY - 3.5, 1.1);
+    return;
+  }
+
   if (style === "wildflower") {
     g.lineStyle(5, 0xc45a12, 1);
     g.lineBetween(handX, handY, tipX, tipY);
@@ -474,7 +517,13 @@ function createPlayerAnimations(scene: Phaser.Scene): void {
     });
   }
 
-  const rodStyles: RodDrawStyle[] = ["starter", "lucky", "firm", "wildflower"];
+  const rodStyles: RodDrawStyle[] = [
+    "starter",
+    "lucky",
+    "firm",
+    "amber",
+    "wildflower",
+  ];
   for (const style of rodStyles) {
     const idleKey = `player-idle-rod-${style}`;
     const walkKey = `player-walk-rod-${style}`;

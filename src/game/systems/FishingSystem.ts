@@ -3,7 +3,17 @@ import { Player } from "../entities/Player";
 import { Fish } from "../entities/Fish";
 import { Bobber } from "../entities/Bobber";
 import { InventorySystem } from "./InventorySystem";
-import { ITEMS, ItemId, RARITY_COLOR, rodMaxReachPx, DEPTH_PX_PER_METER, rollRodMutation, FishMutationId, luckApproachSpeedMult } from "../data/items";
+import {
+  ITEMS,
+  ItemId,
+  RARITY_COLOR,
+  rodMaxReachPx,
+  DEPTH_PX_PER_METER,
+  rollCatchMutation,
+  FishMutationId,
+  FishSizeId,
+  luckApproachSpeedMult,
+} from "../data/items";
 
 export type FishingState =
   | "idle"
@@ -33,6 +43,8 @@ export class FishingSystem {
   /** All fish currently racing the bobber — first to arrive wins. */
   private approachingFish: Fish[] = [];
   private castCooldown = 0;
+  /** When waiting started (ms) — timeout if nothing bites. */
+  private waitingSince = 0;
 
   onBite?: (speciesId: ItemId) => void;
   onMinigameStart?: () => void;
@@ -44,6 +56,8 @@ export class FishingSystem {
   onCastCameraRelease?: () => void;
   /** Mutation applied on the last successful catch (if any). */
   lastCatchMutation: FishMutationId | null = null;
+  /** Size effect on the last successful catch. */
+  lastCatchSize: FishSizeId | null = null;
 
   constructor(
     scene: Phaser.Scene,
@@ -195,14 +209,17 @@ export class FishingSystem {
       return;
     }
 
-    // Everyone nearby races — luck makes favored rarities swim faster
-    this.approachingFish = pool;
+    // Mushrooms etc. ignore bait — racers chase; ignore-bait stay idle until contact
+    const racers = pool.filter((f) => !f.ignoresBobber());
+    this.approachingFish = racers;
     this.targetFish = null;
-    for (const fish of pool) {
+    this.waitingSince = this.scene.time.now;
+    for (const fish of racers) {
       const rarity = ITEMS[fish.speciesId].rarity ?? "common";
       const speedMult = luckApproachSpeedMult(luck, rarity);
       fish.approachBobber(bobberX, bobberY + 12, speedMult);
     }
+    // If only ignore-bait nearby, wait for the bobber to float onto them
   }
 
   update(delta: number): void {
@@ -222,11 +239,6 @@ export class FishingSystem {
 
   /** Steer all racers; first fish into bite range wins the hook. */
   private updateRace(): void {
-    if (this.approachingFish.length === 0) {
-      this.cancelCast();
-      return;
-    }
-
     const bx = this.bobber.sprite.x;
     const by = this.bobber.sprite.y + 8;
     let winner: Fish | null = null;
@@ -238,6 +250,26 @@ export class FishingSystem {
         stillRacing++;
         if (!winner && fish.distanceTo(bx, by) < fish.biteRadius()) {
           winner = fish;
+        }
+      }
+    }
+
+    // Ignore-bait fish (mushroom cluster): hook if bobber floats onto them
+    // Skip despawning mushrooms — bobber nearby must not keep them around
+    if (!winner) {
+      const reach = rodMaxReachPx(
+        this.inventory.getEquippedRodStats().lineDepth ?? 0
+      );
+      for (const fish of this.fishList) {
+        if (
+          fish.state === "idle" &&
+          !fish.isDespawning() &&
+          fish.ignoresBobber() &&
+          fish.depthBelowSurface() <= reach + 6 &&
+          fish.distanceTo(bx, by) < fish.biteRadius()
+        ) {
+          winner = fish;
+          break;
         }
       }
     }
@@ -255,10 +287,34 @@ export class FishingSystem {
       return;
     }
 
-    if (stillRacing === 0) {
-      // Everyone gave up
+    if (stillRacing === 0 && this.approachingFish.length > 0) {
+      // Racers gave up — keep waiting briefly for ignore-bait contact
       this.approachingFish = [];
+    }
+
+    // Timeout empty waits (e.g. mushroom drift never hits the bobber)
+    const waited = this.scene.time.now - this.waitingSince;
+    if (this.approachingFish.length === 0 && waited > 7000) {
       this.cancelCast();
+      return;
+    }
+
+    // No racers and no ignore-bait in attract range → cancel
+    if (this.approachingFish.length === 0) {
+      const reach = rodMaxReachPx(
+        this.inventory.getEquippedRodStats().lineDepth ?? 0
+      );
+      const baitNearby = this.fishList.some(
+        (f) =>
+          f.state === "idle" &&
+          !f.isDespawning() &&
+          f.ignoresBobber() &&
+          f.depthBelowSurface() <= reach + 6 &&
+          f.distanceTo(bx, by) <= ATTRACT_RADIUS
+      );
+      if (!baitNearby) {
+        this.cancelCast();
+      }
     }
   }
 
@@ -297,18 +353,22 @@ export class FishingSystem {
 
     if (success && this.targetFish) {
       this.targetFish.markCaught();
-      const mutation = rollRodMutation(this.inventory.getEquippedRodId());
+      const mutation = rollCatchMutation(this.inventory.getEquippedRodId());
+      const size = this.targetFish.size;
       this.lastCatchMutation = mutation;
-      this.inventory.addItem(this.targetFish.speciesId, 1, mutation);
+      this.lastCatchSize = size;
+      this.inventory.addItem(this.targetFish.speciesId, 1, mutation, size);
       const fish = this.targetFish;
       this.scene.time.delayedCall(2500, () => {
         fish.resetIdle();
       });
     } else if (this.targetFish) {
       this.lastCatchMutation = null;
+      this.lastCatchSize = null;
       this.targetFish.resetIdle();
     } else {
       this.lastCatchMutation = null;
+      this.lastCatchSize = null;
     }
 
     this.approachingFish = [];
@@ -319,6 +379,10 @@ export class FishingSystem {
 
   getTargetSpeciesId() {
     return this.targetFish?.speciesId ?? null;
+  }
+
+  getTargetSize(): FishSizeId {
+    return this.targetFish?.size ?? "normal";
   }
 
   cancelCast(): void {

@@ -9,6 +9,7 @@ import { InventorySystem } from "../systems/InventorySystem";
 import { placeVillage, placeJungle } from "../world/WorldDecor";
 import { AmbientMusic, musicZoneForX } from "../audio/AmbientMusic";
 import { loadActiveSave, saveActiveSave } from "../save/SaveBank";
+import { ItemId } from "../data/items";
 import { UIScene } from "./UIScene";
 
 export class GameScene extends Phaser.Scene {
@@ -36,7 +37,7 @@ export class GameScene extends Phaser.Scene {
   readonly jungleRight = 5800;
   readonly farWaterLeft = 5800;
   readonly farWaterRight = 6400;
-  /** Central jungle pond (visual only — no fishing / swimming yet). */
+  /** Central swamp pond — fishable, max 3 fish. */
   readonly pondLeft = 4700;
   readonly pondRight = 4980;
   /** @deprecated use east water — kept for sailboat bounds */
@@ -122,9 +123,9 @@ export class GameScene extends Phaser.Scene {
       this,
       this.jungleLeft + 320,
       this.groundY,
-      "Jungle Merchant"
+      "Swamp Merchant"
     );
-    this.jungleMerchant.sprite.setTint(0xc8e8b0);
+    this.jungleMerchant.sprite.setTint(0xb8d8a0);
     this.placeWildflowerRodProp();
 
     this.bobber = new Bobber(this);
@@ -140,7 +141,7 @@ export class GameScene extends Phaser.Scene {
         { left: this.westWaterLeft, right: this.westWaterRight },
         { left: this.eastWaterLeft, right: this.eastWaterRight },
         { left: this.farWaterLeft, right: this.farWaterRight },
-        // Pond intentionally omitted — swimming / pond fishing later
+        { left: this.pondLeft, right: this.pondRight },
       ],
       this.waterSurfaceY
     );
@@ -376,12 +377,16 @@ export class GameScene extends Phaser.Scene {
       ) {
         return false;
       }
-      return m.interact(this.inventory.getFishCount(), () => {
-        const result = this.inventory.sellAllFish();
-        ui.onCoinsChanged();
-        this.persistSave();
-        return result;
-      });
+      return m.interact(
+        this.inventory.getSellableFishCount(),
+        () => {
+          const result = this.inventory.sellAllFish();
+          ui.onCoinsChanged();
+          this.persistSave();
+          return result;
+        },
+        this.inventory.getKeptFishCount()
+      );
     };
 
     // Prefer the merchant already in conversation, else nearest
@@ -599,7 +604,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.addIslandBedrock(this.islandLeft, this.islandRight, false);
 
-    // Jungle island (gap at pond; bridge collider added in createWaterVisual)
+    // Jungle island strip → swamp mud grass (gap at pond; bridge in createWaterVisual)
     for (let x = this.jungleLeft; x < this.jungleLeft + 64; x += 32) {
       const tile = this.ground.create(x + 16, this.groundY + 16, "shore");
       tile.refreshBody();
@@ -609,7 +614,7 @@ export class GameScene extends Phaser.Scene {
       const tile = this.ground.create(
         x + 16,
         this.groundY + 16,
-        `jungle_grass_${variant}`
+        `swamp_grass_${variant}`
       );
       tile.refreshBody();
     }
@@ -618,7 +623,7 @@ export class GameScene extends Phaser.Scene {
       const tile = this.ground.create(
         x + 16,
         this.groundY + 16,
-        `jungle_grass_${variant}`
+        `swamp_grass_${variant}`
       );
       tile.refreshBody();
     }
@@ -765,35 +770,59 @@ export class GameScene extends Phaser.Scene {
 
   private spawnFish(): void {
     const getLuck = () => this.inventory.getEquippedRodStats().luck;
-    const zones = [
+    const getExcludeSpecies = (self: Fish): ItemId[] => {
+      const otherCluster = this.fishList.some(
+        (f) => f !== self && f.speciesId === "mushroom_cluster"
+      );
+      return otherCluster ? ["mushroom_cluster"] : [];
+    };
+    const zones: {
+      left: number;
+      right: number;
+      count: number;
+      habitat: "ocean" | "pond";
+    }[] = [
       {
         left: this.westWaterLeft,
         right: this.westWaterRight,
         count: 4,
+        habitat: "ocean",
       },
       {
         left: this.eastWaterLeft,
         right: this.eastWaterRight,
         count: 10,
+        habitat: "ocean",
       },
       {
         left: this.farWaterLeft,
         right: this.farWaterRight,
         count: 3,
+        habitat: "ocean",
+      },
+      {
+        left: this.pondLeft,
+        right: this.pondRight,
+        count: 3,
+        habitat: "pond",
       },
     ];
     for (const zone of zones) {
       for (let i = 0; i < zone.count; i++) {
-        const x = Phaser.Math.Between(zone.left + 60, zone.right - 60);
+        const pad = zone.habitat === "pond" ? 30 : 60;
+        const x = Phaser.Math.Between(zone.left + pad, zone.right - pad);
         const y = this.waterSurfaceY + Phaser.Math.Between(28, 70);
         const fish = new Fish(
           this,
           x,
           y,
-          zone.left + 50,
-          zone.right - 50,
+          zone.left + (zone.habitat === "pond" ? 20 : 50),
+          zone.right - (zone.habitat === "pond" ? 20 : 50),
           this.waterSurfaceY,
-          getLuck
+          getLuck,
+          zone.habitat,
+          undefined,
+          getExcludeSpecies
         );
         this.fishList.push(fish);
       }
@@ -836,7 +865,7 @@ export class GameScene extends Phaser.Scene {
     } else if (
       this.jungleMerchant.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
-      ui.setPrompt("F — Talk to Jungle Merchant");
+      ui.setPrompt("F — Talk to Swamp Merchant");
     } else if (this.isNearWildflowerRod()) {
       const uiOpen = (this.scene.get("UIScene") as UIScene).isWildflowerBuyOpen();
       ui.setPrompt(

@@ -11,11 +11,23 @@ interface ShopSceneData {
   inventory: InventorySystem;
 }
 
+const CARD_H = 168;
+const CARD_GAP = 14;
+const LIST_VIEW_H = 320;
+
 /** High-detail rod shop interior (blue house). */
 export class ShopScene extends Phaser.Scene {
   private inventory!: InventorySystem;
   private coinText!: Phaser.GameObjects.Text;
   private toast?: Phaser.GameObjects.Text;
+  private listContent!: Phaser.GameObjects.Container;
+  private maskShape!: Phaser.GameObjects.Graphics;
+  private scrollTrack!: Phaser.GameObjects.Rectangle;
+  private scrollThumb!: Phaser.GameObjects.Rectangle;
+  private scrollY = 0;
+  private contentH = 0;
+  private listCx = 0;
+  private listTop = 0;
 
   constructor() {
     super("ShopScene");
@@ -33,6 +45,23 @@ export class ShopScene extends Phaser.Scene {
     const leave = () => this.leaveShop();
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W).on("down", leave);
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).on("down", leave);
+
+    this.input.on(
+      "wheel",
+      (
+        pointer: Phaser.Input.Pointer,
+        _gos: unknown,
+        _dx: number,
+        dy: number
+      ) => {
+        const inList =
+          Math.abs(pointer.x - this.listCx) < 260 &&
+          pointer.y >= this.listTop &&
+          pointer.y <= this.listTop + LIST_VIEW_H;
+        if (!inList) return;
+        this.setScroll(this.scrollY + dy * 0.55);
+      }
+    );
   }
 
   private leaveShop(): void {
@@ -150,6 +179,7 @@ export class ShopScene extends Phaser.Scene {
 
   private buildUi(): void {
     const w = this.scale.width;
+    const h = this.scale.height;
 
     this.coinText = this.add
       .text(w - 24, 24, "", {
@@ -172,66 +202,152 @@ export class ShopScene extends Phaser.Scene {
       })
       .setDepth(20);
 
+    this.listCx = w / 2;
+    this.listTop = Math.min(h * 0.55 + 100, h - LIST_VIEW_H - 24);
+
     this.add
-      .text(w / 2, 360, "Fishing Rods for Sale", {
+      .text(this.listCx, this.listTop - 28, "Fishing Rods for Sale · Scroll", {
         fontFamily: "Georgia, serif",
-        fontSize: "20px",
+        fontSize: "18px",
         color: "#3a2a1a",
       })
       .setOrigin(0.5)
       .setDepth(10);
 
-    const startX = w / 2 - 230;
-    SHOP_ROD_IDS.forEach((rodId, i) => {
-      this.makeProductCard(rodId, startX + i * 460, 520);
-    });
+    // Panel behind the list
+    this.add
+      .rectangle(
+        this.listCx,
+        this.listTop + LIST_VIEW_H / 2,
+        520,
+        LIST_VIEW_H + 16,
+        0x1e1a22,
+        0.88
+      )
+      .setStrokeStyle(2, 0xc4a86a)
+      .setDepth(10);
+
+    const listRoot = this.add
+      .container(this.listCx, this.listTop)
+      .setDepth(12);
+    this.listContent = this.add.container(0, 0);
+    listRoot.add(this.listContent);
+
+    this.maskShape = this.make.graphics({ x: 0, y: 0 });
+    this.maskShape.fillStyle(0xffffff);
+    this.maskShape.fillRect(
+      this.listCx - 250,
+      this.listTop,
+      500,
+      LIST_VIEW_H
+    );
+    this.maskShape.setVisible(false);
+    listRoot.setMask(this.maskShape.createGeometryMask());
+
+    this.scrollTrack = this.add
+      .rectangle(
+        this.listCx + 242,
+        this.listTop + LIST_VIEW_H / 2,
+        6,
+        LIST_VIEW_H,
+        0x2a2f3a,
+        0.9
+      )
+      .setDepth(13)
+      .setVisible(false);
+    this.scrollThumb = this.add
+      .rectangle(this.listCx + 242, this.listTop, 6, 40, 0xc4a86a, 0.9)
+      .setOrigin(0.5, 0)
+      .setDepth(14)
+      .setVisible(false);
+
+    let y = 8;
+    for (const rodId of SHOP_ROD_IDS) {
+      this.listContent.add(this.makeProductCard(rodId, y));
+      y += CARD_H + CARD_GAP;
+    }
+    this.contentH = Math.max(0, y - CARD_GAP + 8);
+    this.scrollY = 0;
+    this.applyScroll();
 
     this.refreshCoins();
   }
 
-  private makeProductCard(rodId: ItemId, x: number, y: number): void {
+  private maxScroll(): number {
+    return Math.max(0, this.contentH - LIST_VIEW_H);
+  }
+
+  private setScroll(y: number): void {
+    this.scrollY = Phaser.Math.Clamp(y, 0, this.maxScroll());
+    this.applyScroll();
+  }
+
+  private applyScroll(): void {
+    this.scrollY = Phaser.Math.Clamp(this.scrollY, 0, this.maxScroll());
+    this.listContent.setY(-this.scrollY);
+
+    const max = this.maxScroll();
+    const showBar = max > 0;
+    this.scrollTrack.setVisible(showBar);
+    this.scrollThumb.setVisible(showBar);
+    if (!showBar) return;
+
+    const thumbH = Math.max(28, (LIST_VIEW_H / this.contentH) * LIST_VIEW_H);
+    const trackTravel = LIST_VIEW_H - thumbH;
+    const thumbY =
+      this.listTop + (max > 0 ? (this.scrollY / max) * trackTravel : 0);
+    this.scrollThumb.setY(thumbY);
+    this.scrollThumb.setSize(6, thumbH);
+  }
+
+  private makeProductCard(
+    rodId: ItemId,
+    y: number
+  ): Phaser.GameObjects.Container {
     const def = ITEMS[rodId];
     const owned = this.inventory.ownsRod(rodId);
 
-    const card = this.add.container(x, y).setDepth(12);
+    const card = this.add.container(0, y);
     const bg = this.add
-      .rectangle(0, 0, 420, 200, 0x2a2430, 0.94)
+      .rectangle(0, CARD_H / 2, 480, CARD_H, 0x2a2430, 0.94)
       .setStrokeStyle(2, owned ? 0x6a7355 : 0xc4a86a);
 
-    const icon = this.add.image(-150, -20, def.textureKey).setDisplaySize(56, 56);
+    const icon = this.add
+      .image(-180, CARD_H / 2 - 8, def.textureKey)
+      .setDisplaySize(56, 56);
 
     const name = this.add
-      .text(-100, -70, def.name, {
+      .text(-130, 18, def.name, {
         fontFamily: "Georgia, serif",
-        fontSize: "22px",
+        fontSize: "20px",
         color: "#f0e6d2",
       })
       .setOrigin(0, 0);
 
     const price = this.add
-      .text(-100, -40, `$${def.buyPrice}`, {
+      .text(-130, 46, `$${def.buyPrice}`, {
         fontFamily: "Arial",
-        fontSize: "18px",
+        fontSize: "17px",
         color: "#ffe066",
       })
       .setOrigin(0, 0);
 
     const stats = this.add
-      .text(-100, -10, formatRodStats(def.rodStats!), {
+      .text(-130, 72, formatRodStats(def.rodStats!), {
         fontFamily: "Arial",
-        fontSize: "13px",
+        fontSize: "12px",
         color: "#d0d0d0",
-        lineSpacing: 3,
+        lineSpacing: 2,
       })
       .setOrigin(0, 0);
 
     const btn = this.add
-      .rectangle(120, 60, 130, 40, owned ? 0x444444 : 0x3d6b4f)
+      .rectangle(160, CARD_H / 2 + 40, 120, 36, owned ? 0x444444 : 0x3d6b4f)
       .setStrokeStyle(1, owned ? 0x777777 : 0x7dce7a)
       .setInteractive({ useHandCursor: !owned });
 
     const btnLabel = this.add
-      .text(120, 60, owned ? "Owned" : "Buy", {
+      .text(160, CARD_H / 2 + 40, owned ? "Owned" : "Buy", {
         fontFamily: "Arial",
         fontSize: "16px",
         color: "#ffffff",
@@ -263,6 +379,7 @@ export class ShopScene extends Phaser.Scene {
     }
 
     card.add([bg, icon, name, price, stats, btn, btnLabel]);
+    return card;
   }
 
   private refreshCoins(): void {

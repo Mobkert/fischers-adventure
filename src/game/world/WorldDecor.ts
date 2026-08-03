@@ -411,98 +411,136 @@ export function generateTerrainTextures(scene: Phaser.Scene): void {
   g.fillCircle(56, 30, 14);
   g.generateTexture("cloud", 96, 48);
 
-  // Lush jungle grass variants (darker canopy floor)
+  // Swamp mud-grass variants (wet, mossy floor)
   for (let v = 0; v < 4; v++) {
     g.clear();
-    g.fillStyle(0x2a4a28);
+    g.fillStyle(0x2a3420);
     g.fillRect(0, 0, 32, 32);
-    g.fillStyle(0x1e6b32);
-    g.fillRect(0, 0, 32, 11);
-    g.fillStyle(0x145028);
-    for (let i = 0; i < 12; i++) {
-      const x = ((v * 19 + i * 11) % 30) + 1;
-      const y = 13 + ((v * 7 + i * 5) % 16);
+    g.fillStyle(0x3a4a28);
+    g.fillRect(0, 0, 32, 10);
+    g.fillStyle(0x1e2a18);
+    for (let i = 0; i < 14; i++) {
+      const x = ((v * 17 + i * 9) % 30) + 1;
+      const y = 12 + ((v * 5 + i * 7) % 18);
       g.fillRect(x, y, 2, 2);
     }
-    g.fillStyle(0x3aaa48);
-    for (let i = 0; i < 10; i++) {
-      const x = ((v * 13 + i * 7) % 28) + 2;
-      g.fillRect(x, 0 + (i % 3), 1, 5 + (i % 4));
+    // Mud puddle sheen
+    g.fillStyle(0x3a5a38, 0.45);
+    g.fillEllipse(10 + v * 3, 20, 10, 5);
+    g.fillStyle(0x4a6a2a);
+    for (let i = 0; i < 8; i++) {
+      const x = ((v * 11 + i * 5) % 28) + 2;
+      g.fillRect(x, 0 + (i % 3), 1, 4 + (i % 5));
     }
-    g.fillStyle(0x6edf6a, 0.75);
-    g.fillRect(5 + v, 1, 1, 6);
-    g.fillRect(20 - v, 2, 1, 5);
+    g.fillStyle(0x6a8a3a, 0.7);
+    g.fillRect(4 + v, 1, 1, 5);
+    g.fillRect(22 - v, 2, 1, 4);
+    g.generateTexture(`swamp_grass_${v}`, 32, 32);
+    // Keep old key so any leftover refs still work
     g.generateTexture(`jungle_grass_${v}`, 32, 32);
   }
 
-  // Tall jungle canopy tree (origin bottom)
+  // Bald cypress / swamp tree (knees + hanging moss)
   g.clear();
-  const tw = 96;
-  const th = 220;
-  g.fillStyle(0x000000, 0.18);
-  g.fillEllipse(tw / 2, th - 4, 70, 12);
-  // trunk
-  g.fillStyle(0x3e2818);
-  g.fillRect(tw / 2 - 8, 90, 16, th - 94);
-  g.fillStyle(0x2a1a10);
-  g.fillRect(tw / 2 - 8, 90, 5, th - 94);
-  g.fillStyle(0x5a3a22);
-  g.fillRect(tw / 2 + 2, 100, 3, 40);
-  // buttress roots
-  g.fillStyle(0x3e2818);
-  g.fillTriangle(tw / 2 - 8, th - 8, tw / 2 - 28, th, tw / 2 + 2, th - 8);
-  g.fillTriangle(tw / 2 + 8, th - 8, tw / 2 + 30, th, tw / 2 - 2, th - 8);
-  // multi-layer canopy
-  g.fillStyle(0x0f3d1a);
-  g.fillCircle(tw / 2, 70, 42);
-  g.fillStyle(0x176b2e);
-  g.fillCircle(tw / 2 - 22, 58, 28);
-  g.fillCircle(tw / 2 + 24, 55, 30);
-  g.fillCircle(tw / 2, 42, 26);
-  g.fillStyle(0x249a42);
-  g.fillCircle(tw / 2 - 12, 48, 18);
-  g.fillCircle(tw / 2 + 14, 40, 20);
-  g.fillStyle(0x4ecf5e, 0.65);
-  g.fillCircle(tw / 2 - 8, 36, 10);
-  g.fillCircle(tw / 2 + 10, 32, 9);
-  // hanging vine
-  g.lineStyle(2, 0x1a5a28, 0.85);
-  g.lineBetween(tw / 2 + 28, 70, tw / 2 + 34, 130);
-  g.lineBetween(tw / 2 + 34, 130, tw / 2 + 30, 155);
-  g.fillStyle(0x2d8a3a);
-  g.fillCircle(tw / 2 + 30, 158, 4);
+  const tw = 100;
+  const th = 240;
+  g.fillStyle(0x000000, 0.2);
+  g.fillEllipse(tw / 2, th - 4, 78, 14);
+  // Flared trunk base
+  g.fillStyle(0x3a2a18);
+  g.fillTriangle(tw / 2 - 10, 100, tw / 2 - 32, th, tw / 2 + 8, th - 6);
+  g.fillTriangle(tw / 2 + 10, 100, tw / 2 + 34, th, tw / 2 - 6, th - 6);
+  g.fillStyle(0x4a3820);
+  g.fillRect(tw / 2 - 9, 70, 18, th - 74);
+  g.fillStyle(0x2a1c10);
+  g.fillRect(tw / 2 - 9, 70, 6, th - 74);
+  g.fillStyle(0x5a4830);
+  g.fillRect(tw / 2 + 2, 90, 3, 50);
+  // Cypress knees
+  g.fillStyle(0x4a3820);
+  g.fillTriangle(tw / 2 - 36, th - 2, tw / 2 - 28, th - 28, tw / 2 - 20, th - 2);
+  g.fillTriangle(tw / 2 + 22, th - 2, tw / 2 + 30, th - 32, tw / 2 + 38, th - 2);
+  g.fillTriangle(tw / 2 - 8, th - 2, tw / 2, th - 22, tw / 2 + 8, th - 2);
+  // Sparse canopy (cypress look)
+  g.fillStyle(0x1a3a1c);
+  g.fillCircle(tw / 2, 55, 34);
+  g.fillStyle(0x2a5a28);
+  g.fillCircle(tw / 2 - 18, 48, 22);
+  g.fillCircle(tw / 2 + 20, 44, 24);
+  g.fillCircle(tw / 2, 32, 20);
+  g.fillStyle(0x3a7a38, 0.75);
+  g.fillCircle(tw / 2 - 6, 36, 12);
+  g.fillCircle(tw / 2 + 10, 28, 10);
+  // Spanish moss strands
+  g.lineStyle(2, 0x6a7a58, 0.8);
+  g.lineBetween(tw / 2 - 22, 55, tw / 2 - 26, 110);
+  g.lineBetween(tw / 2 - 26, 110, tw / 2 - 22, 140);
+  g.lineBetween(tw / 2 + 24, 52, tw / 2 + 30, 105);
+  g.lineBetween(tw / 2 + 30, 105, tw / 2 + 26, 145);
+  g.lineBetween(tw / 2 + 8, 48, tw / 2 + 12, 95);
+  g.fillStyle(0x7a8a68, 0.7);
+  g.fillCircle(tw / 2 - 22, 142, 3);
+  g.fillCircle(tw / 2 + 26, 148, 3);
+  g.generateTexture("swamp_tree", tw, th);
   g.generateTexture("jungle_tree", tw, th);
 
-  // Extra-tall emergent tree
+  // Extra-tall cypress
   g.clear();
-  const ew = 110;
-  const eh = 280;
-  g.fillStyle(0x000000, 0.16);
-  g.fillEllipse(ew / 2, eh - 4, 80, 14);
-  g.fillStyle(0x352214);
-  g.fillRect(ew / 2 - 9, 110, 18, eh - 114);
-  g.fillStyle(0x24160c);
-  g.fillRect(ew / 2 - 9, 110, 6, eh - 114);
-  g.fillStyle(0x0a3014);
-  g.fillCircle(ew / 2, 78, 48);
-  g.fillStyle(0x145828);
-  g.fillCircle(ew / 2 - 26, 62, 32);
-  g.fillCircle(ew / 2 + 28, 58, 34);
-  g.fillCircle(ew / 2, 40, 30);
-  g.fillStyle(0x1f8a38);
-  g.fillCircle(ew / 2 - 10, 48, 20);
-  g.fillCircle(ew / 2 + 16, 36, 22);
-  g.fillStyle(0x55d060, 0.55);
-  g.fillCircle(ew / 2, 28, 12);
+  const ew = 112;
+  const eh = 300;
+  g.fillStyle(0x000000, 0.18);
+  g.fillEllipse(ew / 2, eh - 4, 88, 16);
+  g.fillStyle(0x322418);
+  g.fillTriangle(ew / 2 - 12, 120, ew / 2 - 38, eh, ew / 2 + 10, eh - 8);
+  g.fillTriangle(ew / 2 + 12, 120, ew / 2 + 40, eh, ew / 2 - 8, eh - 8);
+  g.fillStyle(0x42301c);
+  g.fillRect(ew / 2 - 10, 90, 20, eh - 94);
+  g.fillStyle(0x24180c);
+  g.fillRect(ew / 2 - 10, 90, 7, eh - 94);
+  g.fillStyle(0x4a3820);
+  g.fillTriangle(ew / 2 - 40, eh - 2, ew / 2 - 32, eh - 36, ew / 2 - 22, eh - 2);
+  g.fillTriangle(ew / 2 + 24, eh - 2, ew / 2 + 34, eh - 40, ew / 2 + 42, eh - 2);
+  g.fillStyle(0x0f2814);
+  g.fillCircle(ew / 2, 70, 40);
+  g.fillStyle(0x1a4a22);
+  g.fillCircle(ew / 2 - 24, 58, 28);
+  g.fillCircle(ew / 2 + 26, 52, 30);
+  g.fillCircle(ew / 2, 38, 26);
+  g.fillStyle(0x2a6a32, 0.7);
+  g.fillCircle(ew / 2, 30, 14);
+  g.lineStyle(2, 0x6a7a58, 0.85);
+  g.lineBetween(ew / 2 - 28, 65, ew / 2 - 34, 130);
+  g.lineBetween(ew / 2 - 34, 130, ew / 2 - 30, 175);
+  g.lineBetween(ew / 2 + 28, 60, ew / 2 + 36, 125);
+  g.lineBetween(ew / 2 + 36, 125, ew / 2 + 32, 180);
+  g.generateTexture("swamp_tree_tall", ew, eh);
   g.generateTexture("jungle_tree_tall", ew, eh);
 
-  // Fern
+  // Cattail
   g.clear();
-  g.fillStyle(0x1a5a28);
+  g.fillStyle(0x2a5a28);
+  g.fillRect(7, 8, 2, 28);
+  g.fillRect(14, 4, 2, 32);
+  g.fillRect(21, 10, 2, 26);
+  g.fillStyle(0x6a3a18);
+  g.fillRoundedRect(5, 2, 6, 12, 2);
+  g.fillRoundedRect(12, 0, 6, 14, 2);
+  g.fillRoundedRect(19, 4, 6, 11, 2);
+  g.fillStyle(0x8a5a28);
+  g.fillRect(6, 4, 4, 3);
+  g.fillRect(13, 2, 4, 3);
+  g.fillStyle(0x3aaa48);
+  g.fillTriangle(8, 20, 2, 14, 8, 16);
+  g.fillTriangle(15, 18, 22, 12, 15, 14);
+  g.generateTexture("cattail", 28, 40);
+
+  // Fern (kept, slightly swampier)
+  g.clear();
+  g.fillStyle(0x1a4a24);
   g.fillRect(15, 18, 2, 14);
   for (let i = 0; i < 5; i++) {
     const ang = -1.1 + i * 0.55;
-    g.fillStyle(i % 2 === 0 ? 0x2d8a3a : 0x1f6b2e);
+    g.fillStyle(i % 2 === 0 ? 0x2a6a32 : 0x1a4a28);
     g.fillTriangle(
       16,
       20 + i * 2,
@@ -522,50 +560,103 @@ export function generateTerrainTextures(scene: Phaser.Scene): void {
   }
   g.generateTexture("fern", 32, 36);
 
-  // Lily pad
+  // Lily pad (murkier)
   g.clear();
-  g.fillStyle(0x1a6b2e);
+  g.fillStyle(0x1a4a28);
   g.fillEllipse(16, 10, 28, 14);
-  g.fillStyle(0x2d9a42);
+  g.fillStyle(0x2a6a38);
   g.fillEllipse(14, 8, 16, 8);
-  g.fillStyle(0x0f3d1a);
+  g.fillStyle(0x0f2a18);
   g.fillTriangle(16, 10, 30, 6, 30, 14);
-  g.fillStyle(0xf4a0c0, 0.9);
+  g.fillStyle(0xe8a0b8, 0.9);
   g.fillCircle(12, 7, 3);
   g.fillStyle(0xfff0a0);
   g.fillCircle(12, 7, 1);
   g.generateTexture("lily_pad", 32, 18);
 
+  // Rotting stump
+  g.clear();
+  g.fillStyle(0x000000, 0.18);
+  g.fillEllipse(22, 34, 40, 10);
+  g.fillStyle(0x4a3420);
+  g.fillRect(10, 12, 24, 22);
+  g.fillStyle(0x3a2818);
+  g.fillRect(10, 12, 24, 6);
+  g.fillStyle(0x5a4430);
+  g.fillCircle(22, 14, 11);
+  g.fillStyle(0x2a1c10);
+  g.fillCircle(22, 14, 5);
+  g.fillStyle(0x3a5a28, 0.7);
+  g.fillCircle(14, 10, 4);
+  g.fillCircle(28, 18, 3);
+  g.generateTexture("swamp_stump", 44, 40);
+
   // Fallen log
   g.clear();
   g.fillStyle(0x000000, 0.15);
   g.fillEllipse(36, 22, 60, 8);
-  g.fillStyle(0x5c3a21);
+  g.fillStyle(0x4a3020);
   g.fillRect(4, 8, 64, 14);
-  g.fillStyle(0x4a2f18);
-  g.fillRect(4, 8, 64, 5);
   g.fillStyle(0x3a2414);
-  g.fillCircle(8, 15, 5);
+  g.fillRect(4, 8, 64, 5);
   g.fillStyle(0x2a1a10);
+  g.fillCircle(8, 15, 5);
+  g.fillStyle(0x1a1008);
   g.fillCircle(8, 15, 2);
-  g.fillStyle(0x2d6a3e, 0.7);
+  g.fillStyle(0x2a5a30, 0.75);
   g.fillCircle(40, 6, 4);
   g.fillCircle(48, 8, 3);
+  g.fillStyle(0xc03030, 0.85);
+  g.fillCircle(52, 5, 3);
+  g.fillStyle(0xf0f0f0, 0.9);
+  g.fillCircle(51, 4, 1);
   g.generateTexture("fallen_log", 72, 28);
 
-  // Jungle boulder
+  // Mossy swamp boulder
   g.clear();
   g.fillStyle(0x000000, 0.15);
   g.fillEllipse(22, 30, 40, 10);
-  g.fillStyle(0x4a5548);
+  g.fillStyle(0x3a4038);
   g.fillCircle(18, 20, 14);
   g.fillCircle(30, 22, 12);
-  g.fillStyle(0x6a7568);
+  g.fillStyle(0x5a6058);
   g.fillCircle(14, 16, 6);
-  g.fillStyle(0x2d6a3e, 0.55);
-  g.fillCircle(26, 12, 5);
-  g.fillCircle(34, 18, 4);
+  g.fillStyle(0x2a5a30, 0.7);
+  g.fillCircle(26, 12, 6);
+  g.fillCircle(34, 18, 5);
+  g.fillCircle(12, 22, 4);
   g.generateTexture("jungle_rock", 44, 36);
+  g.generateTexture("swamp_rock", 44, 36);
+
+  // Small swamp shack (merchant backdrop)
+  g.clear();
+  const hw = 120;
+  const hh = 100;
+  g.fillStyle(0x000000, 0.2);
+  g.fillEllipse(hw / 2, hh - 2, 90, 10);
+  g.fillStyle(0x3a2a18);
+  g.fillRect(18, 40, hw - 36, hh - 48);
+  g.fillStyle(0x2a1c10);
+  g.fillRect(18, 40, 8, hh - 48);
+  g.fillStyle(0x4a3828);
+  for (let y = 44; y < hh - 10; y += 8) {
+    g.fillRect(20, y, hw - 40, 2);
+  }
+  g.fillStyle(0x2a4018);
+  g.fillTriangle(8, 44, hw / 2, 8, hw - 8, 44);
+  g.fillStyle(0x1a3010);
+  g.fillTriangle(16, 44, hw / 2, 16, hw - 16, 44);
+  g.fillStyle(0x1a1208);
+  g.fillRect(hw / 2 - 12, hh - 36, 22, 28);
+  g.fillStyle(0x5a4830);
+  g.fillRect(hw / 2 - 10, hh - 34, 18, 24);
+  g.fillStyle(0x7a9acc, 0.55);
+  g.fillRect(28, 52, 14, 12);
+  g.fillRect(hw - 44, 52, 14, 12);
+  g.lineStyle(1, 0x2a1c10);
+  g.strokeRect(28, 52, 14, 12);
+  g.strokeRect(hw - 44, 52, 14, 12);
+  g.generateTexture("swamp_shack", hw, hh);
 
   g.destroy();
 }
@@ -762,7 +853,333 @@ export function placeVillage(
   void scene;
 }
 
-/** Dense jungle island with tall trees and a central pond (visual only for now). */
+/** Dense swamp island — cypress, cattails, murky pond (Wildflower rod still here). */
+export function placeSwamp(
+  scene: Phaser.Scene,
+  groundY: number,
+  swampLeft: number,
+  swampRight: number,
+  pondLeft: number,
+  pondRight: number
+): void {
+  const depth = 3;
+  const ox = swampLeft;
+  const width = swampRight - swampLeft;
+  const mid = (swampLeft + swampRight) / 2;
+
+  // Far murky ridges
+  const ridges = scene.add.graphics().setScrollFactor(0.4).setDepth(0);
+  ridges.fillStyle(0x1a2a18, 0.6);
+  ridges.fillEllipse(ox + 220, 475, 540, 170);
+  ridges.fillStyle(0x142418, 0.55);
+  ridges.fillEllipse(ox + width * 0.42, 490, 500, 150);
+  ridges.fillStyle(0x0e1c12, 0.5);
+  ridges.fillEllipse(ox + width * 0.78, 500, 440, 140);
+
+  // Layered swamp fog
+  for (let i = 0; i < 3; i++) {
+    const fog = scene.add.graphics().setDepth(1).setAlpha(0.12 + i * 0.04);
+    fog.fillStyle(0xa8c8a0, 1);
+    fog.fillEllipse(
+      mid - 80 + i * 100,
+      groundY - 160 - i * 25,
+      width * (0.45 + i * 0.1),
+      70 + i * 20
+    );
+    scene.tweens.add({
+      targets: fog,
+      alpha: 0.04,
+      x: fog.x + (i % 2 === 0 ? 30 : -24),
+      duration: 4200 + i * 900,
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  // Muddy boardwalk path (breaks at pond)
+  const pathY = groundY - 4;
+  for (let x = ox + 70; x < pondLeft - 24; x += 26) {
+    scene.add
+      .image(x, pathY, "path")
+      .setDepth(depth)
+      .setAlpha(0.9)
+      .setScale(1, 0.48)
+      .setTint(0x5a4a30);
+  }
+  for (let x = pondRight + 24; x < swampRight - 50; x += 26) {
+    scene.add
+      .image(x, pathY, "path")
+      .setDepth(depth)
+      .setAlpha(0.9)
+      .setScale(1, 0.48)
+      .setTint(0x5a4a30);
+  }
+
+  // Merchant shack west of pond
+  const shackX = ox + 280;
+  scene.add
+    .image(shackX, groundY, "swamp_shack")
+    .setDepth(depth + 1)
+    .setOrigin(0.5, 1)
+    .setScale(1.05);
+
+  // Cypress belt (skip pond + wildflower clearing + shack)
+  const wildflowerClearX = ox + 210;
+  const treeSpots: { x: number; key: string; scale: number }[] = [];
+  for (let x = ox + 40; x < swampRight - 35; x += 64) {
+    if (x > pondLeft - 55 && x < pondRight + 55) continue;
+    if (Math.abs(x - wildflowerClearX) < 70) continue;
+    if (Math.abs(x - shackX) < 90) continue;
+    const tall = (x / 64) % 3 === 0;
+    treeSpots.push({
+      x: x + ((x * 13) % 20) - 10,
+      key: tall ? "swamp_tree_tall" : "swamp_tree",
+      scale: tall ? 0.88 + ((x * 7) % 18) / 100 : 0.78 + ((x * 11) % 28) / 100,
+    });
+  }
+  for (let x = ox + 85; x < swampRight - 45; x += 100) {
+    if (x > pondLeft - 45 && x < pondRight + 45) continue;
+    if (Math.abs(x - wildflowerClearX) < 60) continue;
+    if (Math.abs(x - shackX) < 80) continue;
+    treeSpots.push({
+      x: x + 16,
+      key: "swamp_tree",
+      scale: 0.62 + ((x * 3) % 22) / 100,
+    });
+  }
+  for (const t of treeSpots) {
+    scene.add
+      .image(t.x, groundY + 2, t.key)
+      .setDepth(t.key === "swamp_tree_tall" ? depth : depth + 1)
+      .setOrigin(0.5, 1)
+      .setScale(t.scale);
+  }
+
+  // Cattails, ferns, bushes along the floor
+  for (let x = ox + 25; x < swampRight - 18; x += 28) {
+    if (x > pondLeft - 8 && x < pondRight + 8) continue;
+    if (Math.abs(x - wildflowerClearX) < 45) continue;
+    const roll = (x * 19) % 100;
+    if (roll < 35) {
+      scene.add
+        .image(x, groundY - 1, "cattail")
+        .setDepth(depth + 2)
+        .setOrigin(0.5, 1)
+        .setScale(0.95 + (roll % 25) / 50);
+    } else if (roll < 55) {
+      scene.add
+        .image(x, groundY - 1, "fern")
+        .setDepth(depth + 2)
+        .setOrigin(0.5, 1)
+        .setScale(0.85 + (roll % 20) / 40);
+    } else if (roll < 72) {
+      scene.add
+        .image(x, groundY - 1, "bush")
+        .setDepth(depth + 2)
+        .setOrigin(0.5, 1)
+        .setScale(0.7 + (roll % 15) / 50)
+        .setTint(0x6a8a5a);
+    }
+  }
+
+  // Dense cattail rings at pond banks
+  for (let i = 0; i < 10; i++) {
+    scene.add
+      .image(pondLeft - 8 - (i % 4) * 10, groundY - 1, "cattail")
+      .setDepth(depth + 3)
+      .setOrigin(0.5, 1)
+      .setScale(1 + (i % 3) * 0.08);
+    scene.add
+      .image(pondRight + 8 + (i % 4) * 10, groundY - 1, "cattail")
+      .setDepth(depth + 3)
+      .setOrigin(0.5, 1)
+      .setScale(1 + (i % 3) * 0.08);
+  }
+
+  // Logs, stumps, mossy rocks
+  const props: [number, string, number][] = [
+    [ox + 160, "fallen_log", 1],
+    [ox + 400, "swamp_stump", 1.05],
+    [ox + 480, "swamp_rock", 1.1],
+    [ox + 560, "fallen_log", 0.9],
+    [mid - 220, "swamp_stump", 0.95],
+    [mid + 230, "fallen_log", 1.05],
+    [mid + 340, "swamp_rock", 1.15],
+    [swampRight - 300, "swamp_stump", 1],
+    [swampRight - 200, "fallen_log", 0.88],
+    [swampRight - 120, "swamp_rock", 1],
+  ];
+  for (const [x, key, scale] of props) {
+    if (x > pondLeft - 35 && x < pondRight + 35) continue;
+    if (Math.abs(x - wildflowerClearX) < 50) continue;
+    scene.add
+      .image(x, groundY - 2, key)
+      .setDepth(depth + 2)
+      .setOrigin(0.5, 1)
+      .setScale(scale);
+  }
+
+  // ——— Pond (kept): murkier swamp water ———
+  const pondW = pondRight - pondLeft;
+  const pond = scene.add.graphics().setDepth(4);
+  pond.fillStyle(0x0a3028, 0.82);
+  pond.fillRect(pondLeft, groundY, pondW, 110);
+  pond.fillStyle(0x1a5040, 0.5);
+  pond.fillRect(pondLeft, groundY, pondW, 32);
+  pond.fillStyle(0x062018, 0.45);
+  pond.fillRect(pondLeft, groundY + 55, pondW, 55);
+  pond.fillStyle(0x2a4a28, 0.55);
+  pond.fillRect(pondLeft - 8, groundY - 3, 10, 14);
+  pond.fillRect(pondRight - 2, groundY - 3, 10, 14);
+  // Algae patches
+  pond.fillStyle(0x3a6a28, 0.35);
+  pond.fillEllipse(pondLeft + pondW * 0.3, groundY + 40, 50, 18);
+  pond.fillEllipse(pondLeft + pondW * 0.7, groundY + 55, 40, 14);
+
+  for (let i = 0; i < 6; i++) {
+    const strip = scene.add
+      .rectangle(
+        pondLeft + 24 + i * (pondW / 6),
+        groundY + 5,
+        32,
+        2,
+        0x88c8a0,
+        0.28
+      )
+      .setDepth(6);
+    scene.tweens.add({
+      targets: strip,
+      alpha: 0.05,
+      x: strip.x + 8,
+      duration: 1800 + i * 140,
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  // More lily pads
+  for (let i = 0; i < 9; i++) {
+    const lx = pondLeft + 28 + (i / 8) * (pondW - 56) + ((i * 17) % 18) - 9;
+    scene.add
+      .image(lx, groundY + 6 + (i % 5) * 3, "lily_pad")
+      .setDepth(5)
+      .setOrigin(0.5, 0.5)
+      .setScale(0.85 + (i % 4) * 0.08)
+      .setAngle((i * 40) % 50 - 25);
+  }
+
+  // Footbridge across pond (walkable collider in GameScene)
+  const bridgeY = groundY - 2;
+  const plankCount = Math.ceil(pondW / 28);
+  for (let i = 0; i < plankCount; i++) {
+    scene.add
+      .image(pondLeft + 14 + i * 28, bridgeY, "dock")
+      .setDepth(5)
+      .setOrigin(0.5, 0.5)
+      .setTint(0x5a3a20);
+  }
+  const rails = scene.add.graphics().setDepth(5);
+  rails.fillStyle(0x3a2414);
+  rails.fillRect(pondLeft + 8, groundY - 22, 4, 20);
+  rails.fillRect(pondRight - 12, groundY - 22, 4, 20);
+  rails.fillRect(mid - 2, groundY - 22, 4, 20);
+  rails.lineStyle(2, 0x4a3020, 0.9);
+  rails.lineBetween(pondLeft + 10, groundY - 18, pondRight - 10, groundY - 18);
+
+  // Docks
+  for (let i = 0; i < 6; i++) {
+    scene.add
+      .image(swampLeft - 10 - i * 28, groundY, "dock")
+      .setDepth(5)
+      .setOrigin(0.5, 0)
+      .setTint(0x6a4a28);
+  }
+  for (let i = 0; i < 5; i++) {
+    scene.add
+      .image(swampRight + 10 + i * 28, groundY, "dock")
+      .setDepth(5)
+      .setOrigin(0.5, 0)
+      .setTint(0x6a4a28);
+  }
+  const posts = scene.add.graphics().setDepth(5);
+  const postDepth = 480;
+  const drawPost = (x: number) => {
+    posts.fillStyle(0x2a1a10);
+    posts.fillRect(x, groundY, 6, postDepth);
+    posts.fillStyle(0x4a3020);
+    posts.fillRect(x, groundY, 2, postDepth);
+    posts.fillStyle(0x1a1008, 0.55);
+    posts.fillRect(x - 1, groundY + 8, 8, 6);
+  };
+  for (let i = 0; i < 6; i++) drawPost(swampLeft - 22 - i * 28);
+  for (let i = 0; i < 5; i++) drawPost(swampRight + 18 + i * 28);
+
+  // Shore rocks
+  scene.add
+    .image(swampLeft + 55, groundY - 4, "swamp_rock")
+    .setDepth(depth + 2)
+    .setOrigin(0.5, 1);
+  scene.add
+    .image(swampLeft + 105, groundY - 2, "rock")
+    .setDepth(depth + 2)
+    .setScale(0.8)
+    .setTint(0x8a9880);
+  scene.add
+    .image(swampRight - 65, groundY - 4, "swamp_rock")
+    .setDepth(depth + 2)
+    .setOrigin(0.5, 1)
+    .setScale(1.1);
+
+  // Fireflies
+  for (let i = 0; i < 18; i++) {
+    const fx = Phaser.Math.Between(swampLeft + 40, swampRight - 40);
+    if (fx > pondLeft && fx < pondRight) continue;
+    const fy = groundY - Phaser.Math.Between(40, 160);
+    const bug = scene.add
+      .circle(fx, fy, 1.6, 0xd8f060, 0.85)
+      .setDepth(depth + 5);
+    scene.tweens.add({
+      targets: bug,
+      alpha: 0.15,
+      x: fx + Phaser.Math.Between(-20, 20),
+      y: fy + Phaser.Math.Between(-16, 16),
+      duration: 1400 + i * 90,
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  // Grass / reed tufts
+  const tufts = scene.add.graphics().setDepth(depth + 2);
+  for (let i = 0; i < 160; i++) {
+    const x = Phaser.Math.Between(swampLeft + 10, swampRight - 15);
+    if (x > pondLeft && x < pondRight) continue;
+    const y = groundY - Phaser.Math.Between(2, 14);
+    tufts.fillStyle(Phaser.Math.RND.pick([0x2a4a24, 0x3a5a28, 0x1a3a18]));
+    tufts.fillRect(x, y, 1, Phaser.Math.Between(5, 12));
+    tufts.fillRect(x + 2, y + 1, 1, Phaser.Math.Between(4, 9));
+  }
+
+  // Sign
+  const sign = scene.add.graphics().setDepth(depth + 3);
+  sign.fillStyle(0x3a2818);
+  sign.fillRect(ox + 130, groundY - 48, 4, 48);
+  sign.fillStyle(0x8a6a40);
+  sign.fillRect(ox + 108, groundY - 72, 52, 30);
+  sign.fillStyle(0x2a1a10);
+  sign.fillRect(ox + 108, groundY - 72, 52, 3);
+  sign.fillRect(ox + 108, groundY - 45, 52, 3);
+  scene.add
+    .text(ox + 134, groundY - 58, "SWAMP", {
+      fontFamily: "Georgia, serif",
+      fontSize: "11px",
+      color: "#1a1208",
+    })
+    .setOrigin(0.5)
+    .setDepth(depth + 4);
+}
+
+/** @deprecated alias — island is a swamp now */
 export function placeJungle(
   scene: Phaser.Scene,
   groundY: number,
@@ -771,270 +1188,5 @@ export function placeJungle(
   pondLeft: number,
   pondRight: number
 ): void {
-  const depth = 3;
-  const ox = jungleLeft;
-  const width = jungleRight - jungleLeft;
-  const mid = (jungleLeft + jungleRight) / 2;
-
-  // Far jungle ridges (parallax)
-  const ridges = scene.add.graphics().setScrollFactor(0.4).setDepth(0);
-  ridges.fillStyle(0x1a4a28, 0.55);
-  ridges.fillEllipse(ox + 200, 470, 520, 160);
-  ridges.fillStyle(0x145020, 0.5);
-  ridges.fillEllipse(ox + width * 0.45, 485, 480, 140);
-  ridges.fillStyle(0x0f3a1c, 0.45);
-  ridges.fillEllipse(ox + width * 0.75, 495, 420, 130);
-
-  // Mist / humidity haze over canopy
-  const mist = scene.add.graphics().setDepth(1).setAlpha(0.2);
-  mist.fillStyle(0xb8e8c8, 1);
-  mist.fillEllipse(mid, groundY - 180, width * 0.7, 90);
-  scene.tweens.add({
-    targets: mist,
-    alpha: 0.08,
-    duration: 5000,
-    yoyo: true,
-    repeat: -1,
-  });
-
-  // Dirt trail around the pond (breaks at water)
-  const pathY = groundY - 4;
-  for (let x = ox + 80; x < pondLeft - 20; x += 28) {
-    scene.add
-      .image(x, pathY, "path")
-      .setDepth(depth)
-      .setAlpha(0.85)
-      .setScale(1, 0.5)
-      .setTint(0x8a6a40);
-  }
-  for (let x = pondRight + 20; x < jungleRight - 60; x += 28) {
-    scene.add
-      .image(x, pathY, "path")
-      .setDepth(depth)
-      .setAlpha(0.85)
-      .setScale(1, 0.5)
-      .setTint(0x8a6a40);
-  }
-
-  // Emergent giants + dense canopy belt (skip pond opening)
-  const tallSpots: { x: number; key: string; scale: number }[] = [];
-  for (let x = ox + 50; x < jungleRight - 40; x += 70) {
-    if (x > pondLeft - 50 && x < pondRight + 50) continue;
-    const tall = (x / 70) % 3 === 0;
-    tallSpots.push({
-      x: x + ((x * 13) % 24) - 12,
-      key: tall ? "jungle_tree_tall" : "jungle_tree",
-      scale: tall ? 0.95 + ((x * 7) % 20) / 100 : 0.85 + ((x * 11) % 30) / 100,
-    });
-  }
-  // Extra front-row trees for depth
-  for (let x = ox + 90; x < jungleRight - 50; x += 110) {
-    if (x > pondLeft - 40 && x < pondRight + 40) continue;
-    tallSpots.push({
-      x: x + 20,
-      key: "jungle_tree",
-      scale: 0.7 + ((x * 3) % 20) / 100,
-    });
-  }
-  for (const t of tallSpots) {
-    scene.add
-      .image(t.x, groundY + 2, t.key)
-      .setDepth(t.key === "jungle_tree_tall" ? depth : depth + 1)
-      .setOrigin(0.5, 1)
-      .setScale(t.scale);
-  }
-
-  // Ferns, bushes, flowers along the floor
-  for (let x = ox + 30; x < jungleRight - 20; x += 36) {
-    if (x > pondLeft - 10 && x < pondRight + 10) continue;
-    const roll = (x * 17) % 100;
-    if (roll < 40) {
-      scene.add
-        .image(x, groundY - 1, "fern")
-        .setDepth(depth + 2)
-        .setOrigin(0.5, 1)
-        .setScale(0.9 + (roll % 20) / 40);
-    } else if (roll < 65) {
-      scene.add
-        .image(x, groundY - 1, "bush")
-        .setDepth(depth + 2)
-        .setOrigin(0.5, 1)
-        .setScale(0.75 + (roll % 15) / 50)
-        .setTint(0x88cc88);
-    } else if (roll < 80) {
-      scene.add
-        .image(x, groundY - 1, "flowers")
-        .setDepth(depth + 2)
-        .setOrigin(0.5, 1);
-    }
-  }
-
-  // Fallen logs & mossy rocks
-  const props: [number, string, number][] = [
-    [ox + 180, "fallen_log", 1],
-    [ox + 420, "jungle_rock", 1.1],
-    [ox + 520, "fallen_log", 0.85],
-    [mid - 200, "jungle_rock", 0.9],
-    [mid + 210, "fallen_log", 1.05],
-    [mid + 320, "jungle_rock", 1.2],
-    [jungleRight - 280, "fallen_log", 0.9],
-    [jungleRight - 160, "jungle_rock", 1],
-  ];
-  for (const [x, key, scale] of props) {
-    if (x > pondLeft - 30 && x < pondRight + 30) continue;
-    scene.add
-      .image(x, groundY - 2, key)
-      .setDepth(depth + 2)
-      .setOrigin(0.5, 1)
-      .setScale(scale);
-  }
-
-  // Pond water + reeds + lilies (decorative — no fishing yet)
-  const pondW = pondRight - pondLeft;
-  const pond = scene.add.graphics().setDepth(4);
-  pond.fillStyle(0x0d4a5c, 0.7);
-  pond.fillRect(pondLeft, groundY, pondW, 100);
-  pond.fillStyle(0x1a7a8a, 0.45);
-  pond.fillRect(pondLeft, groundY, pondW, 28);
-  pond.fillStyle(0x083040, 0.35);
-  pond.fillRect(pondLeft, groundY + 50, pondW, 50);
-  // soft bank tint
-  pond.fillStyle(0x3d6b2e, 0.5);
-  pond.fillRect(pondLeft - 6, groundY - 2, 8, 12);
-  pond.fillRect(pondRight - 2, groundY - 2, 8, 12);
-
-  for (let i = 0; i < 5; i++) {
-    const strip = scene.add
-      .rectangle(
-        pondLeft + 30 + i * (pondW / 5),
-        groundY + 4,
-        36,
-        2,
-        0xa8e8ff,
-        0.35
-      )
-      .setDepth(6);
-    scene.tweens.add({
-      targets: strip,
-      alpha: 0.06,
-      x: strip.x + 10,
-      duration: 1600 + i * 120,
-      yoyo: true,
-      repeat: -1,
-    });
-  }
-
-  const lilyXs = [
-    pondLeft + 40,
-    pondLeft + pondW * 0.35,
-    pondLeft + pondW * 0.55,
-    pondLeft + pondW * 0.78,
-  ];
-  for (const lx of lilyXs) {
-    scene.add
-      .image(lx, groundY + 8 + ((lx * 3) % 10), "lily_pad")
-      .setDepth(5)
-      .setOrigin(0.5, 0.5)
-      .setScale(0.9 + ((lx * 5) % 20) / 50);
-  }
-
-  // Reeds at pond edges
-  const reeds = scene.add.graphics().setDepth(depth + 3);
-  for (let i = 0; i < 14; i++) {
-    const side = i < 7 ? pondLeft + 4 + i * 6 : pondRight - 40 + (i - 7) * 6;
-    reeds.fillStyle(0x1a5a28);
-    reeds.fillRect(side, groundY - 18 - (i % 4) * 3, 2, 22 + (i % 5) * 2);
-    reeds.fillStyle(0x3aaa48);
-    reeds.fillRect(side + 3, groundY - 14 - (i % 3) * 2, 2, 18);
-  }
-
-  // Wooden footbridge across the pond (walkable collider added in GameScene)
-  const bridgeY = groundY - 2;
-  const plankCount = Math.ceil(pondW / 28);
-  for (let i = 0; i < plankCount; i++) {
-    scene.add
-      .image(pondLeft + 14 + i * 28, bridgeY, "dock")
-      .setDepth(5)
-      .setOrigin(0.5, 0.5)
-      .setTint(0x6b4a28);
-  }
-  // Bridge rail posts
-  const rails = scene.add.graphics().setDepth(5);
-  rails.fillStyle(0x4a2f18);
-  rails.fillRect(pondLeft + 8, groundY - 22, 4, 20);
-  rails.fillRect(pondRight - 12, groundY - 22, 4, 20);
-  rails.fillRect(mid - 2, groundY - 22, 4, 20);
-  rails.lineStyle(2, 0x5c3a21, 0.9);
-  rails.lineBetween(pondLeft + 10, groundY - 18, pondRight - 10, groundY - 18);
-
-  // West dock into approach ocean (visual)
-  for (let i = 0; i < 6; i++) {
-    scene.add
-      .image(jungleLeft - 10 - i * 28, groundY, "dock")
-      .setDepth(5)
-      .setOrigin(0.5, 0);
-  }
-  // East dock into far ocean
-  for (let i = 0; i < 5; i++) {
-    scene.add
-      .image(jungleRight + 10 + i * 28, groundY, "dock")
-      .setDepth(5)
-      .setOrigin(0.5, 0);
-  }
-  const posts = scene.add.graphics().setDepth(5);
-  const postDepth = 480;
-  const drawPost = (x: number) => {
-    posts.fillStyle(0x3a2414);
-    posts.fillRect(x, groundY, 6, postDepth);
-    posts.fillStyle(0x5c3a21);
-    posts.fillRect(x, groundY, 2, postDepth);
-    posts.fillStyle(0x2a1a10, 0.55);
-    posts.fillRect(x - 1, groundY + 8, 8, 6);
-  };
-  for (let i = 0; i < 6; i++) drawPost(jungleLeft - 22 - i * 28);
-  for (let i = 0; i < 5; i++) drawPost(jungleRight + 18 + i * 28);
-
-  // Shore rocks
-  scene.add
-    .image(jungleLeft + 60, groundY - 4, "jungle_rock")
-    .setDepth(depth + 2)
-    .setOrigin(0.5, 1);
-  scene.add
-    .image(jungleLeft + 110, groundY - 2, "rock")
-    .setDepth(depth + 2)
-    .setScale(0.8);
-  scene.add
-    .image(jungleRight - 70, groundY - 4, "jungle_rock")
-    .setDepth(depth + 2)
-    .setOrigin(0.5, 1)
-    .setScale(1.1);
-
-  // Grass tufts
-  const tufts = scene.add.graphics().setDepth(depth + 2);
-  for (let i = 0; i < 120; i++) {
-    const x = Phaser.Math.Between(jungleLeft + 10, jungleRight - 15);
-    if (x > pondLeft && x < pondRight) continue;
-    const y = groundY - Phaser.Math.Between(2, 12);
-    tufts.fillStyle(Phaser.Math.RND.pick([0x1e6b32, 0x3aaa48, 0x145028]));
-    tufts.fillRect(x, y, 1, Phaser.Math.Between(5, 11));
-    tufts.fillRect(x + 2, y + 1, 1, Phaser.Math.Between(4, 8));
-  }
-
-  // Sign near west shore
-  const sign = scene.add.graphics().setDepth(depth + 3);
-  sign.fillStyle(0x5c3a21);
-  sign.fillRect(ox + 140, groundY - 48, 4, 48);
-  sign.fillStyle(0xc4a574);
-  sign.fillRect(ox + 118, groundY - 70, 48, 28);
-  sign.fillStyle(0x3a2414);
-  sign.fillRect(ox + 118, groundY - 70, 48, 3);
-  sign.fillRect(ox + 118, groundY - 45, 48, 3);
-  scene.add
-    .text(ox + 142, groundY - 56, "JUNGLE", {
-      fontFamily: "Georgia, serif",
-      fontSize: "10px",
-      color: "#2a1a10",
-    })
-    .setOrigin(0.5)
-    .setDepth(depth + 4);
+  placeSwamp(scene, groundY, jungleLeft, jungleRight, pondLeft, pondRight);
 }
