@@ -236,6 +236,22 @@ function makeTextures(scene: Phaser.Scene): void {
   g.fillRect(14, 16, 4, 5);
   g.generateTexture("equipment_bag", 32, 32);
 
+  // Bestiary book
+  g.clear();
+  g.fillStyle(0x000000, 0.2);
+  g.fillEllipse(16, 28, 22, 6);
+  g.fillStyle(0x5c3d1e);
+  g.fillRoundedRect(7, 6, 18, 22, 2);
+  g.fillStyle(0x8b5a2b);
+  g.fillRoundedRect(9, 7, 15, 20, 2);
+  g.fillStyle(0xf0e6d2);
+  g.fillRect(10, 9, 12, 16);
+  g.fillStyle(0xc4a86a);
+  g.fillRect(15, 6, 2, 22);
+  g.fillStyle(0xb8860b);
+  g.fillCircle(16, 17, 3);
+  g.generateTexture("bestiary_book", 32, 32);
+
   // Water tile
   g.clear();
   g.fillStyle(0x3a9ad9, 0.85);
@@ -282,6 +298,8 @@ export class BootScene extends Phaser.Scene {
     this.load.audio("music_island", "audio/music_island.wav");
     this.load.audio("music_ocean", "audio/music_ocean.wav");
     this.load.audio("music_jungle", "audio/music_jungle.wav");
+    this.load.audio("sfx_ding", "audio/sfx_ding.wav");
+    this.load.audio("sfx_ding_triple", "audio/sfx_ding_triple.wav");
   }
 
   create(): void {

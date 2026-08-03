@@ -154,22 +154,33 @@ export class MenuScene extends Phaser.Scene {
 
     const bodyText =
       "WHAT'S NEW\n\n" +
+      "• Bestiary (hotbar slot 3) — browse Ocean and\n" +
+      "  Swamp Pond. Caught fish are revealed; others\n" +
+      "  stay as black silhouettes until you catch them\n" +
+      "• Claim discovery rewards by rarity:\n" +
+      "  Common $30 → Mythical $1000\n" +
       "• Fishable swamp pond with six new catches:\n" +
       "  Swamp Frog, Whisker Catfish, White Perch,\n" +
       "  Mushroom Cluster, Arapaima, and Alligator\n" +
       "• Amber Rod ($7000) in Bluefin Tackle Shop —\n" +
       "  balanced luck, resilience, control, and depth\n" +
-      "• New catch mutations: Glowing, Earthly,\n" +
-      "  Starlight, Albino, and Neon\n" +
+      "  plus a chance at the Amber mutation (2× sell)\n" +
+      "• Catch mutations: Glowing, Earthly, Starlight,\n" +
+      "  Albino, Neon, Bloom, and Amber\n" +
       "• Big & Giant size effects on swimming fish\n" +
       "  (2× / 4× sell) — shown in water and inventory\n" +
+      "• Catch ding SFX — triple ding for epic+ or\n" +
+      "  mutated fish\n" +
       "• Inventory hover tooltips: name, rarity,\n" +
       "  mutation, size effect, and sell price\n" +
+      "• Right-click fish to Keep them (won't sell)\n" +
       "• Spawn luck retuned — epics, legendaries, and\n" +
       "  mythicals use fixed rates that rise with luck\n" +
       "• Pond fishing: max 3 fish, half ocean rates\n" +
       "  for epic / legendary / mythical\n\n" +
       "CHANGES / FIXES\n\n" +
+      "• Pond bestiary lists common → mythical order\n" +
+      "• Merchant sell-all confirms total value first\n" +
       "• Merchant no longer lists fish prices —\n" +
       "  check sell value in your inventory tooltip\n" +
       "• Bluefin shop rod list is scrollable\n" +

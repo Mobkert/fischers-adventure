@@ -9,7 +9,7 @@ import {
   RARITY_COLOR,
   rodMaxReachPx,
   DEPTH_PX_PER_METER,
-  rollCatchMutation,
+  rollRodMutation,
   FishMutationId,
   FishSizeId,
   luckApproachSpeedMult,
@@ -353,7 +353,9 @@ export class FishingSystem {
 
     if (success && this.targetFish) {
       this.targetFish.markCaught();
-      const mutation = rollCatchMutation(this.inventory.getEquippedRodId());
+      const mutation =
+        rollRodMutation(this.inventory.getEquippedRodId()) ??
+        this.targetFish.mutation;
       const size = this.targetFish.size;
       this.lastCatchMutation = mutation;
       this.lastCatchSize = size;
@@ -383,6 +385,10 @@ export class FishingSystem {
 
   getTargetSize(): FishSizeId {
     return this.targetFish?.size ?? "normal";
+  }
+
+  getTargetMutation(): FishMutationId | null {
+    return this.targetFish?.mutation ?? null;
   }
 
   cancelCast(): void {

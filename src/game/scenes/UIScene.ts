@@ -3,6 +3,7 @@ import { Hotbar } from "../ui/Hotbar";
 import { InventoryPanel } from "../ui/InventoryPanel";
 import { CatchMinigame } from "../ui/CatchMinigame";
 import { EquipmentBag } from "../ui/EquipmentBag";
+import { BestiaryPanel } from "../ui/BestiaryPanel";
 import { FishingTutorial } from "../ui/FishingTutorial";
 import { ITEMS, RARITY_COLOR, RARITY_LABEL, MUTATIONS, FISH_SIZES, sizeScale } from "../data/items";
 import { BoatMenu } from "../ui/BoatMenu";
@@ -11,6 +12,7 @@ import { WildflowerBuyPanel } from "../ui/WildflowerBuyPanel";
 import { SettingsMenu } from "../ui/SettingsMenu";
 import { InventorySystem } from "../systems/InventorySystem";
 import { FishingSystem } from "../systems/FishingSystem";
+import { playCatchSfx } from "../audio/CatchSfx";
 
 interface UISceneData {
   inventory: InventorySystem;
@@ -55,6 +57,7 @@ export class UIScene extends Phaser.Scene {
   private hotbar!: Hotbar;
   private inventoryPanel!: InventoryPanel;
   private equipmentBag!: EquipmentBag;
+  private bestiaryPanel!: BestiaryPanel;
   private tutorial!: FishingTutorial;
   private minigame!: CatchMinigame;
   private boatMenu!: BoatMenu;
@@ -103,6 +106,13 @@ export class UIScene extends Phaser.Scene {
         `Equipped ${ITEMS[this.inventory.getEquippedRodId()].name}`,
         "#ffe066"
       );
+      this.persistSave();
+    });
+    this.bestiaryPanel = new BestiaryPanel(this, this.inventory);
+    this.bestiaryPanel.setOnChanged((message) => {
+      this.coins.refresh();
+      this.persistSave();
+      this.showToast(message, "#ffe066");
     });
     this.minigame = new CatchMinigame(this);
     this.boatMenu = new BoatMenu(this);
@@ -169,12 +179,18 @@ export class UIScene extends Phaser.Scene {
         if (this.minigame.isActive() || this.boatMenu.visible) return;
         this.inventory.selectHotbar(i);
         this.hotbar.refresh();
-        // Slot 2 (index 1) = equipment bag
+        // Slot 2 (index 1) = equipment bag · Slot 3 (index 2) = bestiary
         if (i === 1) {
+          this.bestiaryPanel.setOpen(false);
           this.inventoryPanel.setOpen(false);
           this.equipmentBag.toggle();
-        } else if (this.equipmentBag.visible) {
+        } else if (i === 2) {
           this.equipmentBag.setOpen(false);
+          this.inventoryPanel.setOpen(false);
+          this.bestiaryPanel.toggle();
+        } else {
+          if (this.equipmentBag.visible) this.equipmentBag.setOpen(false);
+          if (this.bestiaryPanel.visible) this.bestiaryPanel.setOpen(false);
         }
       });
     }
@@ -183,6 +199,7 @@ export class UIScene extends Phaser.Scene {
       if (this.tutorial.visible) return;
       if (this.minigame.isActive() || this.boatMenu.visible) return;
       this.equipmentBag.setOpen(false);
+      this.bestiaryPanel.setOpen(false);
       this.inventoryPanel.toggle();
     });
 
@@ -196,6 +213,10 @@ export class UIScene extends Phaser.Scene {
         this.equipmentBag.setOpen(false);
         return;
       }
+      if (this.bestiaryPanel.visible) {
+        this.bestiaryPanel.setOpen(false);
+        return;
+      }
       if (this.inventoryPanel.visible) {
         this.inventoryPanel.setOpen(false);
       }
@@ -204,7 +225,12 @@ export class UIScene extends Phaser.Scene {
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W).on("down", () => {
       if (this.tutorial.visible) return;
       if (this.minigame.isActive() || this.boatMenu.visible) return;
-      if (this.inventoryPanel.visible || this.equipmentBag.visible) return;
+      if (
+        this.inventoryPanel.visible ||
+        this.equipmentBag.visible ||
+        this.bestiaryPanel.visible
+      )
+        return;
       if (this.tryEnterShop()) return;
       if (this.isNearBlueHouse()) {
         this.showToast("Can't enter right now.", "#ffaa66");
@@ -214,7 +240,12 @@ export class UIScene extends Phaser.Scene {
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.B).on("down", () => {
       if (this.tutorial.visible) return;
       if (this.minigame.isActive()) return;
-      if (this.inventoryPanel.visible || this.equipmentBag.visible) return;
+      if (
+        this.inventoryPanel.visible ||
+        this.equipmentBag.visible ||
+        this.bestiaryPanel.visible
+      )
+        return;
       if (this.boatMenu.visible) {
         this.boatMenu.setOpen(false);
         return;
@@ -229,7 +260,7 @@ export class UIScene extends Phaser.Scene {
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F).on("down", () => {
       if (this.tutorial.visible) return;
       if (this.minigame.isActive() || this.boatMenu.visible) return;
-      if (this.equipmentBag.visible) return;
+      if (this.equipmentBag.visible || this.bestiaryPanel.visible) return;
       // Confirm wildflower buy if stats panel is open
       if (this.wildflowerBuy.visible) {
         this.tryBuyJungleRod();
@@ -284,12 +315,16 @@ export class UIScene extends Phaser.Scene {
       const rod = this.inventory.getEquippedRodStats();
       const rarity = def.rarity ?? "common";
       const sizeMult = sizeScale(this.fishing.getTargetSize());
+      const worldMut = this.fishing.getTargetMutation();
+      const worldMutDef = worldMut ? MUTATIONS[worldMut] : null;
       this.equipmentBag.setOpen(false);
+      this.bestiaryPanel.setOpen(false);
       this.hotbar.setVisible(false);
       this.minigame.start(
         (success) => {
           this.hotbar.setVisible(true);
           this.hotbar.refresh();
+          const wasNew = !this.inventory.isBestiaryFound(speciesId);
           this.fishing.completeCatch(success);
           if (success) {
             const article = /^[aeiou]/i.test(def.name) ? "an" : "a";
@@ -298,13 +333,18 @@ export class UIScene extends Phaser.Scene {
             const size = this.fishing.lastCatchSize;
             const sizeDef =
               size && size !== "normal" ? FISH_SIZES[size] : null;
+            playCatchSfx(this, rarity, mut);
             const bits: string[] = [];
             if (mutDef) bits.push(mutDef.label.trim());
             if (sizeDef) bits.push(sizeDef.name);
             bits.push(RARITY_LABEL[rarity].trim());
             const prefix = bits.length ? `${bits.join(" ")} ` : "";
+            const newEntry =
+              wasNew && this.inventory.isBestiaryFound(speciesId)
+                ? " · New bestiary entry!"
+                : "";
             this.showToast(
-              `${prefix}Caught ${article} ${def.name}!`,
+              `${prefix}Caught ${article} ${def.name}!${newEntry}`,
               mutDef?.toastColor ?? RARITY_COLOR[rarity]
             );
             this.inventoryPanel.refresh();
@@ -322,6 +362,8 @@ export class UIScene extends Phaser.Scene {
           unstoppableJerky: def.unstoppableJerky ?? false,
           pauseChance: def.minigamePauseChance,
           facesLeft: def.facesLeft ?? false,
+          tint: worldMutDef?.tint ?? null,
+          glowColor: worldMutDef?.glowColor ?? null,
           displayWidth: Math.round((def.displayWidth ?? 48) * 0.9 * sizeMult),
           displayHeight: Math.round((def.displayHeight ?? 16) * 0.9 * sizeMult),
           control: rod.control,
@@ -347,6 +389,7 @@ export class UIScene extends Phaser.Scene {
       this.tutorial.visible ||
       this.inventoryPanel.visible ||
       this.equipmentBag.visible ||
+      this.bestiaryPanel.visible ||
       this.minigame.isActive() ||
       this.boatMenu.visible ||
       this.wildflowerBuy.visible ||

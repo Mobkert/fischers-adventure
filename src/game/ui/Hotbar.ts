@@ -57,7 +57,7 @@ export class Hotbar {
       if (slotData.itemId) {
         const def = ITEMS[slotData.itemId];
         this.icons[i].setTexture(def.textureKey).setVisible(true);
-        if (def.isEquipmentBag) {
+        if (def.isEquipmentBag || def.isBestiary) {
           this.icons[i].setDisplaySize(34, 34);
         } else if (def.isRod) {
           this.icons[i].setDisplaySize(40, 40);

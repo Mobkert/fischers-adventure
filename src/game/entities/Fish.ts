@@ -4,9 +4,12 @@ import {
   ItemId,
   FishHabitat,
   FishSizeId,
+  FishMutationId,
+  MUTATIONS,
   rollSpawnDepthOffset,
   rollFishSpecies,
   rollFishSize,
+  rollWorldMutation,
   sizeScale,
 } from "../data/items";
 
@@ -14,9 +17,12 @@ export type FishState = "idle" | "approaching" | "bitten" | "caught";
 
 export class Fish {
   sprite: Phaser.Physics.Arcade.Sprite;
+  /** Soft ADD-blend aura behind the fish for glowing mutations. */
+  private glow?: Phaser.GameObjects.Image;
   state: FishState = "idle";
   speciesId: ItemId;
   size: FishSizeId = "normal";
+  mutation: FishMutationId | null = null;
   readonly habitat: FishHabitat;
   private idleMinX: number;
   private idleMaxX: number;
@@ -61,6 +67,7 @@ export class Fish {
       speciesId ??
       rollFishSpecies(this.getLuck(), habitat, this.getExcludeSpecies(this));
     this.size = rollFishSize();
+    this.mutation = rollWorldMutation();
     const def = ITEMS[this.speciesId];
     this.idleMinX = idleMinX;
     this.idleMaxX = idleMaxX;
@@ -94,11 +101,43 @@ export class Fish {
   private applySpeciesVisual(): void {
     const def = ITEMS[this.speciesId];
     const s = sizeScale(this.size);
+    const w = (def.displayWidth ?? 48) * s;
+    const h = (def.displayHeight ?? 16) * s;
     this.sprite.setTexture(def.textureKey);
-    this.sprite.setDisplaySize(
-      (def.displayWidth ?? 48) * s,
-      (def.displayHeight ?? 16) * s
-    );
+    this.sprite.setDisplaySize(w, h);
+    this.applyMutationVisual(w, h);
+  }
+
+  private clearGlow(): void {
+    this.glow?.destroy();
+    this.glow = undefined;
+  }
+
+  private applyMutationVisual(w: number, h: number): void {
+    this.clearGlow();
+    this.sprite.clearTint();
+    if (!this.mutation) return;
+    const mut = MUTATIONS[this.mutation];
+    this.sprite.setTint(mut.tint);
+    if (mut.glowColor == null) return;
+
+    this.glow = this.sprite.scene.add
+      .image(this.sprite.x, this.sprite.y, this.sprite.texture.key)
+      .setDepth(this.sprite.depth - 1)
+      .setDisplaySize(w * 1.4, h * 1.55)
+      .setTint(mut.glowColor)
+      .setAlpha(0.5)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.glow.setFlipX(this.sprite.flipX);
+  }
+
+  private syncGlow(now: number): void {
+    if (!this.glow) return;
+    this.glow.setPosition(this.sprite.x, this.sprite.y);
+    this.glow.setFlipX(this.sprite.flipX);
+    this.glow.setVisible(this.sprite.visible);
+    const pulse = 0.38 + Math.sin(now / 220) * 0.18;
+    this.glow.setAlpha(this.sprite.alpha * pulse);
   }
 
   private applySpeciesSwimStats(): void {
@@ -187,6 +226,7 @@ export class Fish {
   markCaught(): void {
     this.state = "caught";
     this.sprite.setVisible(false);
+    this.glow?.setVisible(false);
     this.velX = 0;
     this.targetVelX = 0;
     this.sprite.setVelocity(0, 0);
@@ -201,6 +241,7 @@ export class Fish {
       this.getExcludeSpecies(this)
     );
     this.size = rollFishSize();
+    this.mutation = rollWorldMutation();
     this.applySpeciesVisual();
     this.applySpeciesSwimStats();
     this.sprite.setVisible(true);
@@ -216,6 +257,7 @@ export class Fish {
         this.baseY
       );
     }
+    this.syncGlow(this.sprite.scene.time.now);
     this.pickNewIdleBehavior(true);
     this.scheduleDespawn();
   }
@@ -254,13 +296,17 @@ export class Fish {
         this.beginDespawn();
         return;
       }
-      if (this.despawning) return;
+      if (this.despawning) {
+        this.syncGlow(now);
+        return;
+      }
       this.updateIdleSwim(now, dt);
     } else if (this.state === "approaching") {
       this.updateApproach(now, dt);
     } else if (this.state === "bitten") {
       this.clampUnderwater();
     }
+    this.syncGlow(now);
   }
 
   private beginDespawn(): void {
@@ -464,6 +510,7 @@ export class Fish {
   }
 
   destroy(): void {
+    this.clearGlow();
     this.sprite.destroy();
   }
 }

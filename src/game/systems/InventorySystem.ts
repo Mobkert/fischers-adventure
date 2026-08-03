@@ -12,6 +12,7 @@ import {
   FishSizeId,
   mutationSellMult,
   sizeSellMult,
+  BESTIARY_CLAIM_REWARD,
 } from "../data/items";
 import { SaveData, cloneSave, defaultSave } from "../save/SaveBank";
 
@@ -52,6 +53,8 @@ export class InventorySystem {
 
   selectedHotbarIndex = 0;
   coins = 0;
+  bestiaryFound: ItemId[] = [];
+  bestiaryClaimed: ItemId[] = [];
 
   constructor(save?: SaveData) {
     if (save) {
@@ -71,6 +74,13 @@ export class InventorySystem {
         size: null,
         keep: false,
       };
+      this.hotbar[2] = {
+        itemId: "bestiary",
+        count: 1,
+        mutation: null,
+        size: null,
+        keep: false,
+      };
     }
   }
 
@@ -82,9 +92,18 @@ export class InventorySystem {
     this.selectedHotbarIndex = save.selectedHotbarIndex;
     this.hotbar = save.hotbar.map((s) => ({ ...s }));
     this.bag = save.bag.map((s) => ({ ...s }));
-    // Keep bag / equipment bag consistent
+    this.bestiaryFound = [...save.bestiaryFound];
+    this.bestiaryClaimed = [...save.bestiaryClaimed];
+    // Keep bag / equipment bag / bestiary consistent
     this.hotbar[1] = {
       itemId: "equipment_bag",
+      count: 1,
+      mutation: null,
+      size: null,
+      keep: false,
+    };
+    this.hotbar[2] = {
+      itemId: "bestiary",
       count: 1,
       mutation: null,
       size: null,
@@ -118,6 +137,8 @@ export class InventorySystem {
       playerX: extra.playerX,
       playerY: extra.playerY,
       tutorialDone: extra.tutorialDone,
+      bestiaryFound: [...this.bestiaryFound],
+      bestiaryClaimed: [...this.bestiaryClaimed],
       updatedAt: Date.now(),
     });
   }
@@ -195,6 +216,7 @@ export class InventorySystem {
       const stack = this.findStack(itemId, mutation, size, false);
       if (stack) {
         stack.count += count;
+        this.discoverFish(itemId);
         return true;
       }
     }
@@ -206,7 +228,50 @@ export class InventorySystem {
     empty.mutation = mutation;
     empty.size = size;
     empty.keep = false;
+    this.discoverFish(itemId);
     return true;
+  }
+
+  isBestiaryFound(itemId: ItemId): boolean {
+    return this.bestiaryFound.includes(itemId);
+  }
+
+  isBestiaryClaimed(itemId: ItemId): boolean {
+    return this.bestiaryClaimed.includes(itemId);
+  }
+
+  /** Returns true if this is a newly discovered species. */
+  discoverFish(itemId: ItemId): boolean {
+    if (!FISH_ITEM_IDS.includes(itemId)) return false;
+    if (this.bestiaryFound.includes(itemId)) return false;
+    this.bestiaryFound.push(itemId);
+    return true;
+  }
+
+  claimBestiaryReward(itemId: ItemId): {
+    ok: boolean;
+    reward: number;
+    message: string;
+  } {
+    const def = ITEMS[itemId];
+    if (!def || def.sellPrice == null) {
+      return { ok: false, reward: 0, message: "Unknown fish." };
+    }
+    if (!this.isBestiaryFound(itemId)) {
+      return { ok: false, reward: 0, message: "You haven't caught this yet." };
+    }
+    if (this.isBestiaryClaimed(itemId)) {
+      return { ok: false, reward: 0, message: "Already claimed." };
+    }
+    const rarity = def.rarity ?? "common";
+    const reward = BESTIARY_CLAIM_REWARD[rarity];
+    this.bestiaryClaimed.push(itemId);
+    this.coins += reward;
+    return {
+      ok: true,
+      reward,
+      message: `Claimed $${reward} for discovering ${def.name}!`,
+    };
   }
 
   /** Toggle keep on a bag fish slot (won't be sold). Returns new keep state or null. */
@@ -254,6 +319,25 @@ export class InventorySystem {
           !s.keep
       )
       .reduce((sum, s) => sum + s.count, 0);
+  }
+
+  /** Total coins you'd earn selling all unlocked fish. */
+  getSellableFishValue(): number {
+    let earned = 0;
+    for (const slot of [...this.bag, ...this.hotbar]) {
+      if (
+        !slot.itemId ||
+        !FISH_ITEM_IDS.includes(slot.itemId) ||
+        slot.count <= 0 ||
+        slot.keep
+      ) {
+        continue;
+      }
+      const price = ITEMS[slot.itemId].sellPrice ?? 0;
+      const mult = mutationSellMult(slot.mutation) * sizeSellMult(slot.size);
+      earned += slot.count * price * mult;
+    }
+    return Math.round(earned);
   }
 
   getKeptFishCount(): number {

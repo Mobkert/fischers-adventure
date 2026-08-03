@@ -90,6 +90,21 @@ export class GameScene extends Phaser.Scene {
     this.inventory = new InventorySystem(save);
     this.tutorialDone = save.tutorialDone;
 
+    // One-shot cleanup of the Amber White Perch test grant
+    const clearKey = "fischers_cleared_amber_perch_test_v1";
+    if (!localStorage.getItem(clearKey)) {
+      for (const slot of [...this.inventory.bag, ...this.inventory.hotbar]) {
+        if (slot.itemId === "white_perch" && slot.mutation === "amber") {
+          slot.itemId = null;
+          slot.count = 0;
+          slot.mutation = null;
+          slot.size = null;
+          slot.keep = false;
+        }
+      }
+      localStorage.setItem(clearKey, "1");
+    }
+
     const worldWidth = this.farWaterRight + 80;
     const worldHeight = 720;
     // Deep water column — camera can dive far below the surface
@@ -282,7 +297,15 @@ export class GameScene extends Phaser.Scene {
 
   private isOnJungleIsland(): boolean {
     const x = this.player.sprite.x;
-    return x >= this.jungleWestDockEnd - 20 && x <= this.jungleEastDockEnd + 20;
+    // Wider than the dock tips so boarding overhang never falls into village clamp
+    return (
+      x >= this.jungleWestDockEnd - 80 && x <= this.jungleEastDockEnd + 80
+    );
+  }
+
+  private isOnVillageIsland(): boolean {
+    const x = this.player.sprite.x;
+    return x >= this.westDockEnd - 80 && x <= this.dockEnd + 80;
   }
 
   private isBoatNearEastPort(): boolean {
@@ -385,7 +408,8 @@ export class GameScene extends Phaser.Scene {
           this.persistSave();
           return result;
         },
-        this.inventory.getKeptFishCount()
+        this.inventory.getKeptFishCount(),
+        this.inventory.getSellableFishValue()
       );
     };
 
@@ -900,6 +924,7 @@ export class GameScene extends Phaser.Scene {
 
   private clampPlayerToLand(): void {
     const boat = this.sailboat && !this.sailboat.occupied ? this.sailboat : null;
+    const x = this.player.sprite.x;
 
     if (this.isOnJungleIsland()) {
       let minX = this.jungleWestDockEnd + 16;
@@ -918,6 +943,21 @@ export class GameScene extends Phaser.Scene {
         this.player.sprite.x = minX;
         this.player.sprite.setVelocityX(0);
       }
+      return;
+    }
+
+    // Stranded between islands — pull to nearest land (never village-clamp swamp coords)
+    if (x > this.dockEnd + 80 && x < this.jungleWestDockEnd - 80) {
+      const mid = (this.dockEnd + this.jungleWestDockEnd) / 2;
+      this.player.sprite.x =
+        x < mid ? this.dockEnd - 16 : this.jungleWestDockEnd + 16;
+      this.player.sprite.setVelocityX(0);
+      return;
+    }
+
+    if (!this.isOnVillageIsland() && x >= this.jungleWestDockEnd - 80) {
+      this.player.sprite.x = this.jungleWestDockEnd + 16;
+      this.player.sprite.setVelocityX(0);
       return;
     }
 

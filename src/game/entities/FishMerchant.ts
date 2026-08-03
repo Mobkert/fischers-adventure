@@ -47,7 +47,8 @@ export class FishMerchant {
   interact(
     fishCount: number,
     onSell: () => { sold: number; earned: number },
-    keptCount = 0
+    keptCount = 0,
+    offerValue = 0
   ): boolean {
     if (this.mode === "idle" || this.mode === "sold" || this.mode === "nofish") {
       if (fishCount <= 0) {
@@ -64,7 +65,7 @@ export class FishMerchant {
       this.mode = "offer";
       this.talking = true;
       this.showBubble(
-        "Would you like to sell your fish?\n\n[F] Sell all    [X] No thanks",
+        `Would you like to sell all your fish for $${offerValue}?\n\n[F] Sell all    [X] No thanks`,
         "#ffffff"
       );
       return true;

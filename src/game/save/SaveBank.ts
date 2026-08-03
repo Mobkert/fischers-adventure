@@ -25,6 +25,10 @@ export interface SaveData {
   playerX: number;
   playerY: number;
   tutorialDone: boolean;
+  /** Fish species discovered in the bestiary. */
+  bestiaryFound: ItemId[];
+  /** Discovered fish whose unlock reward was already claimed. */
+  bestiaryClaimed: ItemId[];
   updatedAt: number;
 }
 
@@ -83,10 +87,26 @@ function cloneSlots(raw: unknown, size: number): InventorySlot[] {
   return Array.from({ length: size }, (_, i) => cloneSlot(arr[i]));
 }
 
+function parseFishIdList(raw: unknown): ItemId[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ItemId[] = [];
+  for (const id of raw) {
+    if (
+      typeof id === "string" &&
+      id in ITEMS &&
+      ITEMS[id as ItemId].sellPrice != null
+    ) {
+      out.push(id as ItemId);
+    }
+  }
+  return [...new Set(out)];
+}
+
 export function defaultSave(): SaveData {
   const hotbar = Array.from({ length: HOTBAR_SIZE }, emptySlot);
   hotbar[0] = { itemId: "starter_rod", count: 1, mutation: null, size: null, keep: false };
   hotbar[1] = { itemId: "equipment_bag", count: 1, mutation: null, size: null, keep: false };
+  hotbar[2] = { itemId: "bestiary", count: 1, mutation: null, size: null, keep: false };
   return {
     v: 1,
     coins: 0,
@@ -98,6 +118,8 @@ export function defaultSave(): SaveData {
     playerX: DEFAULT_PLAYER_X,
     playerY: DEFAULT_PLAYER_Y,
     tutorialDone: false,
+    bestiaryFound: [],
+    bestiaryClaimed: [],
     updatedAt: Date.now(),
   };
 }
@@ -126,11 +148,23 @@ export function cloneSave(raw: unknown): SaveData {
   if (!uniqueRods.includes(equipped)) equipped = uniqueRods[0];
 
   const hotbar = cloneSlots(s.hotbar, HOTBAR_SIZE);
-  // Always keep equipment bag on slot 2
+  // Always keep equipment bag on slot 2 and bestiary on slot 3
   hotbar[1] = { itemId: "equipment_bag", count: 1, mutation: null, size: null, keep: false };
+  hotbar[2] = { itemId: "bestiary", count: 1, mutation: null, size: null, keep: false };
   if (!hotbar[0].itemId || !ITEMS[hotbar[0].itemId]?.isRod) {
     hotbar[0] = { itemId: equipped, count: 1, mutation: null, size: null, keep: false };
   }
+
+  const bag = cloneSlots(s.bag, INVENTORY_SIZE);
+  let bestiaryFound = parseFishIdList(s.bestiaryFound);
+  const bestiaryClaimed = parseFishIdList(s.bestiaryClaimed);
+  // Retroactively unlock any fish already in inventory (pre-bestiary saves)
+  for (const slot of [...hotbar, ...bag]) {
+    if (slot.itemId && ITEMS[slot.itemId]?.sellPrice != null) {
+      if (!bestiaryFound.includes(slot.itemId)) bestiaryFound.push(slot.itemId);
+    }
+  }
+  bestiaryFound = [...new Set(bestiaryFound)];
 
   return {
     v: 1,
@@ -138,7 +172,7 @@ export function cloneSave(raw: unknown): SaveData {
     ownedRods: uniqueRods,
     equippedRodId: equipped,
     hotbar,
-    bag: cloneSlots(s.bag, INVENTORY_SIZE),
+    bag,
     selectedHotbarIndex: Math.max(
       0,
       Math.min(HOTBAR_SIZE - 1, Number(s.selectedHotbarIndex) || 0)
@@ -150,6 +184,8 @@ export function cloneSave(raw: unknown): SaveData {
       ? Number(s.playerY)
       : DEFAULT_PLAYER_Y,
     tutorialDone: Boolean(s.tutorialDone),
+    bestiaryFound,
+    bestiaryClaimed,
     updatedAt: Number(s.updatedAt) || Date.now(),
   };
 }

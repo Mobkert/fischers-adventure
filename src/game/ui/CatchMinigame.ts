@@ -5,6 +5,7 @@ export class CatchMinigame {
   private greyBar!: Phaser.GameObjects.Rectangle;
   private whiteBar!: Phaser.GameObjects.Rectangle;
   private fishIcon!: Phaser.GameObjects.Image;
+  private fishGlow!: Phaser.GameObjects.Image;
   private progressFill!: Phaser.GameObjects.Rectangle;
   private progressBg!: Phaser.GameObjects.Rectangle;
   private hint!: Phaser.GameObjects.Text;
@@ -31,6 +32,7 @@ export class CatchMinigame {
   /** Override idle pause chance in soft AI (null = default 0.2). */
   private pauseChance: number | null = null;
   private facesLeft = false;
+  private glowColor: number | null = null;
   private progress = 0.2;
   private fillRate = 0.12; // ~6.5s of solid tracking from 20% → 100%
   private readonly baseFillRate = 0.12;
@@ -75,6 +77,11 @@ export class CatchMinigame {
       .rectangle(0, -8, this.whiteWidth, this.barHeight - 10, 0xffffff, 0.95)
       .setStrokeStyle(1, 0xcccccc);
 
+    this.fishGlow = scene.add
+      .image(0, -8, "fish")
+      .setDisplaySize(52, 20)
+      .setAlpha(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
     this.fishIcon = scene.add.image(0, -8, "fish").setDisplaySize(42, 14);
 
     this.progressBg = scene.add
@@ -97,6 +104,7 @@ export class CatchMinigame {
       title,
       this.greyBar,
       this.whiteBar,
+      this.fishGlow,
       this.fishIcon,
       this.progressBg,
       this.progressFill,
@@ -132,6 +140,10 @@ export class CatchMinigame {
       pauseChance?: number;
       /** Texture faces left by default. */
       facesLeft?: boolean;
+      /** Body tint for mutations. */
+      tint?: number | null;
+      /** Glow aura color for mutations. */
+      glowColor?: number | null;
     }
   ): void {
     this.onResult = onResult;
@@ -146,6 +158,7 @@ export class CatchMinigame {
     this.pauseChance =
       options?.pauseChance != null ? options.pauseChance : null;
     this.facesLeft = !!options?.facesLeft;
+    this.glowColor = options?.glowColor ?? null;
 
     const control = options?.control ?? 0;
     const resilience = options?.resilience ?? 0;
@@ -178,11 +191,25 @@ export class CatchMinigame {
 
     this.fishAccel = 220 * this.speedMult;
     this.fishMaxSpeed = 155 * this.speedMult;
-    this.fishIcon.setTexture(options?.textureKey ?? "fish");
-    this.fishIcon.setDisplaySize(
-      options?.displayWidth ?? 42,
-      options?.displayHeight ?? 14
-    );
+    const tex = options?.textureKey ?? "fish";
+    const dw = options?.displayWidth ?? 42;
+    const dh = options?.displayHeight ?? 14;
+    this.fishIcon.setTexture(tex);
+    this.fishIcon.setDisplaySize(dw, dh);
+    if (options?.tint != null) {
+      this.fishIcon.setTint(options.tint);
+    } else {
+      this.fishIcon.clearTint();
+    }
+    this.fishGlow.setTexture(tex);
+    this.fishGlow.setDisplaySize(dw * 1.4, dh * 1.55);
+    if (this.glowColor != null) {
+      this.fishGlow.setTint(this.glowColor);
+      this.fishGlow.setAlpha(0.5);
+    } else {
+      this.fishGlow.clearTint();
+      this.fishGlow.setAlpha(0);
+    }
     const startDir = Math.random() > 0.5 ? 1 : -1;
     this.fishTargetVel =
       startDir * Phaser.Math.FloatBetween(60, 110) * this.speedMult;
@@ -453,10 +480,15 @@ export class CatchMinigame {
   private syncVisuals(): void {
     this.whiteBar.setX(this.whiteX);
     this.fishIcon.setX(this.fishX);
+    this.fishGlow.setX(this.fishX);
     if (Math.abs(this.fishVel) > 8) {
-      this.fishIcon.setFlipX(
-        this.facesLeft ? this.fishVel > 0 : this.fishVel < 0
-      );
+      const flip = this.facesLeft ? this.fishVel > 0 : this.fishVel < 0;
+      this.fishIcon.setFlipX(flip);
+      this.fishGlow.setFlipX(flip);
+    }
+    if (this.glowColor != null) {
+      const pulse = 0.38 + Math.sin(Date.now() / 220) * 0.18;
+      this.fishGlow.setAlpha(pulse);
     }
     this.progressFill.width = this.barWidth * this.progress;
   }

@@ -5,6 +5,7 @@ export type ItemId =
   | "amber_rod"
   | "wildflower_rod"
   | "equipment_bag"
+  | "bestiary"
   | "sockeye_salmon"
   | "flounder"
   | "yellowfin_tuna"
@@ -24,7 +25,8 @@ export type FishMutationId =
   | "earthly"
   | "starlight"
   | "albino"
-  | "neon";
+  | "neon"
+  | "amber";
 
 export type FishSizeId = "normal" | "big" | "giant";
 
@@ -43,11 +45,13 @@ export interface MutationDef {
   name: string;
   /** Multiplier on base sell price. */
   sellMult: number;
-  /** Phaser tint for inventory icons. */
+  /** Phaser tint for the fish body. */
   tint: number;
+  /** Soft glow aura color (ADD blend) around the fish. */
+  glowColor?: number;
   toastColor: string;
   label: string;
-  /** World-drop chance on catch (0–1). Rod mutations use rodMutation instead. */
+  /** World-drop chance on spawn (0–1). Rod mutations use rodMutation instead. */
   chance?: number;
 }
 
@@ -57,6 +61,7 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     name: "Bloom",
     sellMult: 3,
     tint: 0xff9ec8,
+    glowColor: 0xffb6d9,
     toastColor: "#ff9ec8",
     label: "Bloom! ",
   },
@@ -64,8 +69,9 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     id: "glowing",
     name: "Glowing",
     sellMult: 2,
-    tint: 0x88ffaa,
-    toastColor: "#88ffaa",
+    tint: 0xfff0a0,
+    glowColor: 0xffe066,
+    toastColor: "#ffe066",
     label: "Glowing! ",
     chance: 0.02,
   },
@@ -73,8 +79,9 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     id: "earthly",
     name: "Earthly",
     sellMult: 4,
-    tint: 0xc4a06a,
-    toastColor: "#c4a06a",
+    tint: 0xa67c52,
+    glowColor: 0x5a9a4a,
+    toastColor: "#a67c52",
     label: "Earthly! ",
     chance: 0.01,
   },
@@ -82,8 +89,9 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     id: "starlight",
     name: "Starlight",
     sellMult: 8,
-    tint: 0xd4c4ff,
-    toastColor: "#d4c4ff",
+    tint: 0xb48cff,
+    glowColor: 0xffb84d,
+    toastColor: "#b48cff",
     label: "Starlight! ",
     chance: 0.0025,
   },
@@ -91,7 +99,7 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     id: "albino",
     name: "Albino",
     sellMult: 1.5,
-    tint: 0xf5f0e8,
+    tint: 0xffffff,
     toastColor: "#f5f0e8",
     label: "Albino! ",
     chance: 0.04,
@@ -100,10 +108,20 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     id: "neon",
     name: "Neon",
     sellMult: 3,
-    tint: 0x66ffee,
-    toastColor: "#66ffee",
+    tint: 0xff66cc,
+    glowColor: 0x39ff14,
+    toastColor: "#ff66cc",
     label: "Neon! ",
     chance: 0.015,
+  },
+  amber: {
+    id: "amber",
+    name: "Amber",
+    sellMult: 2,
+    tint: 0xff8c2a,
+    glowColor: 0xffb040,
+    toastColor: "#ff8c2a",
+    label: "Amber! ",
   },
 };
 
@@ -161,6 +179,7 @@ export interface ItemDef {
   shop?: "village" | "jungle";
   isRod?: boolean;
   isEquipmentBag?: boolean;
+  isBestiary?: boolean;
   rodStats?: RodStats;
   /** Mutation this rod can apply on a successful catch. */
   rodMutation?: RodMutationGrant;
@@ -319,7 +338,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "amber_rod",
     name: "Amber Rod",
     description:
-      "A balanced yellow rod — solid all-rounder for pond and ocean.",
+      "A balanced yellow rod — 15% Amber mutation (2× sell, orange glow).",
     stackable: false,
     textureKey: "rod_amber",
     isRod: true,
@@ -332,6 +351,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       progressSpeed: 0,
       lineDepth: 2,
     },
+    rodMutation: { mutation: "amber", chance: 0.15 },
   },
   wildflower_rod: {
     id: "wildflower_rod",
@@ -359,6 +379,14 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     stackable: false,
     textureKey: "equipment_bag",
     isEquipmentBag: true,
+  },
+  bestiary: {
+    id: "bestiary",
+    name: "Bestiary",
+    description: "A book of waters and the fish you've discovered.",
+    stackable: false,
+    textureKey: "bestiary_book",
+    isBestiary: true,
   },
   sockeye_salmon: {
     id: "sockeye_salmon",
@@ -559,6 +587,59 @@ export const FISH_ITEM_IDS: ItemId[] = (
   Object.keys(ITEMS) as ItemId[]
 ).filter((id) => ITEMS[id].sellPrice != null);
 
+/** Coins claimed the first time a fish is unlocked in the bestiary. */
+export const BESTIARY_CLAIM_REWARD: Record<FishRarity, number> = {
+  common: 30,
+  uncommon: 75,
+  rare: 150,
+  epic: 350,
+  legendary: 650,
+  mythical: 1000,
+};
+
+export interface BestiaryArea {
+  id: FishHabitat;
+  name: string;
+  subtitle: string;
+  fishIds: ItemId[];
+}
+
+const RARITY_SORT_ORDER: Record<FishRarity, number> = {
+  common: 0,
+  uncommon: 1,
+  rare: 2,
+  epic: 3,
+  legendary: 4,
+  mythical: 5,
+};
+
+function fishIdsByHabitat(habitat: FishHabitat): ItemId[] {
+  return FISH_ITEM_IDS.filter((id) =>
+    habitat === "ocean"
+      ? (ITEMS[id].habitat ?? "ocean") === "ocean"
+      : ITEMS[id].habitat === habitat
+  ).sort(
+    (a, b) =>
+      RARITY_SORT_ORDER[ITEMS[a].rarity ?? "common"] -
+      RARITY_SORT_ORDER[ITEMS[b].rarity ?? "common"]
+  );
+}
+
+export const BESTIARY_AREAS: BestiaryArea[] = [
+  {
+    id: "ocean",
+    name: "Ocean",
+    subtitle: "Open waters beyond the docks",
+    fishIds: fishIdsByHabitat("ocean"),
+  },
+  {
+    id: "pond",
+    name: "Swamp Pond",
+    subtitle: "Murky waters in the jungle swamp",
+    fishIds: fishIdsByHabitat("pond"),
+  },
+];
+
 export const ROD_ITEM_IDS: ItemId[] = (
   Object.keys(ITEMS) as ItemId[]
 ).filter((id) => ITEMS[id].isRod);
@@ -709,19 +790,17 @@ export function rollFishSize(): FishSizeId {
   return "normal";
 }
 
-/** Rod mutation first, otherwise a world random mutation. */
-export function rollCatchMutation(rodId: ItemId): FishMutationId | null {
-  const grant = ITEMS[rodId]?.rodMutation;
-  if (grant && Math.random() < grant.chance) return grant.mutation;
+/** World mutations that can appear on swimming fish (not rod-only). */
+const ROD_ONLY_MUTATIONS = new Set<FishMutationId>(["bloom", "amber"]);
 
+/** Roll a world mutation when a fish appears in the water. */
+export function rollWorldMutation(): FishMutationId | null {
   const world: { id: FishMutationId; chance: number }[] = (
     Object.values(MUTATIONS) as MutationDef[]
   )
-    .filter((m) => m.chance != null && m.id !== "bloom")
+    .filter((m) => m.chance != null && !ROD_ONLY_MUTATIONS.has(m.id))
     .map((m) => ({ id: m.id, chance: m.chance! }));
 
-  // Sequential independent rolls — first hit wins (rarer later in list)
-  // Order by chance descending so common mutations checked first
   world.sort((a, b) => b.chance - a.chance);
   for (const entry of world) {
     if (Math.random() < entry.chance) return entry.id;
@@ -729,9 +808,23 @@ export function rollCatchMutation(rodId: ItemId): FishMutationId | null {
   return null;
 }
 
-/** @deprecated use rollCatchMutation */
+/** Rod mutation only (Bloom / Amber). Does not roll world mutations. */
 export function rollRodMutation(rodId: ItemId): FishMutationId | null {
-  return rollCatchMutation(rodId);
+  const grant = ITEMS[rodId]?.rodMutation;
+  if (!grant) return null;
+  if (Math.random() < grant.chance) return grant.mutation;
+  return null;
+}
+
+/**
+ * Final catch mutation: rod grant first, else the fish's world mutation.
+ * @deprecated Prefer rollRodMutation + fish.mutation
+ */
+export function rollCatchMutation(
+  rodId: ItemId,
+  worldMutation?: FishMutationId | null
+): FishMutationId | null {
+  return rollRodMutation(rodId) ?? worldMutation ?? null;
 }
 
 /**
