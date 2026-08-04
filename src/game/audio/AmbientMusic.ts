@@ -156,3 +156,15 @@ export function musicZoneForX(
   }
   return "ocean";
 }
+
+/** Display name when entering a biome. */
+export function areaNameForZone(zone: MusicZone): string {
+  switch (zone) {
+    case "island":
+      return "Starter Island";
+    case "jungle":
+      return "Swamp Island";
+    case "ocean":
+      return "Ocean";
+  }
+}

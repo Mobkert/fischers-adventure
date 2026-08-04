@@ -10,6 +10,7 @@ import { BoatMenu } from "../ui/BoatMenu";
 import { CoinDisplay } from "../ui/CoinDisplay";
 import { WildflowerBuyPanel } from "../ui/WildflowerBuyPanel";
 import { SettingsMenu } from "../ui/SettingsMenu";
+import { OceanMarkers, OceanMarkerInfo } from "../ui/OceanMarkers";
 import { InventorySystem } from "../systems/InventorySystem";
 import { FishingSystem } from "../systems/FishingSystem";
 import { WeatherSystem } from "../systems/WeatherSystem";
@@ -20,7 +21,6 @@ interface UISceneData {
   fishing: FishingSystem;
   weather: WeatherSystem;
   getPointerDown: () => boolean;
-  isOnPort: () => boolean;
   canOpenBoatMenu: () => boolean;
   spawnSailboat: () => void;
   tryBoardOrExitBoat: () => boolean;
@@ -64,7 +64,6 @@ export class UIScene extends Phaser.Scene {
   private fishing!: FishingSystem;
   private weather!: WeatherSystem;
   private getPointerDown!: () => boolean;
-  private isOnPort!: () => boolean;
   private canOpenBoatMenu!: () => boolean;
   private spawnSailboat!: () => void;
   private tryBoardOrExitBoat!: () => boolean;
@@ -94,10 +93,11 @@ export class UIScene extends Phaser.Scene {
   private wildflowerBuy!: WildflowerBuyPanel;
   private settings!: SettingsMenu;
   private coins!: CoinDisplay;
-  private statusText!: Phaser.GameObjects.Text;
+  private oceanMarkers!: OceanMarkers;
   private promptText!: Phaser.GameObjects.Text;
   private toast?: Phaser.GameObjects.Text;
   private weatherBanner?: Phaser.GameObjects.Text;
+  private areaBanner?: Phaser.GameObjects.Text;
 
   constructor() {
     super("UIScene");
@@ -108,7 +108,6 @@ export class UIScene extends Phaser.Scene {
     this.fishing = data.fishing;
     this.weather = data.weather;
     this.getPointerDown = data.getPointerDown;
-    this.isOnPort = data.isOnPort;
     this.canOpenBoatMenu = data.canOpenBoatMenu;
     this.spawnSailboat = data.spawnSailboat;
     this.tryBoardOrExitBoat = data.tryBoardOrExitBoat;
@@ -164,6 +163,7 @@ export class UIScene extends Phaser.Scene {
     );
     this.coins = new CoinDisplay(this, this.inventory);
     this.coins.setWeather(this.weather);
+    this.oceanMarkers = new OceanMarkers(this);
     this.weather.onWeatherChange = (id, name) => {
       this.coins.refresh();
       if (id === "clear") {
@@ -192,17 +192,6 @@ export class UIScene extends Phaser.Scene {
       this.spawnSailboat();
       this.showToast("Sailboat launched! Press F near it to board.", "#7ec8e3");
     });
-
-    this.statusText = this.add
-      .text(16, 16, "", {
-        fontFamily: "Arial",
-        fontSize: "16px",
-        color: "#ffffff",
-        backgroundColor: "#00000088",
-        padding: { x: 8, y: 6 },
-      })
-      .setScrollFactor(0)
-      .setDepth(100);
 
     this.promptText = this.add
       .text(this.scale.width / 2, this.scale.height - 100, "", {
@@ -582,6 +571,50 @@ export class UIScene extends Phaser.Scene {
     });
   }
 
+  showAreaBanner(name: string): void {
+    if (this.areaBanner) {
+      this.tweens.killTweensOf(this.areaBanner);
+      this.areaBanner.destroy();
+      this.areaBanner = undefined;
+    }
+    this.areaBanner = this.add
+      .text(this.scale.width / 2, 40, name, {
+        fontFamily: "Georgia, serif",
+        fontSize: "28px",
+        color: "#f0e6d2",
+        stroke: "#000000",
+        strokeThickness: 6,
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(164)
+      .setAlpha(0);
+
+    this.tweens.add({
+      targets: this.areaBanner,
+      alpha: 1,
+      duration: 250,
+      onComplete: () => {
+        this.time.delayedCall(2000, () => {
+          if (!this.areaBanner) return;
+          this.tweens.add({
+            targets: this.areaBanner,
+            alpha: 0,
+            duration: 500,
+            onComplete: () => {
+              this.areaBanner?.destroy();
+              this.areaBanner = undefined;
+            },
+          });
+        });
+      },
+    });
+  }
+
+  setOceanMarkers(markers: OceanMarkerInfo[] | null): void {
+    this.oceanMarkers.setMarkers(markers);
+  }
+
   setPrompt(text: string | null): void {
     if (!text) {
       this.promptText.setVisible(false);
@@ -591,13 +624,6 @@ export class UIScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    const rodId = this.inventory.getEquippedRodId();
-    const fishCount = this.inventory.getFishCount();
-    const state = this.fishing.state;
-    const port = this.isOnPort() ? " · Port" : "";
-    this.statusText.setText(
-      `Rod: ${ITEMS[rodId].name}  |  Fish: ${fishCount}  |  ${state}${port}`
-    );
     this.coins.refresh();
 
     if (this.minigame.isActive()) {

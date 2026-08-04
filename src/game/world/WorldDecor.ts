@@ -1196,3 +1196,254 @@ export function placeJungle(
 ): void {
   placeSwamp(scene, groundY, jungleLeft, jungleRight, pondLeft, pondRight);
 }
+
+/**
+ * Coral reef — clearer light-blue water, sand floor, spaced tall coral.
+ * blendEnd (east of reefRight) is a clean light→dark water transition.
+ * No fish spawn here (handled by GameScene zones).
+ */
+export function placeCoralReef(
+  scene: Phaser.Scene,
+  surfaceY: number,
+  reefLeft: number,
+  reefRight: number,
+  blendEnd: number
+): void {
+  const w = reefRight - reefLeft;
+  const depth = 200;
+  const sandY = surfaceY + depth;
+  const blendW = Math.max(80, blendEnd - reefRight);
+
+  // Sand bed under the reef — wide, layered shelf
+  const sand = scene.add.graphics().setDepth(3);
+  sand.fillStyle(0xf2e4b4, 1);
+  sand.fillRect(reefLeft - 20, sandY - 10, w + 40, 40);
+  sand.fillStyle(0xe8d8a0, 1);
+  sand.fillRect(reefLeft, sandY - 6, w, 90);
+  sand.fillStyle(0xd4c080, 1);
+  sand.fillRect(reefLeft, sandY + 40, w, 80);
+  sand.fillStyle(0xc4b070, 1);
+  sand.fillRect(reefLeft, sandY + 100, w, 70);
+  sand.fillStyle(0xb8a060, 0.95);
+  sand.fillRect(reefLeft, sandY + 155, w, 50);
+  // Dune / ripple patches
+  sand.fillStyle(0xc8b070, 0.9);
+  for (let i = 0; i < 36; i++) {
+    const sx = reefLeft + 24 + (i / 35) * (w - 48) + ((i * 19) % 28) - 14;
+    sand.fillEllipse(sx, sandY + 8 + (i % 6) * 14, 26 + (i % 4) * 8, 8);
+  }
+  sand.fillStyle(0xfff6d0, 0.28);
+  for (let i = 0; i < 14; i++) {
+    sand.fillEllipse(
+      reefLeft + 40 + (i / 13) * (w - 80),
+      sandY + 20 + (i % 5) * 16,
+      32,
+      11
+    );
+  }
+  // Sand fades through the blend zone (deeper shelf)
+  for (let i = 0; i < 10; i++) {
+    const t = i / 9;
+    sand.fillStyle(0xc8b070, 0.6 * (1 - t));
+    sand.fillRect(
+      reefRight + (i / 10) * blendW,
+      sandY - 4,
+      blendW / 10 + 2,
+      120
+    );
+  }
+
+  // Light reef water
+  const water = scene.add.graphics().setDepth(4);
+  water.fillStyle(0x6ec4e4, 0.32);
+  water.fillRect(reefLeft, surfaceY, w, 36);
+  water.fillStyle(0x4eb0d4, 0.4);
+  water.fillRect(reefLeft, surfaceY + 30, w, 50);
+  water.fillStyle(0x3a9cc4, 0.45);
+  water.fillRect(reefLeft, surfaceY + 72, w, 60);
+  water.fillStyle(0x2a88b0, 0.4);
+  water.fillRect(reefLeft, surfaceY + 125, w, depth - 125 + 16);
+  water.fillStyle(0x90d4e8, 0.12);
+  water.fillRect(reefLeft, sandY - 28, w, 32);
+
+  // Clean light → dark blend with deep water under the transition
+  const steps = 14;
+  const blendDeep = 520;
+  for (let i = 0; i < steps; i++) {
+    const t = i / (steps - 1);
+    const x = reefRight + (i / steps) * blendW;
+    const seg = blendW / steps + 1.5;
+    const r = Math.round(110 + (46 - 110) * t);
+    const g = Math.round(196 + (111 - 196) * t);
+    const b = Math.round(228 + (159 - 228) * t);
+    water.fillStyle((r << 16) | (g << 8) | b, 0.32 + t * 0.38);
+    water.fillRect(x, surfaceY, seg, 48);
+    const r2 = Math.round(78 + (31 - 78) * t);
+    const g2 = Math.round(176 + (111 - 176) * t);
+    const b2 = Math.round(212 + (159 - 212) * t);
+    water.fillStyle((r2 << 16) | (g2 << 8) | b2, 0.4 + t * 0.35);
+    water.fillRect(x, surfaceY + 40, seg, 120);
+    const r3 = Math.round(58 + (20 - 58) * t);
+    const g3 = Math.round(152 + (90 - 152) * t);
+    const b3 = Math.round(196 + (130 - 196) * t);
+    water.fillStyle((r3 << 16) | (g3 << 8) | b3, 0.45 + t * 0.4);
+    water.fillRect(x, surfaceY + 140, seg, 160);
+    // Extra depth under the transition
+    const r4 = Math.round(42 + (12 - 42) * t);
+    const g4 = Math.round(110 + (61 - 110) * t);
+    const b4 = Math.round(160 + (92 - 160) * t);
+    water.fillStyle((r4 << 16) | (g4 << 8) | b4, 0.55 + t * 0.35);
+    water.fillRect(x, surfaceY + 280, seg, 140);
+    const r5 = Math.round(28 + (7 - 28) * t);
+    const g5 = Math.round(70 + (30 - 70) * t);
+    const b5 = Math.round(110 + (48 - 110) * t);
+    water.fillStyle((r5 << 16) | (g5 << 8) | b5, 0.7 + t * 0.25);
+    water.fillRect(x, surfaceY + 400, seg, blendDeep - 400);
+  }
+
+  // Sparse surface sparkles
+  const strips = Math.max(4, Math.floor(w / 120));
+  for (let i = 0; i < strips; i++) {
+    const strip = scene.add
+      .rectangle(
+        reefLeft + 50 + i * 120,
+        surfaceY + 4,
+        36,
+        2,
+        0xe8f8ff,
+        0.45
+      )
+      .setDepth(6);
+    scene.tweens.add({
+      targets: strip,
+      alpha: 0.1,
+      x: strip.x + 10,
+      duration: 1800 + i * 100,
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  const coralColors = [
+    { tip: 0xff6b9d, mid: 0xe8457a, base: 0xb8285a },
+    { tip: 0xff9a5a, mid: 0xf07030, base: 0xc05020 },
+    { tip: 0xc77dff, mid: 0x9b4de0, base: 0x6a2aad },
+    { tip: 0x5dffb0, mid: 0x2ecf88, base: 0x1a9a62 },
+    { tip: 0xffd56a, mid: 0xf0b020, base: 0xc08010 },
+    { tip: 0xff5c7a, mid: 0xe03050, base: 0xa01838 },
+  ];
+
+  // Main clusters + a few mid-size fillers
+  const clusterCount = Math.max(6, Math.floor(w / 160));
+  for (let i = 0; i < clusterCount; i++) {
+    const cx =
+      reefLeft + 70 + (i / Math.max(1, clusterCount - 1)) * (w - 140);
+    const palette = coralColors[i % coralColors.length];
+    const tall = 70 + (i % 4) * 18;
+    drawTallCoral(scene, cx, sandY - 2, tall, palette, i);
+  }
+  const extra = Math.max(3, Math.floor(clusterCount * 0.45));
+  for (let i = 0; i < extra; i++) {
+    const cx = reefLeft + 100 + ((i + 0.5) / extra) * (w - 200);
+    const palette = coralColors[(i + 2) % coralColors.length];
+    drawTallCoral(scene, cx, sandY - 2, 48 + (i % 3) * 12, palette, i + 40);
+  }
+}
+
+function drawTallCoral(
+  scene: Phaser.Scene,
+  x: number,
+  baseY: number,
+  height: number,
+  colors: { tip: number; mid: number; base: number },
+  seed: number
+): void {
+  const g = scene.add.graphics().setDepth(3.5);
+  const sway = scene.add.container(x, baseY).setDepth(3.5);
+
+  g.fillStyle(colors.base, 1);
+  g.fillRect(-5, -height * 0.35, 10, height * 0.35);
+  g.fillStyle(colors.mid, 1);
+  g.fillRect(-4, -height * 0.7, 8, height * 0.4);
+  g.fillStyle(colors.tip, 0.95);
+  g.fillRect(-3, -height, 6, height * 0.35);
+
+  g.lineStyle(1.5, colors.tip, 0.5);
+  for (let y = -8; y > -height; y -= 10) {
+    g.lineBetween(-5, y, 5, y);
+  }
+
+  const branchN = 3 + (seed % 3);
+  for (let b = 0; b < branchN; b++) {
+    const t = 0.45 + (b / branchN) * 0.45;
+    const by = -height * t;
+    const dir = b % 2 === 0 ? 1 : -1;
+    const len = 14 + ((b + seed) % 5) * 5;
+    const ang = dir * (0.6 + (b % 3) * 0.25);
+    const ex = Math.cos(ang) * len * dir;
+    const ey = by - Math.sin(Math.abs(ang)) * len * 0.85;
+
+    g.lineStyle(5, colors.base, 1);
+    g.lineBetween(dir * 2, by, ex, ey);
+    g.lineStyle(3.5, colors.mid, 1);
+    g.lineBetween(dir * 2, by, ex, ey);
+    g.lineStyle(2, colors.tip, 0.9);
+    g.lineBetween(dir * 2, by - 1, ex, ey - 1);
+
+    g.fillStyle(colors.tip, 1);
+    g.fillCircle(ex, ey, 3.5 + (b % 2));
+    g.fillStyle(0xfff0f8, 0.45);
+    g.fillCircle(ex - 1, ey - 1, 1.6);
+
+    if (b < 2) {
+      const fx = ex + dir * 8;
+      const fy = ey - 10;
+      g.lineStyle(2.5, colors.mid, 1);
+      g.lineBetween(ex, ey, fx, fy);
+      g.fillStyle(colors.tip, 1);
+      g.fillCircle(fx, fy, 2.8);
+    }
+  }
+
+  if (seed % 2 === 0) {
+    g.fillStyle(colors.mid, 0.55);
+    g.beginPath();
+    g.arc(
+      -2,
+      -height * 0.5,
+      16,
+      Phaser.Math.DegToRad(-110),
+      Phaser.Math.DegToRad(-20),
+      false
+    );
+    g.closePath();
+    g.fillPath();
+    g.lineStyle(1.2, colors.tip, 0.7);
+    g.beginPath();
+    g.arc(
+      -2,
+      -height * 0.5,
+      16,
+      Phaser.Math.DegToRad(-110),
+      Phaser.Math.DegToRad(-20),
+      false
+    );
+    g.strokePath();
+  }
+
+  g.fillStyle(colors.base, 1);
+  g.fillEllipse(0, 2, 18, 8);
+  g.fillStyle(0xd4c090, 0.5);
+  g.fillEllipse(0, 4, 22, 6);
+
+  sway.add(g);
+
+  scene.tweens.add({
+    targets: sway,
+    angle: { from: -2.2, to: 2.2 },
+    duration: 2200 + (seed % 7) * 180,
+    yoyo: true,
+    repeat: -1,
+    ease: "Sine.easeInOut",
+  });
+}

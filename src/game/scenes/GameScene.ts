@@ -7,8 +7,8 @@ import { FishMerchant } from "../entities/FishMerchant";
 import { FishingSystem } from "../systems/FishingSystem";
 import { InventorySystem } from "../systems/InventorySystem";
 import { WeatherSystem } from "../systems/WeatherSystem";
-import { placeVillage, placeJungle } from "../world/WorldDecor";
-import { AmbientMusic, musicZoneForX } from "../audio/AmbientMusic";
+import { placeVillage, placeJungle, placeCoralReef } from "../world/WorldDecor";
+import { AmbientMusic, musicZoneForX, areaNameForZone, MusicZone } from "../audio/AmbientMusic";
 import { loadActiveSave, saveActiveSave } from "../save/SaveBank";
 import { ItemId } from "../data/items";
 import { UIScene } from "./UIScene";
@@ -26,9 +26,15 @@ export class GameScene extends Phaser.Scene {
   private music!: AmbientMusic;
   private tutorialDone = false;
   private autosaveTimer?: Phaser.Time.TimerEvent;
+  private lastAreaZone: MusicZone | "reef" | null = null;
 
   /** West ocean → village → long east ocean → jungle → far ocean */
-  readonly westWaterLeft = 0;
+  /** Coral reef far west of the starter left port. */
+  readonly westWaterLeft = -3400;
+  readonly reefLeft = -3200;
+  readonly reefRight = -1700;
+  /** Dark↔light water blend ends here (east of reef). */
+  readonly reefBlendEnd = -1400;
   readonly westWaterRight = 640;
   readonly islandLeft = 640;
   readonly islandRight = 1540;
@@ -63,7 +69,6 @@ export class GameScene extends Phaser.Scene {
   readonly greenHouseX = 640 + 480;
 
   private ground!: Phaser.Physics.Arcade.StaticGroup;
-  private boatDeckCollider?: Phaser.Physics.Arcade.Collider;
   private wildflowerProp?: Phaser.GameObjects.Image;
   private wildflowerLabel?: Phaser.GameObjects.Text;
   readonly wildflowerRodX = 4000 + 210;
@@ -78,11 +83,11 @@ export class GameScene extends Phaser.Scene {
     // Reset instance fields so a second Play doesn't reuse stale refs
     this.fishList = [];
     this.sailboat = null;
-    this.boatDeckCollider = undefined;
     this.wildflowerProp = undefined;
     this.wildflowerLabel = undefined;
     this.autosaveTimer = undefined;
     this.tutorialDone = false;
+    this.lastAreaZone = null;
   }
 
   create(): void {
@@ -111,12 +116,13 @@ export class GameScene extends Phaser.Scene {
       localStorage.setItem(clearKey, "1");
     }
 
-    const worldWidth = this.farWaterRight + 80;
+    const worldLeft = this.westWaterLeft;
+    const worldWidth = this.farWaterRight - worldLeft + 80;
     const worldHeight = 720;
     // Deep water column — camera can dive far below the surface
     const cameraHeight = this.waterSurfaceY + this.deepWaterPx + 40;
-    this.physics.world.setBounds(0, 0, worldWidth, worldHeight);
-    this.cameras.main.setBounds(0, 0, worldWidth, cameraHeight);
+    this.physics.world.setBounds(worldLeft, 0, worldWidth, worldHeight);
+    this.cameras.main.setBounds(worldLeft, 0, worldWidth, cameraHeight);
 
     this.createBackground();
     this.createTerrain();
@@ -129,11 +135,17 @@ export class GameScene extends Phaser.Scene {
       this.pondLeft,
       this.pondRight
     );
+    placeCoralReef(
+      this,
+      this.waterSurfaceY,
+      this.reefLeft,
+      this.reefRight,
+      this.reefBlendEnd
+    );
     this.createWaterVisual();
 
-    const spawnX = Phaser.Math.Clamp(save.playerX, 40, worldWidth - 40);
-    const spawnY = Phaser.Math.Clamp(save.playerY, 80, this.groundY - 20);
-    this.player = new Player(this, spawnX, spawnY);
+    const spawn = this.resolveSafeSpawn(save.playerX, save.playerY);
+    this.player = new Player(this, spawn.x, spawn.y);
     this.player.sprite.setDepth(12);
     this.player.syncCarriedRod(this.inventory.getSelectedItem());
     this.physics.add.collider(this.player.sprite, this.ground);
@@ -200,7 +212,6 @@ export class GameScene extends Phaser.Scene {
       fishing: this.fishing,
       weather: this.weather,
       getPointerDown: () => this.input.activePointer.isDown,
-      isOnPort: () => this.isPlayerOnPort(),
       canOpenBoatMenu: () =>
         this.isPlayerOnPort() &&
         !this.player.isOnBoat() &&
@@ -242,36 +253,6 @@ export class GameScene extends Phaser.Scene {
       const worldX = this.cameras.main.getWorldPoint(pointer.x, pointer.y).x;
       this.fishing.tryCast(worldX);
     });
-
-    const titleX = this.islandLeft + 420;
-    this.add
-      .text(titleX, 90, "Fischer's Adventure", {
-        fontFamily: "Georgia, serif",
-        fontSize: "36px",
-        color: "#ffffff",
-        stroke: "#1a3d1a",
-        strokeThickness: 6,
-      })
-      .setOrigin(0.5)
-      .setDepth(1)
-      .setScrollFactor(0.9);
-
-    this.add
-      .text(
-        titleX,
-        130,
-        "A/D move · W shop · F talk/board · B boats · 2 bag · LMB cast · E inv",
-        {
-          fontFamily: "Arial",
-          fontSize: "13px",
-          color: "#e8ffe8",
-          stroke: "#000000",
-          strokeThickness: 3,
-        }
-      )
-      .setOrigin(0.5)
-      .setDepth(1)
-      .setScrollFactor(0.9);
   }
 
   private followBobberCamera(): void {
@@ -366,7 +347,6 @@ export class GameScene extends Phaser.Scene {
   spawnSailboat(): void {
     if (this.sailboat) {
       if (this.sailboat.occupied) return;
-      this.boatDeckCollider?.destroy();
       this.sailboat.destroy();
       this.sailboat = null;
     }
@@ -402,11 +382,6 @@ export class GameScene extends Phaser.Scene {
       this.waterSurfaceY,
       waterL,
       waterR
-    );
-
-    this.boatDeckCollider = this.physics.add.collider(
-      this.player.sprite,
-      this.sailboat.hull
     );
   }
 
@@ -524,8 +499,6 @@ export class GameScene extends Phaser.Scene {
         ui.showToast("Sail closer to a port to get out.", "#ffaa66");
         return false;
       }
-      this.boatDeckCollider?.destroy();
-      this.boatDeckCollider = undefined;
 
       let landX = this.dockEnd - 40;
       if (this.isBoatNearWestPort()) landX = this.islandLeft + 40;
@@ -534,12 +507,6 @@ export class GameScene extends Phaser.Scene {
       else if (this.isBoatNearEastPort()) landX = this.dockEnd - 40;
 
       this.sailboat.disembark(this.player, landX, this.groundY);
-      if (this.sailboat) {
-        this.boatDeckCollider = this.physics.add.collider(
-          this.player.sprite,
-          this.sailboat.hull
-        );
-      }
       ui.showToast("Left the sailboat.", "#c8c8c8");
       return true;
     }
@@ -556,19 +523,18 @@ export class GameScene extends Phaser.Scene {
       return false;
     }
 
-    this.boatDeckCollider?.destroy();
-    this.boatDeckCollider = undefined;
     this.sailboat.board(this.player);
     ui.showToast("A/D to sail · F near port to exit", "#7ec8e3");
     return true;
   }
 
   private createBackground(): void {
-    const worldWidth = this.farWaterRight + 80;
+    const worldLeft = this.westWaterLeft;
+    const worldWidth = this.farWaterRight - worldLeft + 80;
     // World-space sky so it scrolls away when the camera dives underwater
     const sky = this.add.graphics().setDepth(-2);
     sky.fillGradientStyle(0x5eb0e0, 0x5eb0e0, 0xd4effc, 0xd4effc, 1);
-    sky.fillRect(0, 0, worldWidth, this.waterSurfaceY + 8);
+    sky.fillRect(worldLeft, 0, worldWidth, this.waterSurfaceY + 8);
 
     this.add.circle(160, 90, 52, 0xfff0b0, 0.25).setDepth(-1);
     this.add.circle(160, 90, 36, 0xffe08a, 0.95).setDepth(-1);
@@ -680,7 +646,8 @@ export class GameScene extends Phaser.Scene {
     this.addIslandBedrock(this.jungleLeft, this.jungleRight, true);
 
     for (const [left, right] of [
-      [this.westWaterLeft, this.westWaterRight],
+      // Deep west approach only — reef draws its own sand
+      [this.reefBlendEnd, this.westWaterRight],
       [this.eastWaterLeft, this.eastWaterRight],
       [this.farWaterLeft, this.farWaterRight],
     ] as const) {
@@ -739,9 +706,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createWaterVisual(): void {
-    this.drawWaterBody(this.westWaterLeft, this.westWaterRight);
+    // Deep west ocean (after the light→dark blend) + other oceans
+    this.drawWaterBody(this.reefBlendEnd, this.westWaterRight);
     this.drawWaterBody(this.eastWaterLeft, this.eastWaterRight);
     this.drawWaterBody(this.farWaterLeft, this.farWaterRight);
+    // Far west tip past the reef (still deep)
+    if (this.westWaterLeft < this.reefLeft) {
+      this.drawWaterBody(this.westWaterLeft, this.reefLeft);
+    }
 
     const pier = this.ground.create(
       this.islandRight - 40,
@@ -880,9 +852,10 @@ export class GameScene extends Phaser.Scene {
       habitat: "ocean" | "pond";
     }[] = [
       {
-        left: this.westWaterLeft,
+        // Deep west only — no fish on the coral reef
+        left: this.reefBlendEnd,
         right: this.westWaterRight,
-        count: 4,
+        count: 10,
         habitat: "ocean",
       },
       {
@@ -937,16 +910,23 @@ export class GameScene extends Phaser.Scene {
     this.fishing.update(delta);
     this.sailboat?.update(delta);
 
-    this.music.setZone(
-      musicZoneForX(this.player.sprite.x, {
-        westDockEnd: this.westDockEnd,
-        dockEnd: this.dockEnd,
-        jungleWestDockEnd: this.jungleWestDockEnd,
-        jungleEastDockEnd: this.jungleEastDockEnd,
-      })
-    );
+    const areaId = this.getAreaId(this.player.sprite.x);
+    const musicZone =
+      areaId === "reef" ? "ocean" : (areaId as MusicZone);
+    this.music.setZone(musicZone);
 
     const ui = this.scene.get("UIScene") as UIScene;
+    if (areaId !== this.lastAreaZone) {
+      this.lastAreaZone = areaId;
+      ui.showAreaBanner(this.getAreaName(areaId));
+    }
+
+    if (areaId === "ocean" || areaId === "reef") {
+      ui.setOceanMarkers(this.getOceanMarkers(this.player.sprite.x));
+    } else {
+      ui.setOceanMarkers(null);
+    }
+
     if (this.player.isOnBoat() && this.sailboat) {
       if (this.fishing.isBusy()) {
         ui.setPrompt("Fishing…");
@@ -1003,19 +983,115 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private getAreaId(x: number): MusicZone | "reef" {
+    if (x >= this.reefLeft && x < this.reefRight) return "reef";
+    return musicZoneForX(x, {
+      westDockEnd: this.westDockEnd,
+      dockEnd: this.dockEnd,
+      jungleWestDockEnd: this.jungleWestDockEnd,
+      jungleEastDockEnd: this.jungleEastDockEnd,
+    });
+  }
+
+  private getAreaName(id: MusicZone | "reef"): string {
+    if (id === "reef") return "Coral Reef";
+    return areaNameForZone(id);
+  }
+
+  /** Nearest island / reef left / right of the player while at sea. */
+  private getOceanMarkers(playerX: number): {
+    name: string;
+    side: "left" | "right";
+  }[] {
+    const landmarks = [
+      {
+        name: "Coral Reef",
+        x: (this.reefLeft + this.reefRight) / 2,
+      },
+      {
+        name: "Starter Island",
+        x: (this.islandLeft + this.islandRight) / 2,
+      },
+      {
+        name: "Swamp Island",
+        x: (this.jungleLeft + this.jungleRight) / 2,
+      },
+    ];
+
+    let left: (typeof landmarks)[0] | null = null;
+    let right: (typeof landmarks)[0] | null = null;
+    for (const lm of landmarks) {
+      if (lm.x < playerX - 120) {
+        if (!left || lm.x > left.x) left = lm;
+      } else if (lm.x > playerX + 120) {
+        if (!right || lm.x < right.x) right = lm;
+      }
+    }
+
+    const out: { name: string; side: "left" | "right" }[] = [];
+    if (left) out.push({ name: left.name, side: "left" });
+    if (right) out.push({ name: right.name, side: "right" });
+    return out;
+  }
+
+  /** True if X is on walkable village or swamp docks/island. */
+  private isWalkableLandX(x: number): boolean {
+    if (x >= this.westDockEnd + 16 && x <= this.dockEnd - 16) return true;
+    if (x >= this.jungleWestDockEnd + 16 && x <= this.jungleEastDockEnd - 16) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Boat / ocean saves put you in open water. Resume on the nearest solid
+   * shore inland — never on dock tips over the water.
+   */
+  private resolveSafeSpawn(
+    saveX: number,
+    _saveY: number
+  ): { x: number; y: number } {
+    const landY = this.groundY - 40;
+    const x = Phaser.Math.Clamp(saveX, this.westWaterLeft + 40, this.farWaterRight + 40);
+
+    if (this.isWalkableLandX(x)) {
+      // Prefer inland when saved on the outer dock planks
+      if (x >= this.westDockEnd + 16 && x < this.islandLeft + 40) {
+        return { x: this.islandLeft + 100, y: landY };
+      }
+      if (x > this.islandRight - 40 && x <= this.dockEnd - 16) {
+        return { x: this.islandRight - 100, y: landY };
+      }
+      if (x >= this.jungleWestDockEnd + 16 && x < this.jungleLeft + 40) {
+        return { x: this.jungleLeft + 100, y: landY };
+      }
+      if (x > this.jungleRight - 40 && x <= this.jungleEastDockEnd - 16) {
+        return { x: this.jungleRight - 100, y: landY };
+      }
+      return { x, y: landY };
+    }
+
+    // West ocean
+    if (x < this.westDockEnd + 16) {
+      return { x: this.islandLeft + 100, y: landY };
+    }
+    // Between starter island and swamp
+    if (x < this.jungleWestDockEnd + 16) {
+      const mid = (this.dockEnd + this.jungleWestDockEnd) / 2;
+      return x < mid
+        ? { x: this.islandRight - 100, y: landY }
+        : { x: this.jungleLeft + 100, y: landY };
+    }
+    // Far ocean east of swamp
+    return { x: this.jungleRight - 100, y: landY };
+  }
+
   private clampPlayerToLand(): void {
-    const boat = this.sailboat && !this.sailboat.occupied ? this.sailboat : null;
     const x = this.player.sprite.x;
 
     if (this.isOnJungleIsland()) {
-      let minX = this.jungleWestDockEnd + 16;
-      let maxX = this.jungleEastDockEnd - 16;
-      if (boat && boat.hull.x < this.jungleLeft) {
-        minX = this.jungleWestDockEnd - 50;
-      }
-      if (boat && boat.hull.x > this.jungleRight) {
-        maxX = this.jungleEastDockEnd + 50;
-      }
+      const minX = this.jungleWestDockEnd + 16;
+      const maxX = this.jungleEastDockEnd - 16;
       if (this.player.sprite.x > maxX) {
         this.player.sprite.x = maxX;
         this.player.sprite.setVelocityX(0);
@@ -1042,11 +1118,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const boatEast =
-      boat && boat.hull.x > this.islandRight && boat.hull.x < this.jungleLeft;
-    const boatWest = boat && boat.hull.x < this.islandLeft;
-    const maxX = boatEast ? this.dockEnd + 50 : this.dockEnd - 16;
-    const minX = boatWest ? this.westDockEnd - 50 : this.westDockEnd + 16;
+    const maxX = this.dockEnd - 16;
+    const minX = this.westDockEnd + 16;
     if (this.player.sprite.x > maxX) {
       this.player.sprite.x = maxX;
       this.player.sprite.setVelocityX(0);
