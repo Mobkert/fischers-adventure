@@ -11,8 +11,30 @@ export class Bobber {
   private sinking = false;
 
   constructor(scene: Phaser.Scene) {
-    this.sprite = scene.add.image(0, 0, "bobber").setVisible(false).setDepth(8);
+    this.sprite = scene.add
+      .image(0, 0, "bobber_red")
+      .setVisible(false)
+      .setDepth(8);
+    this.fitDisplay();
     this.line = scene.add.graphics().setDepth(7);
+  }
+
+  setTexture(key: string): void {
+    if (this.sprite.scene.textures.exists(key)) {
+      this.sprite.setTexture(key);
+    }
+    this.fitDisplay();
+  }
+
+  /** Keep native aspect — bobbers are tall, fish lure is wide. */
+  private fitDisplay(): void {
+    const frame = this.sprite.frame;
+    const nw = Math.max(1, frame.width);
+    const nh = Math.max(1, frame.height);
+    const maxW = 40;
+    const maxH = 34;
+    const scale = Math.min(maxW / nw, maxH / nh);
+    this.sprite.setDisplaySize(Math.round(nw * scale), Math.round(nh * scale));
   }
 
   /**

@@ -4,8 +4,19 @@ export type ItemId =
   | "firm_rod"
   | "amber_rod"
   | "wildflower_rod"
+  | "zeus_rod"
   | "equipment_bag"
   | "bestiary"
+  | "bobber_starter"
+  | "bobber_double"
+  | "bobber_reinforced"
+  | "bobber_mutation"
+  | "bobber_clover"
+  | "bobber_depth"
+  | "backpack_starter"
+  | "backpack_t1"
+  | "backpack_t2"
+  | "backpack_t3"
   | "sockeye_salmon"
   | "flounder"
   | "yellowfin_tuna"
@@ -23,10 +34,12 @@ export type FishMutationId =
   | "bloom"
   | "glowing"
   | "earthly"
+  | "sprout"
   | "starlight"
   | "albino"
   | "neon"
-  | "amber";
+  | "amber"
+  | "thunder";
 
 export type FishSizeId = "normal" | "big" | "giant";
 
@@ -47,6 +60,11 @@ export interface MutationDef {
   sellMult: number;
   /** Phaser tint for the fish body. */
   tint: number;
+  /**
+   * Use setTintFill instead of setTint.
+   * Needed for near-white tints — multiplicative white does nothing.
+   */
+  tintFill?: boolean;
   /** Soft glow aura color (ADD blend) around the fish. */
   glowColor?: number;
   toastColor: string;
@@ -85,6 +103,15 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     label: "Earthly! ",
     chance: 0.01,
   },
+  sprout: {
+    id: "sprout",
+    name: "Sprout",
+    sellMult: 6,
+    tint: 0x7CFC00,
+    glowColor: 0xa8ff60,
+    toastColor: "#7CFC00",
+    label: "Sprout! ",
+  },
   starlight: {
     id: "starlight",
     name: "Starlight",
@@ -99,7 +126,10 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     id: "albino",
     name: "Albino",
     sellMult: 1.5,
-    tint: 0xffffff,
+    // Near-white fill — setTint(0xffffff) is a no-op (multiply by 1)
+    tint: 0xfff5f0,
+    tintFill: true,
+    glowColor: 0xffffff,
     toastColor: "#f5f0e8",
     label: "Albino! ",
     chance: 0.04,
@@ -122,6 +152,15 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     glowColor: 0xffb040,
     toastColor: "#ff8c2a",
     label: "Amber! ",
+  },
+  thunder: {
+    id: "thunder",
+    name: "Thunder",
+    sellMult: 5,
+    tint: 0x4da6ff,
+    glowColor: 0xffe066,
+    toastColor: "#ffe066",
+    label: "Thunder! ",
   },
 };
 
@@ -167,6 +206,28 @@ export interface RodStats {
   lineDepth: number;
 }
 
+export interface BobberStats {
+  luck?: number;
+  control?: number;
+  progressSpeed?: number;
+  lineDepth?: number;
+  /** Extra attract radius in px (base attract is 340). */
+  attractBonus?: number;
+  /** How many fish can hook on one cast. */
+  hooks?: 1 | 2;
+  /** Multiplier on world-mutation chances on catch (not amber/bloom). */
+  mutationChanceMult?: number;
+}
+
+export interface BobberCraftIngredient {
+  itemId: ItemId;
+  count: number;
+  /** Required mutation on the fish (e.g. earthly yellowfin). */
+  mutation?: FishMutationId;
+  /** Accept any of these mutations (e.g. earthly or sprout). */
+  mutations?: FishMutationId[];
+}
+
 export interface ItemDef {
   id: ItemId;
   name: string;
@@ -176,11 +237,22 @@ export interface ItemDef {
   sellPrice?: number;
   buyPrice?: number;
   /** Where this rod is sold (omit = not in a shop UI). */
-  shop?: "village" | "jungle";
+  shop?: "village" | "jungle" | "cloud";
+  /** Sold / crafted in the red-house bobber workshop. */
+  bobberShop?: boolean;
+  /** Sold in the green-house pack shop. */
+  backpackShop?: boolean;
   isRod?: boolean;
   isEquipmentBag?: boolean;
   isBestiary?: boolean;
+  isBobber?: boolean;
+  isBackpack?: boolean;
+  /** Bag slot capacity when this backpack is owned. */
+  bagSlots?: number;
   rodStats?: RodStats;
+  bobberStats?: BobberStats;
+  /** Coin + fish cost to craft (red house). */
+  craftCost?: { coins: number; ingredients: BobberCraftIngredient[] };
   /** Mutation this rod can apply on a successful catch. */
   rodMutation?: RodMutationGrant;
   rarity?: FishRarity;
@@ -254,12 +326,28 @@ export function preferredDepthBand(rarity: FishRarity): {
 /**
  * Pick a spawn depth offset. Legendaries / mythicals lean deep but
  * still have a solid chance to spawn higher up.
+ * Rain pulls rare+ fish higher in the water column.
  */
-export function rollSpawnDepthOffset(rarity: FishRarity): number {
+export function rollSpawnDepthOffset(
+  rarity: FishRarity,
+  rainy = false
+): number {
   const band = preferredDepthBand(rarity);
+  const rarePlus =
+    rarity === "rare" ||
+    rarity === "epic" ||
+    rarity === "legendary" ||
+    rarity === "mythical";
+
+  if (rainy && rarePlus) {
+    // Bias toward the upper half of the band
+    const mid = (band.min + band.max) / 2;
+    const highMax = Math.max(band.min + 8, mid);
+    return Math.floor(band.min + Math.random() * (highMax - band.min + 1));
+  }
+
   if (rarity === "legendary" || rarity === "mythical") {
     if (Math.random() < 0.4) {
-      // Higher in the water column
       const shallowMax = Math.min(70, band.max);
       return Math.floor(
         band.min + Math.random() * (shallowMax - band.min + 1)
@@ -320,7 +408,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "firm_rod",
     name: "Firm Rod",
     description:
-      "A stout rod that tames wild fish. Rare legendaries, strong resilience.",
+      "A stout rod that tames wild fish. 30% resilience and solid control.",
     stackable: false,
     textureKey: "rod_firm",
     isRod: true,
@@ -328,7 +416,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     shop: "village",
     rodStats: {
       luck: -30,
-      resilience: 50,
+      resilience: 30,
       control: 20,
       progressSpeed: 10,
       lineDepth: 2,
@@ -361,7 +449,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     stackable: false,
     textureKey: "rod_wildflower",
     isRod: true,
-    buyPrice: 22000,
+    buyPrice: 14500,
     shop: "jungle",
     rodStats: {
       luck: 75,
@@ -371,6 +459,25 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       lineDepth: 3,
     },
     rodMutation: { mutation: "bloom", chance: 0.2 },
+  },
+  zeus_rod: {
+    id: "zeus_rod",
+    name: "Zeus Rod",
+    description:
+      "Forged in storm clouds — 5% Thunder (5×). +7% stats in Rain, +15% in Thunderstorms (not depth).",
+    stackable: false,
+    textureKey: "rod_zeus",
+    isRod: true,
+    buyPrice: 60000,
+    shop: "cloud",
+    rodStats: {
+      luck: 80,
+      resilience: 10,
+      control: 20,
+      progressSpeed: 10,
+      lineDepth: 4,
+    },
+    rodMutation: { mutation: "thunder", chance: 0.05 },
   },
   equipment_bag: {
     id: "equipment_bag",
@@ -387,6 +494,131 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     stackable: false,
     textureKey: "bestiary_book",
     isBestiary: true,
+  },
+  bobber_starter: {
+    id: "bobber_starter",
+    name: "Red Bobber",
+    description: "Your starter bobber — one hook, reliable and simple.",
+    stackable: false,
+    textureKey: "bobber_red",
+    isBobber: true,
+    bobberShop: true,
+    bobberStats: { hooks: 1 },
+  },
+  bobber_double: {
+    id: "bobber_double",
+    name: "Twin Hook Bobber",
+    description:
+      "Two hooks — wait for a second bite (2–3s). Dual catches are much harder.",
+    stackable: false,
+    textureKey: "bobber_red_double",
+    isBobber: true,
+    bobberShop: true,
+    bobberStats: { hooks: 2 },
+    craftCost: {
+      coins: 30000,
+      ingredients: [{ itemId: "arapaima", count: 2 }],
+    },
+  },
+  bobber_reinforced: {
+    id: "bobber_reinforced",
+    name: "Reinforced Bobber",
+    description: "Sturdy grey bobber. +10% Control and +10% Progress Speed.",
+    stackable: false,
+    textureKey: "bobber_grey",
+    isBobber: true,
+    bobberShop: true,
+    buyPrice: 3300,
+    bobberStats: { hooks: 1, control: 10, progressSpeed: 10 },
+  },
+  bobber_mutation: {
+    id: "bobber_mutation",
+    name: "Mutation Bobber",
+    description:
+      "Yellow-green bobber. Doubles world mutation chances on catch (not Amber/Bloom). Craft: $25k + Earthly or Sprout Yellowfin.",
+    stackable: false,
+    textureKey: "bobber_yellow",
+    isBobber: true,
+    bobberShop: true,
+    bobberStats: { hooks: 1, mutationChanceMult: 2 },
+    craftCost: {
+      coins: 25000,
+      ingredients: [
+        {
+          itemId: "yellowfin_tuna",
+          count: 1,
+          mutations: ["earthly", "sprout"],
+        },
+      ],
+    },
+  },
+  bobber_clover: {
+    id: "bobber_clover",
+    name: "Clover Bobber",
+    description: "Lucky clover lure. +15% Luck.",
+    stackable: false,
+    textureKey: "lure_clover",
+    isBobber: true,
+    bobberShop: true,
+    buyPrice: 2500,
+    bobberStats: { hooks: 1, luck: 15 },
+  },
+  bobber_depth: {
+    id: "bobber_depth",
+    name: "Depth Lure",
+    description:
+      "Green fish lure. +1m line depth and wider attract range for deep fish.",
+    stackable: false,
+    textureKey: "lure_green_fish",
+    isBobber: true,
+    bobberShop: true,
+    bobberStats: { hooks: 1, lineDepth: 1, attractBonus: 120 },
+    craftCost: {
+      coins: 5000,
+      ingredients: [{ itemId: "mushroom_cluster", count: 3 }],
+    },
+  },
+  backpack_starter: {
+    id: "backpack_starter",
+    name: "Starter Pack",
+    description: "Your first pack — 10 bag slots.",
+    stackable: false,
+    textureKey: "backpack_icon",
+    isBackpack: true,
+    bagSlots: 10,
+  },
+  backpack_t1: {
+    id: "backpack_t1",
+    name: "Traveler Pack",
+    description: "Tier 1 backpack — 15 bag slots. Permanent upgrade.",
+    stackable: false,
+    textureKey: "backpack_icon",
+    isBackpack: true,
+    backpackShop: true,
+    buyPrice: 5000,
+    bagSlots: 15,
+  },
+  backpack_t2: {
+    id: "backpack_t2",
+    name: "Explorer Pack",
+    description: "Tier 2 backpack — 20 bag slots. Permanent upgrade.",
+    stackable: false,
+    textureKey: "backpack_icon",
+    isBackpack: true,
+    backpackShop: true,
+    buyPrice: 10000,
+    bagSlots: 20,
+  },
+  backpack_t3: {
+    id: "backpack_t3",
+    name: "Master Pack",
+    description: "Tier 3 backpack — 25 bag slots. Permanent upgrade.",
+    stackable: false,
+    textureKey: "backpack_icon",
+    isBackpack: true,
+    backpackShop: true,
+    buyPrice: 15000,
+    bagSlots: 25,
   },
   sockeye_salmon: {
     id: "sockeye_salmon",
@@ -644,6 +876,38 @@ export const ROD_ITEM_IDS: ItemId[] = (
   Object.keys(ITEMS) as ItemId[]
 ).filter((id) => ITEMS[id].isRod);
 
+export const BOBBER_ITEM_IDS: ItemId[] = (
+  Object.keys(ITEMS) as ItemId[]
+).filter((id) => ITEMS[id].isBobber);
+
+export const BOBBER_SHOP_IDS: ItemId[] = BOBBER_ITEM_IDS.filter(
+  (id) => ITEMS[id].bobberShop && id !== "bobber_starter"
+);
+
+export const BACKPACK_ITEM_IDS: ItemId[] = (
+  Object.keys(ITEMS) as ItemId[]
+).filter((id) => ITEMS[id].isBackpack);
+
+/** Shop list — upgrades only (starter is free / default). */
+export const BACKPACK_SHOP_IDS: ItemId[] = BACKPACK_ITEM_IDS.filter(
+  (id) => ITEMS[id].backpackShop
+);
+
+export function backpackTier(backpackId: ItemId): number {
+  switch (backpackId) {
+    case "backpack_starter":
+      return 0;
+    case "backpack_t1":
+      return 1;
+    case "backpack_t2":
+      return 2;
+    case "backpack_t3":
+      return 3;
+    default:
+      return -1;
+  }
+}
+
 export const SHOP_ROD_IDS: ItemId[] = ROD_ITEM_IDS.filter(
   (id) => ITEMS[id].buyPrice != null && ITEMS[id].shop === "village"
 );
@@ -654,16 +918,14 @@ export const JUNGLE_SHOP_ROD_IDS: ItemId[] = ROD_ITEM_IDS.filter(
 
 /**
  * Absolute spawn share for epic / legendary / mythical.
- * These rise with luck and never shrink from mythical crowding.
+ * These rise with luck (including luck over 100%) and never shrink
+ * from mythical crowding.
  *
- * Ocean:
- *   Epic (Bluefin)  7.5% + 1.5% per +25% luck
- *   Legendary (Eel) 5.0% + 2.5% per +25% luck
- *   Mythical (Sunfish) 1.0% + 2.5% per +25% luck
- * Pond:
- *   Epic (Frog) 4.0% + 1.25% per +25% luck
- *   Legendary (Arapaima) 2.5% + 1.25% per +25% luck
- *   Mythical (Alligator) 0.5% + 1.25% per +25% luck  (half ocean mythical)
+ * Ocean: base + 2.5% per +25% luck (epic / legendary / mythical)
+ * Pond:  base + 1.25% per +25% luck (half ocean scaling)
+ *
+ * Bases — Ocean: Epic 7.5%, Legendary 5%, Mythical 1%
+ *          Pond:  Epic 4%,   Legendary 2.5%, Mythical 0.5%
  */
 function absoluteRareShare(
   rarity: FishRarity,
@@ -671,14 +933,15 @@ function absoluteRareShare(
   habitat: FishHabitat
 ): number | null {
   const n = luckPercent / 25;
+  const perTier = habitat === "ocean" ? 0.025 : 0.0125;
   if (habitat === "ocean") {
-    if (rarity === "epic") return Math.max(0, 0.075 + n * 0.015);
-    if (rarity === "legendary") return Math.max(0, 0.05 + n * 0.025);
-    if (rarity === "mythical") return Math.max(0, 0.01 + n * 0.025);
+    if (rarity === "epic") return Math.max(0, 0.075 + n * perTier);
+    if (rarity === "legendary") return Math.max(0, 0.05 + n * perTier);
+    if (rarity === "mythical") return Math.max(0, 0.01 + n * perTier);
   } else {
-    if (rarity === "epic") return Math.max(0, 0.04 + n * 0.0125);
-    if (rarity === "legendary") return Math.max(0, 0.025 + n * 0.0125);
-    if (rarity === "mythical") return Math.max(0, 0.005 + n * 0.0125);
+    if (rarity === "epic") return Math.max(0, 0.04 + n * perTier);
+    if (rarity === "legendary") return Math.max(0, 0.025 + n * perTier);
+    if (rarity === "mythical") return Math.max(0, 0.005 + n * perTier);
   }
   return null;
 }
@@ -770,6 +1033,22 @@ export function mutationSellMult(mutation?: FishMutationId | null): number {
   return MUTATIONS[mutation]?.sellMult ?? 1;
 }
 
+/** Apply mutation body color (handles white/albino fill tints). */
+export function applyMutationTint(
+  image: { clearTint(): void; setTint(tint: number): void; setTintFill(tint: number): void },
+  mutation?: FishMutationId | null
+): void {
+  image.clearTint();
+  if (!mutation) return;
+  const mut = MUTATIONS[mutation];
+  if (!mut) return;
+  if (mut.tintFill) {
+    image.setTintFill(mut.tint);
+  } else {
+    image.setTint(mut.tint);
+  }
+}
+
 export function sizeSellMult(size?: FishSizeId | null): number {
   if (!size || size === "normal") return 1;
   return FISH_SIZES[size]?.sellMult ?? 1;
@@ -791,40 +1070,107 @@ export function rollFishSize(): FishSizeId {
 }
 
 /** World mutations that can appear on swimming fish (not rod-only). */
-const ROD_ONLY_MUTATIONS = new Set<FishMutationId>(["bloom", "amber"]);
+const ROD_ONLY_MUTATIONS = new Set<FishMutationId>([
+  "bloom",
+  "amber",
+  "thunder",
+]);
 
-/** Roll a world mutation when a fish appears in the water. */
-export function rollWorldMutation(): FishMutationId | null {
+/** Chance earthly upgrades into Sprout when applied. */
+const EARTHLY_TO_SPROUT_CHANCE = 0.01;
+
+function maybeUpgradeEarthly(
+  mutation: FishMutationId | null
+): FishMutationId | null {
+  if (mutation === "earthly" && Math.random() < EARTHLY_TO_SPROUT_CHANCE) {
+    return "sprout";
+  }
+  return mutation;
+}
+
+/**
+ * Roll a world mutation (spawn or catch).
+ * @param chanceMult doubles rates for Mutation Bobber (amber/bloom excluded).
+ */
+export function rollWorldMutation(chanceMult = 1): FishMutationId | null {
   const world: { id: FishMutationId; chance: number }[] = (
     Object.values(MUTATIONS) as MutationDef[]
   )
-    .filter((m) => m.chance != null && !ROD_ONLY_MUTATIONS.has(m.id))
-    .map((m) => ({ id: m.id, chance: m.chance! }));
+    .filter(
+      (m) =>
+        m.chance != null &&
+        !ROD_ONLY_MUTATIONS.has(m.id) &&
+        m.id !== "sprout"
+    )
+    .map((m) => ({ id: m.id, chance: m.chance! * Math.max(0, chanceMult) }));
 
   world.sort((a, b) => b.chance - a.chance);
   for (const entry of world) {
-    if (Math.random() < entry.chance) return entry.id;
+    if (Math.random() < entry.chance) {
+      return maybeUpgradeEarthly(entry.id);
+    }
   }
   return null;
 }
 
-/** Rod mutation only (Bloom / Amber). Does not roll world mutations. */
-export function rollRodMutation(rodId: ItemId): FishMutationId | null {
+/** Rod mutation only (Bloom / Amber / Thunder). Does not roll world mutations. */
+export function rollRodMutation(
+  rodId: ItemId,
+  chanceBonus = 0
+): FishMutationId | null {
   const grant = ITEMS[rodId]?.rodMutation;
   if (!grant) return null;
-  if (Math.random() < grant.chance) return grant.mutation;
+  if (Math.random() < grant.chance + chanceBonus) return grant.mutation;
   return null;
 }
 
 /**
+ * Final catch mutation.
+ * Already-mutated fish keep their mutation (never overwritten by rod / re-roll).
+ * Mutation bobber can roll world mutations at 2× on unmutated fish.
+ * Rod mutations only apply if the fish still has none.
+ */
+export function resolveCatchMutation(
+  rodId: ItemId,
+  worldMutation: FishMutationId | null | undefined,
+  mutationChanceMult = 1,
+  rodChanceBonus = 0
+): FishMutationId | null {
+  if (worldMutation) return worldMutation;
+  if (mutationChanceMult > 1) {
+    const boosted = rollWorldMutation(mutationChanceMult);
+    if (boosted) return boosted;
+  }
+  return rollRodMutation(rodId, rodChanceBonus);
+}
+
+/**
  * Final catch mutation: rod grant first, else the fish's world mutation.
- * @deprecated Prefer rollRodMutation + fish.mutation
+ * @deprecated Prefer resolveCatchMutation
  */
 export function rollCatchMutation(
   rodId: ItemId,
   worldMutation?: FishMutationId | null
 ): FishMutationId | null {
-  return rollRodMutation(rodId) ?? worldMutation ?? null;
+  return resolveCatchMutation(rodId, worldMutation ?? null, 1);
+}
+
+export const BASE_ATTRACT_RADIUS = 340;
+
+export function formatBobberStats(def: ItemDef): string {
+  const s = def.bobberStats ?? {};
+  const lines: string[] = [];
+  if ((s.hooks ?? 1) > 1) lines.push(`Hooks  ${s.hooks}`);
+  if (s.luck) lines.push(`Luck  +${s.luck}%`);
+  if (s.control) lines.push(`Control  +${s.control}%`);
+  if (s.progressSpeed) lines.push(`Progress  +${s.progressSpeed}%`);
+  if (s.lineDepth) lines.push(`Line Depth  +${s.lineDepth}m`);
+  if (s.attractBonus) lines.push(`Attract range  +${s.attractBonus}px`);
+  if (s.mutationChanceMult && s.mutationChanceMult > 1) {
+    lines.push(`World mutations  ×${s.mutationChanceMult} on catch`);
+  }
+  if (lines.length === 0) lines.push("No bonus stats");
+  return lines.join("\n");
 }
 
 /**
@@ -888,4 +1234,11 @@ export interface InventorySlot {
 }
 
 export const HOTBAR_SIZE = 5;
+/** Starter bag size (also backpack_starter.bagSlots). */
 export const INVENTORY_SIZE = 10;
+/** Largest backpack capacity — bag arrays are this long. */
+export const MAX_INVENTORY_SIZE = 25;
+
+export function backpackSlotCount(backpackId: ItemId): number {
+  return ITEMS[backpackId]?.bagSlots ?? INVENTORY_SIZE;
+}

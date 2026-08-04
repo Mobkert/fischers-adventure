@@ -5,18 +5,20 @@ import { CatchMinigame } from "../ui/CatchMinigame";
 import { EquipmentBag } from "../ui/EquipmentBag";
 import { BestiaryPanel } from "../ui/BestiaryPanel";
 import { FishingTutorial } from "../ui/FishingTutorial";
-import { ITEMS, RARITY_COLOR, RARITY_LABEL, MUTATIONS, FISH_SIZES, sizeScale } from "../data/items";
+import { ITEMS, RARITY_COLOR, RARITY_LABEL, MUTATIONS, FISH_SIZES, sizeScale, FishRarity } from "../data/items";
 import { BoatMenu } from "../ui/BoatMenu";
 import { CoinDisplay } from "../ui/CoinDisplay";
 import { WildflowerBuyPanel } from "../ui/WildflowerBuyPanel";
 import { SettingsMenu } from "../ui/SettingsMenu";
 import { InventorySystem } from "../systems/InventorySystem";
 import { FishingSystem } from "../systems/FishingSystem";
+import { WeatherSystem } from "../systems/WeatherSystem";
 import { playCatchSfx } from "../audio/CatchSfx";
 
 interface UISceneData {
   inventory: InventorySystem;
   fishing: FishingSystem;
+  weather: WeatherSystem;
   getPointerDown: () => boolean;
   isOnPort: () => boolean;
   canOpenBoatMenu: () => boolean;
@@ -26,7 +28,12 @@ interface UISceneData {
   declineMerchant: () => void;
   tryBuyJungleRod: () => boolean;
   tryEnterShop: () => boolean;
+  tryEnterBobberShop: () => boolean;
+  tryEnterBackpackShop: () => boolean;
+  tryEnterWhirlpoolCloud: () => boolean;
   isNearBlueHouse: () => boolean;
+  isNearRedHouse: () => boolean;
+  isNearGreenHouse: () => boolean;
   getMusicVolume: () => number;
   setMusicVolume: (v: number) => void;
   isTutorialDone: () => boolean;
@@ -35,9 +42,27 @@ interface UISceneData {
   persistSave: () => void;
 }
 
+function rarityTierPenalty(rarity: FishRarity): number {
+  switch (rarity) {
+    case "common":
+      return 5;
+    case "uncommon":
+      return 10;
+    case "rare":
+      return 18;
+    case "epic":
+      return 28;
+    case "legendary":
+      return 40;
+    case "mythical":
+      return 55;
+  }
+}
+
 export class UIScene extends Phaser.Scene {
   private inventory!: InventorySystem;
   private fishing!: FishingSystem;
+  private weather!: WeatherSystem;
   private getPointerDown!: () => boolean;
   private isOnPort!: () => boolean;
   private canOpenBoatMenu!: () => boolean;
@@ -47,7 +72,12 @@ export class UIScene extends Phaser.Scene {
   private declineMerchant!: () => void;
   private tryBuyJungleRod!: () => boolean;
   private tryEnterShop!: () => boolean;
+  private tryEnterBobberShop!: () => boolean;
+  private tryEnterBackpackShop!: () => boolean;
+  private tryEnterWhirlpoolCloud!: () => boolean;
   private isNearBlueHouse!: () => boolean;
+  private isNearRedHouse!: () => boolean;
+  private isNearGreenHouse!: () => boolean;
   private getMusicVolume!: () => number;
   private setMusicVolume!: (v: number) => void;
   private isTutorialDone!: () => boolean;
@@ -67,6 +97,7 @@ export class UIScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   private promptText!: Phaser.GameObjects.Text;
   private toast?: Phaser.GameObjects.Text;
+  private weatherBanner?: Phaser.GameObjects.Text;
 
   constructor() {
     super("UIScene");
@@ -75,6 +106,7 @@ export class UIScene extends Phaser.Scene {
   init(data: UISceneData): void {
     this.inventory = data.inventory;
     this.fishing = data.fishing;
+    this.weather = data.weather;
     this.getPointerDown = data.getPointerDown;
     this.isOnPort = data.isOnPort;
     this.canOpenBoatMenu = data.canOpenBoatMenu;
@@ -84,7 +116,12 @@ export class UIScene extends Phaser.Scene {
     this.declineMerchant = data.declineMerchant;
     this.tryBuyJungleRod = data.tryBuyJungleRod;
     this.tryEnterShop = data.tryEnterShop;
+    this.tryEnterBobberShop = data.tryEnterBobberShop;
+    this.tryEnterBackpackShop = data.tryEnterBackpackShop;
+    this.tryEnterWhirlpoolCloud = data.tryEnterWhirlpoolCloud;
     this.isNearBlueHouse = data.isNearBlueHouse;
+    this.isNearRedHouse = data.isNearRedHouse;
+    this.isNearGreenHouse = data.isNearGreenHouse;
     this.getMusicVolume = data.getMusicVolume;
     this.setMusicVolume = data.setMusicVolume;
     this.isTutorialDone = data.isTutorialDone;
@@ -100,12 +137,9 @@ export class UIScene extends Phaser.Scene {
       this.persistSave();
     });
     this.equipmentBag = new EquipmentBag(this, this.inventory);
-    this.equipmentBag.setOnChanged(() => {
+    this.equipmentBag.setOnChanged((message) => {
       this.hotbar.refresh();
-      this.showToast(
-        `Equipped ${ITEMS[this.inventory.getEquippedRodId()].name}`,
-        "#ffe066"
-      );
+      this.showToast(message, "#ffe066");
       this.persistSave();
     });
     this.bestiaryPanel = new BestiaryPanel(this, this.inventory);
@@ -129,6 +163,18 @@ export class UIScene extends Phaser.Scene {
       () => this.quitToMenu()
     );
     this.coins = new CoinDisplay(this, this.inventory);
+    this.coins.setWeather(this.weather);
+    this.weather.onWeatherChange = (id, name) => {
+      this.coins.refresh();
+      if (id === "clear") {
+        this.showWeatherBanner("Weather clears…", "#c8d0d8");
+      } else {
+        this.showWeatherBanner(`${name} rolls in!`, this.weather.getDef().iconColor);
+      }
+    };
+    this.weather.onLightningAnnounce = (message) => {
+      this.showWeatherBanner(message, "#ffe066");
+    };
     this.tutorial = new FishingTutorial(this, {
       isDone: () => this.isTutorialDone(),
       markDone: () => {
@@ -232,7 +278,13 @@ export class UIScene extends Phaser.Scene {
       )
         return;
       if (this.tryEnterShop()) return;
-      if (this.isNearBlueHouse()) {
+      if (this.tryEnterBobberShop()) return;
+      if (this.tryEnterBackpackShop()) return;
+      if (
+        this.isNearBlueHouse() ||
+        this.isNearRedHouse() ||
+        this.isNearGreenHouse()
+      ) {
         this.showToast("Can't enter right now.", "#ffaa66");
       }
     });
@@ -276,6 +328,7 @@ export class UIScene extends Phaser.Scene {
         this.hotbar.refresh();
         return;
       }
+      if (this.tryEnterWhirlpoolCloud()) return;
       this.tryBoardOrExitBoat();
     });
 
@@ -312,11 +365,47 @@ export class UIScene extends Phaser.Scene {
     this.fishing.onMinigameStart = () => {
       const speciesId = this.fishing.getTargetSpeciesId() ?? "sockeye_salmon";
       const def = ITEMS[speciesId];
-      const rod = this.inventory.getEquippedRodStats();
+      const rod = this.weather.modifyStats(
+        this.inventory.getFishingStats(),
+        this.inventory.getEquippedRodId()
+      );
       const rarity = def.rarity ?? "common";
       const sizeMult = sizeScale(this.fishing.getTargetSize());
-      const worldMut = this.fishing.getTargetMutation();
+      const worldMut = this.fishing.isBobberInWhirlpool()
+        ? "thunder"
+        : this.fishing.getTargetMutation();
       const worldMutDef = worldMut ? MUTATIONS[worldMut] : null;
+      const dual = this.fishing.hasSecondFish();
+      const secondId = this.fishing.getSecondSpeciesId();
+      const def2 = secondId ? ITEMS[secondId] : null;
+      const sizeMult2 = sizeScale(this.fishing.getSecondSize());
+      const worldMut2 = this.fishing.isBobberInWhirlpool()
+        ? "thunder"
+        : this.fishing.getSecondMutation();
+      const worldMutDef2 = worldMut2 ? MUTATIONS[worldMut2] : null;
+
+      // Dual catch: combine intensity + heavy progress penalty
+      let speedMult = def.minigameSpeed ?? 1;
+      let progressSpeed = rod.progressSpeed + (def.catchProgress ?? 0);
+      let chaos = def.minigameChaos ?? 1;
+      let drainMult = def.drainMult ?? 1;
+      let jerky = def.minigameJerky ?? false;
+      let unstoppable = def.unstoppableJerky ?? false;
+      if (dual && def2) {
+        speedMult = Math.max(speedMult, def2.minigameSpeed ?? 1) * 1.25;
+        progressSpeed +=
+          (def2.catchProgress ?? 0) -
+          55 -
+          (rarityTierPenalty(rarity) +
+            rarityTierPenalty(def2.rarity ?? "common"));
+        chaos = Math.max(chaos, def2.minigameChaos ?? 1) * 1.15;
+        drainMult = Math.max(drainMult, def2.drainMult ?? 1) * 1.2;
+        jerky = jerky || !!def2.minigameJerky;
+        unstoppable = unstoppable || !!def2.unstoppableJerky;
+      }
+      // Twin-hook (and any stack) can't drain progress while tracking
+      progressSpeed = Math.max(-80, progressSpeed);
+
       this.equipmentBag.setOpen(false);
       this.bestiaryPanel.setOpen(false);
       this.hotbar.setVisible(false);
@@ -327,27 +416,37 @@ export class UIScene extends Phaser.Scene {
           const wasNew = !this.inventory.isBestiaryFound(speciesId);
           this.fishing.completeCatch(success);
           if (success) {
-            const article = /^[aeiou]/i.test(def.name) ? "an" : "a";
-            const mut = this.fishing.lastCatchMutation;
-            const mutDef = mut ? MUTATIONS[mut] : null;
-            const size = this.fishing.lastCatchSize;
-            const sizeDef =
-              size && size !== "normal" ? FISH_SIZES[size] : null;
-            playCatchSfx(this, rarity, mut);
-            const bits: string[] = [];
-            if (mutDef) bits.push(mutDef.label.trim());
-            if (sizeDef) bits.push(sizeDef.name);
-            bits.push(RARITY_LABEL[rarity].trim());
-            const prefix = bits.length ? `${bits.join(" ")} ` : "";
-            const newEntry =
-              wasNew && this.inventory.isBestiaryFound(speciesId)
-                ? " · New bestiary entry!"
-                : "";
-            this.showToast(
-              `${prefix}Caught ${article} ${def.name}!${newEntry}`,
-              mutDef?.toastColor ?? RARITY_COLOR[rarity]
-            );
+            const caught = this.fishing.lastCaughtFish;
+            if (caught.length > 1) {
+              playCatchSfx(this, rarity, caught[0]?.mutation ?? null);
+              this.showToast(
+                `Twin catch! Landed ${caught.length} fish!`,
+                "#ffe066"
+              );
+            } else {
+              const article = /^[aeiou]/i.test(def.name) ? "an" : "a";
+              const mut = this.fishing.lastCatchMutation;
+              const mutDef = mut ? MUTATIONS[mut] : null;
+              const size = this.fishing.lastCatchSize;
+              const sizeDef =
+                size && size !== "normal" ? FISH_SIZES[size] : null;
+              playCatchSfx(this, rarity, mut);
+              const bits: string[] = [];
+              if (mutDef) bits.push(mutDef.label.trim());
+              if (sizeDef) bits.push(sizeDef.name);
+              bits.push(RARITY_LABEL[rarity].trim());
+              const prefix = bits.length ? `${bits.join(" ")} ` : "";
+              const newEntry =
+                wasNew && this.inventory.isBestiaryFound(speciesId)
+                  ? " · New bestiary entry!"
+                  : "";
+              this.showToast(
+                `${prefix}Caught ${article} ${def.name}!${newEntry}`,
+                mutDef?.toastColor ?? RARITY_COLOR[rarity]
+              );
+            }
             this.inventoryPanel.refresh();
+            this.coins.refresh();
             this.persistSave();
           } else {
             this.showToast("The fish got away...", "#ffaa66");
@@ -355,21 +454,37 @@ export class UIScene extends Phaser.Scene {
         },
         {
           textureKey: def.textureKey,
-          speedMult: def.minigameSpeed ?? 1,
-          jerky: def.minigameJerky ?? false,
-          chaos: def.minigameChaos ?? 1,
-          drainMult: def.drainMult ?? 1,
-          unstoppableJerky: def.unstoppableJerky ?? false,
+          speedMult,
+          jerky,
+          chaos,
+          drainMult,
+          unstoppableJerky: unstoppable,
           pauseChance: def.minigamePauseChance,
           facesLeft: def.facesLeft ?? false,
           tint: worldMutDef?.tint ?? null,
+          tintFill: worldMutDef?.tintFill ?? false,
           glowColor: worldMutDef?.glowColor ?? null,
           displayWidth: Math.round((def.displayWidth ?? 48) * 0.9 * sizeMult),
           displayHeight: Math.round((def.displayHeight ?? 16) * 0.9 * sizeMult),
           control: rod.control,
           resilience: rod.resilience,
-          // Rod progress + fish catch penalty (e.g. Bluefin -20%)
-          progressSpeed: rod.progressSpeed + (def.catchProgress ?? 0),
+          progressSpeed,
+          second:
+            dual && def2
+              ? {
+                  textureKey: def2.textureKey,
+                  facesLeft: def2.facesLeft ?? false,
+                  tint: worldMutDef2?.tint ?? null,
+                  tintFill: worldMutDef2?.tintFill ?? false,
+                  glowColor: worldMutDef2?.glowColor ?? null,
+                  displayWidth: Math.round(
+                    (def2.displayWidth ?? 48) * 0.85 * sizeMult2
+                  ),
+                  displayHeight: Math.round(
+                    (def2.displayHeight ?? 16) * 0.85 * sizeMult2
+                  ),
+                }
+              : undefined,
         }
       );
     };
@@ -382,6 +497,7 @@ export class UIScene extends Phaser.Scene {
   onCoinsChanged(): void {
     this.coins.refresh();
     this.inventoryPanel.refresh();
+    this.hotbar.refresh();
   }
 
   isBlockingInput(): boolean {
@@ -433,6 +549,36 @@ export class UIScene extends Phaser.Scene {
         this.toast?.destroy();
         this.toast = undefined;
       },
+    });
+  }
+
+  showWeatherBanner(message: string, color: string): void {
+    this.weatherBanner?.destroy();
+    this.weatherBanner = this.add
+      .text(this.scale.width / 2, 36, message, {
+        fontFamily: "Georgia, serif",
+        fontSize: "20px",
+        color,
+        stroke: "#000000",
+        strokeThickness: 5,
+        backgroundColor: "#00000088",
+        padding: { x: 14, y: 8 },
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(165);
+
+    this.time.delayedCall(3000, () => {
+      if (!this.weatherBanner) return;
+      this.tweens.add({
+        targets: this.weatherBanner,
+        alpha: 0,
+        duration: 450,
+        onComplete: () => {
+          this.weatherBanner?.destroy();
+          this.weatherBanner = undefined;
+        },
+      });
     });
   }
 

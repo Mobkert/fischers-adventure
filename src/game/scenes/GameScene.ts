@@ -6,6 +6,7 @@ import { Sailboat } from "../entities/Sailboat";
 import { FishMerchant } from "../entities/FishMerchant";
 import { FishingSystem } from "../systems/FishingSystem";
 import { InventorySystem } from "../systems/InventorySystem";
+import { WeatherSystem } from "../systems/WeatherSystem";
 import { placeVillage, placeJungle } from "../world/WorldDecor";
 import { AmbientMusic, musicZoneForX } from "../audio/AmbientMusic";
 import { loadActiveSave, saveActiveSave } from "../save/SaveBank";
@@ -18,6 +19,7 @@ export class GameScene extends Phaser.Scene {
   bobber!: Bobber;
   fishing!: FishingSystem;
   inventory!: InventorySystem;
+  weather!: WeatherSystem;
   sailboat: Sailboat | null = null;
   merchant!: FishMerchant;
   jungleMerchant!: FishMerchant;
@@ -55,6 +57,10 @@ export class GameScene extends Phaser.Scene {
   readonly jungleEastDockEnd = 5940;
   /** Blue-roof cottage — rod shop entrance. */
   readonly blueHouseX = 640 + 720;
+  /** Red-roof cottage — bobber workshop entrance. */
+  readonly redHouseX = 640 + 220;
+  /** Green cottage — backpack shop entrance. */
+  readonly greenHouseX = 640 + 480;
 
   private ground!: Phaser.Physics.Arcade.StaticGroup;
   private boatDeckCollider?: Phaser.Physics.Arcade.Collider;
@@ -146,20 +152,30 @@ export class GameScene extends Phaser.Scene {
     this.bobber = new Bobber(this);
     this.spawnFish();
 
+    const waterZones = [
+      { left: this.westWaterLeft, right: this.westWaterRight },
+      { left: this.eastWaterLeft, right: this.eastWaterRight },
+      { left: this.farWaterLeft, right: this.farWaterRight },
+      { left: this.pondLeft, right: this.pondRight },
+    ];
+
+    this.weather = new WeatherSystem(
+      this,
+      waterZones,
+      this.waterSurfaceY,
+      this.groundY
+    );
+
     this.fishing = new FishingSystem(
       this,
       this.player,
       this.bobber,
       this.fishList,
       this.inventory,
-      [
-        { left: this.westWaterLeft, right: this.westWaterRight },
-        { left: this.eastWaterLeft, right: this.eastWaterRight },
-        { left: this.farWaterLeft, right: this.farWaterRight },
-        { left: this.pondLeft, right: this.pondRight },
-      ],
+      waterZones,
       this.waterSurfaceY
     );
+    this.fishing.setWeather(this.weather);
     this.fishing.onCastCameraFollow = () => this.followBobberCamera();
     this.fishing.onCastCameraRelease = () => this.followPlayerCamera();
 
@@ -182,6 +198,7 @@ export class GameScene extends Phaser.Scene {
     this.scene.launch("UIScene", {
       inventory: this.inventory,
       fishing: this.fishing,
+      weather: this.weather,
       getPointerDown: () => this.input.activePointer.isDown,
       isOnPort: () => this.isPlayerOnPort(),
       canOpenBoatMenu: () =>
@@ -194,7 +211,12 @@ export class GameScene extends Phaser.Scene {
       declineMerchant: () => this.declineAnyMerchant(),
       tryBuyJungleRod: () => this.tryBuyWildflowerRod(),
       tryEnterShop: () => this.tryEnterShop(),
+      tryEnterBobberShop: () => this.tryEnterBobberShop(),
+      tryEnterBackpackShop: () => this.tryEnterBackpackShop(),
+      tryEnterWhirlpoolCloud: () => this.tryEnterWhirlpoolCloud(),
       isNearBlueHouse: () => this.isNearBlueHouse(),
+      isNearRedHouse: () => this.isNearRedHouse(),
+      isNearGreenHouse: () => this.isNearGreenHouse(),
       getMusicVolume: () => this.music.getVolume(),
       setMusicVolume: (v: number) => this.music.setVolume(v),
       isTutorialDone: () => this.tutorialDone,
@@ -434,7 +456,7 @@ export class GameScene extends Phaser.Scene {
       .setAngle(-28)
       .setDepth(6);
     this.wildflowerLabel = this.add
-      .text(x + 8, this.groundY - 78, "Wildflower Rod\n$22000 · F to inspect", {
+      .text(x + 8, this.groundY - 78, "Wildflower Rod\n$14500 · F to inspect", {
         fontFamily: "Arial",
         fontSize: "11px",
         color: "#ffe8f0",
@@ -782,6 +804,16 @@ export class GameScene extends Phaser.Scene {
     return Math.abs(this.player.sprite.x - this.blueHouseX) < 70;
   }
 
+  isNearRedHouse(): boolean {
+    if (this.player.isOnBoat()) return false;
+    return Math.abs(this.player.sprite.x - this.redHouseX) < 70;
+  }
+
+  isNearGreenHouse(): boolean {
+    if (this.player.isOnBoat()) return false;
+    return Math.abs(this.player.sprite.x - this.greenHouseX) < 70;
+  }
+
   tryEnterShop(): boolean {
     if (!this.isNearBlueHouse()) return false;
     if (this.fishing.isBusy()) return false;
@@ -792,14 +824,55 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
+  tryEnterBobberShop(): boolean {
+    if (!this.isNearRedHouse()) return false;
+    if (this.fishing.isBusy()) return false;
+    if (this.merchant.talking || this.jungleMerchant.talking) return false;
+    this.scene.pause("GameScene");
+    this.scene.pause("UIScene");
+    this.scene.launch("BobberShopScene", { inventory: this.inventory });
+    return true;
+  }
+
+  tryEnterBackpackShop(): boolean {
+    if (!this.isNearGreenHouse()) return false;
+    if (this.fishing.isBusy()) return false;
+    if (this.merchant.talking || this.jungleMerchant.talking) return false;
+    this.scene.pause("GameScene");
+    this.scene.pause("UIScene");
+    this.scene.launch("BackpackShopScene", { inventory: this.inventory });
+    return true;
+  }
+
+  tryEnterWhirlpoolCloud(): boolean {
+    if (!this.weather?.isNearWhirlpool(this.player.sprite.x, this.player.sprite.y)) {
+      return false;
+    }
+    if (this.fishing.isBusy()) return false;
+    this.scene.pause("GameScene");
+    this.scene.pause("UIScene");
+    this.scene.launch("CloudShopScene", {
+      inventory: this.inventory,
+      persistSave: () => this.persistSave(),
+    });
+    return true;
+  }
+
   private spawnFish(): void {
-    const getLuck = () => this.inventory.getEquippedRodStats().luck;
+    const getLuck = () =>
+      this.weather
+        ? this.weather.getLuck(
+            this.inventory.getFishingStats().luck,
+            this.inventory.getEquippedRodId()
+          )
+        : this.inventory.getFishingStats().luck;
     const getExcludeSpecies = (self: Fish): ItemId[] => {
       const otherCluster = this.fishList.some(
         (f) => f !== self && f.speciesId === "mushroom_cluster"
       );
       return otherCluster ? ["mushroom_cluster"] : [];
     };
+    const getIsRainy = () => this.weather?.isRainy() ?? false;
     const zones: {
       left: number;
       right: number;
@@ -846,7 +919,8 @@ export class GameScene extends Phaser.Scene {
           getLuck,
           zone.habitat,
           undefined,
-          getExcludeSpecies
+          getExcludeSpecies,
+          getIsRainy
         );
         this.fishList.push(fish);
       }
@@ -854,6 +928,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
+    this.weather?.update(delta);
     this.player.syncCarriedRod(this.inventory.getSelectedItem());
     this.player.update();
     for (const fish of this.fishList) {
@@ -894,11 +969,17 @@ export class GameScene extends Phaser.Scene {
       const uiOpen = (this.scene.get("UIScene") as UIScene).isWildflowerBuyOpen();
       ui.setPrompt(
         uiOpen
-          ? "F — Buy ($22000)    X — Cancel"
+          ? "F — Buy ($14500)    X — Cancel"
           : "F — Inspect Wildflower Rod"
       );
+    } else if (this.weather?.isNearWhirlpool(this.player.sprite.x, this.player.sprite.y)) {
+      ui.setPrompt("F — Enter · Cast into the whirlpool for Thunder");
     } else if (this.isNearBlueHouse()) {
       ui.setPrompt("W — Enter Bluefin Tackle Shop");
+    } else if (this.isNearRedHouse()) {
+      ui.setPrompt("W — Enter Bobber Workshop");
+    } else if (this.isNearGreenHouse()) {
+      ui.setPrompt("W — Enter Pack Outfitter");
     } else if (
       this.sailboat &&
       !this.sailboat.occupied &&

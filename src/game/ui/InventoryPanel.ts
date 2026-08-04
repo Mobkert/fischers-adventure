@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import {
   ITEMS,
-  INVENTORY_SIZE,
+  MAX_INVENTORY_SIZE,
   HOTBAR_SIZE,
   MUTATIONS,
   FISH_SIZES,
@@ -9,6 +9,7 @@ import {
   sizeScale,
   mutationSellMult,
   sizeSellMult,
+  applyMutationTint,
   InventorySlot,
 } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
@@ -25,9 +26,12 @@ const RARITY_NAME: Record<string, string> = {
 const KEEP_COLOR = 0xffe066;
 const BAG_BORDER = 0x777777;
 const HOTBAR_BORDER = 0xc4a86a;
+const LOCKED_BORDER = 0x444444;
 
 export class InventoryPanel {
   private root: Phaser.GameObjects.Container;
+  private bg!: Phaser.GameObjects.Rectangle;
+  private bagLabel!: Phaser.GameObjects.Text;
   private slotFrames: Phaser.GameObjects.Rectangle[] = [];
   private slotTexts: Phaser.GameObjects.Text[] = [];
   private slotIcons: Phaser.GameObjects.Image[] = [];
@@ -40,18 +44,19 @@ export class InventoryPanel {
   private inventory: InventorySystem;
   private onChanged?: () => void;
   visible = false;
+  private panelH = 560;
 
   constructor(scene: Phaser.Scene, inventory: InventorySystem) {
     this.inventory = inventory;
     const w = 420;
-    const h = 400;
+    const h = this.panelH;
     const cx = scene.scale.width / 2;
     const cy = scene.scale.height / 2;
 
     this.root = scene.add.container(cx, cy).setDepth(120).setVisible(false);
     this.root.setScrollFactor(0);
 
-    const bg = scene.add
+    this.bg = scene.add
       .rectangle(0, 0, w, h, 0x1e1e28, 0.95)
       .setStrokeStyle(2, 0xd4c4a8);
     const title = scene.add
@@ -68,8 +73,8 @@ export class InventoryPanel {
         color: "#aaaaaa",
       })
       .setOrigin(0.5);
-    const bagLabel = scene.add
-      .text(0, -40, "Bag", {
+    this.bagLabel = scene.add
+      .text(0, -h / 2 + 148, "Bag", {
         fontFamily: "Arial",
         fontSize: "14px",
         color: "#aaaaaa",
@@ -83,10 +88,10 @@ export class InventoryPanel {
       })
       .setOrigin(0.5);
 
-    this.root.add([bg, title, hotbarLabel, bagLabel, hint]);
+    this.root.add([this.bg, title, hotbarLabel, this.bagLabel, hint]);
 
-    const slotSize = 56;
-    const gap = 10;
+    const slotSize = 52;
+    const gap = 8;
     const cols = 5;
     const gridW = cols * slotSize + (cols - 1) * gap;
     const startX = -gridW / 2 + slotSize / 2;
@@ -102,7 +107,7 @@ export class InventoryPanel {
         .setInteractive({ useHandCursor: false });
       const icon = scene.add.image(x, y - 6, "rod").setVisible(false).setScale(0.65);
       const text = scene.add
-        .text(x + 20, y + 16, "", {
+        .text(x + 18, y + 14, "", {
           fontFamily: "Arial",
           fontSize: "12px",
           color: "#ffffff",
@@ -121,8 +126,8 @@ export class InventoryPanel {
       });
     }
 
-    const bagStartY = -10;
-    for (let i = 0; i < INVENTORY_SIZE; i++) {
+    const bagStartY = -h / 2 + 188;
+    for (let i = 0; i < MAX_INVENTORY_SIZE; i++) {
       const col = i % cols;
       const row = Math.floor(i / cols);
       const x = startX + col * (slotSize + gap);
@@ -139,7 +144,7 @@ export class InventoryPanel {
         .setVisible(false)
         .setDisplaySize(40, 14);
       const text = scene.add
-        .text(x + 20, y + 16, "", {
+        .text(x + 18, y + 14, "", {
           fontFamily: "Arial",
           fontSize: "12px",
           color: "#ffffff",
@@ -151,8 +156,10 @@ export class InventoryPanel {
       this.slotTexts.push(text);
       this.slotHits.push(hit);
       this.root.add([frame, hit, icon, text]);
-      this.bindSlot(hit, () => this.inventory.bag[i], () => {
-        if (this.inventory.toggleKeepBag(i) != null) {
+      const slotIndex = i;
+      this.bindSlot(hit, () => this.inventory.bag[slotIndex], () => {
+        if (slotIndex >= this.inventory.getBagCapacity()) return;
+        if (this.inventory.toggleKeepBag(slotIndex) != null) {
           this.refresh();
           this.onChanged?.();
         }
@@ -278,7 +285,7 @@ export class InventoryPanel {
         const def = ITEMS[slot.itemId];
         this.hotbarIcons[i].setTexture(def.textureKey).setVisible(true);
         if (slot.mutation && MUTATIONS[slot.mutation]) {
-          this.hotbarIcons[i].setTint(MUTATIONS[slot.mutation].tint);
+          applyMutationTint(this.hotbarIcons[i], slot.mutation);
         } else {
           this.hotbarIcons[i].clearTint();
         }
@@ -290,16 +297,31 @@ export class InventoryPanel {
       }
     }
 
-    for (let i = 0; i < INVENTORY_SIZE; i++) {
+    for (let i = 0; i < MAX_INVENTORY_SIZE; i++) {
+      const capacity = this.inventory.getBagCapacity();
+      const unlocked = i < capacity;
       const slot = this.inventory.bag[i];
-      const isFish = !!slot.itemId && FISH_ITEM_IDS.includes(slot.itemId);
+      this.slotFrames[i].setVisible(true);
+      this.slotHits[i].setVisible(unlocked);
+      this.slotHits[i].setActive(unlocked);
+
+      if (!unlocked) {
+        this.slotFrames[i].setFillStyle(0x1a1a22, 0.7);
+        this.slotFrames[i].setStrokeStyle(1, LOCKED_BORDER);
+        this.slotIcons[i].setVisible(false);
+        this.slotTexts[i].setText("");
+        continue;
+      }
+
+      const isFish = !!slot?.itemId && FISH_ITEM_IDS.includes(slot.itemId);
       const kept = isFish && !!slot.keep;
+      this.slotFrames[i].setFillStyle(0x2f2f3a, 0.95);
       this.slotFrames[i].setStrokeStyle(
         kept ? 3 : 1,
         kept ? KEEP_COLOR : BAG_BORDER
       );
 
-      if (slot.itemId) {
+      if (slot?.itemId) {
         const def = ITEMS[slot.itemId];
         const icon = this.slotIcons[i];
         icon.setTexture(def.textureKey).setVisible(true);
@@ -317,7 +339,7 @@ export class InventoryPanel {
           icon.setDisplaySize(28 * Math.min(s, 1.25), 28 * Math.min(s, 1.25));
         }
         if (slot.mutation && MUTATIONS[slot.mutation]) {
-          icon.setTint(MUTATIONS[slot.mutation].tint);
+          applyMutationTint(icon, slot.mutation);
         } else {
           icon.clearTint();
         }
@@ -328,5 +350,10 @@ export class InventoryPanel {
         this.slotTexts[i].setText("");
       }
     }
+
+    const pack = ITEMS[this.inventory.getBackpackId()];
+    this.bagLabel.setText(
+      `Bag · ${pack.name} (${this.inventory.getBagCapacity()} slots)`
+    );
   }
 }

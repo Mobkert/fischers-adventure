@@ -187,18 +187,40 @@ function generateRodTextures(scene: Phaser.Scene): void {
     const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
     g.fillCircle(fx + Math.cos(a) * 4.2, fy + Math.sin(a) * 4.2, 2.6);
   }
-  g.fillStyle(0xffb4d4);
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
-    g.fillCircle(fx + Math.cos(a) * 3.2, fy + Math.sin(a) * 3.2, 1.4);
-  }
-  g.fillStyle(0xffe066);
+  g.fillStyle(0xfde68a);
   g.fillCircle(fx, fy, 2.2);
-  g.fillStyle(0x2d8a3e);
-  g.fillCircle(fx - 1, fy + 5, 1.5);
-  g.lineStyle(1.5, 0x1a5c28);
-  g.lineBetween(fx, fy + 2, fx - 1, fy + 7);
   g.generateTexture("rod_wildflower", S, S);
+
+  // —— Zeus rod: storm blue blank, gold lightning wraps ——
+  g.clear();
+  g.fillStyle(0x000000, 0.18);
+  g.fillEllipse(22, 56, 28, 8);
+  g.lineStyle(5, 0x2a5080);
+  g.lineBetween(12, 52, 50, 12);
+  g.lineStyle(3, 0x4da6ff);
+  g.lineBetween(14, 50, 48, 14);
+  g.lineStyle(1.5, 0xa8d4ff, 0.8);
+  g.lineBetween(18, 46, 46, 16);
+  g.lineStyle(2, 0xffe066);
+  g.lineBetween(20, 44, 24, 40);
+  g.lineBetween(28, 36, 32, 32);
+  g.lineBetween(36, 28, 40, 24);
+  g.fillStyle(0xc4a574);
+  g.fillRoundedRect(8, 44, 14, 12, 3);
+  g.fillStyle(0xffe066);
+  g.fillRect(8, 54, 14, 3);
+  g.fillStyle(0x4da6ff);
+  g.fillRect(18, 40, 5, 6);
+  g.lineStyle(2, 0xffe066);
+  g.strokeCircle(50, 12, 3.5);
+  g.fillStyle(0xffffff);
+  g.fillCircle(50, 12, 1.2);
+  // bolt tip
+  g.lineStyle(2, 0xffe066);
+  g.lineBetween(54, 4, 58, 10);
+  g.lineBetween(58, 10, 56, 10);
+  g.lineBetween(56, 10, 60, 16);
+  g.generateTexture("rod_zeus", S, S);
 
   g.destroy();
 }
@@ -212,7 +234,7 @@ function makeTextures(scene: Phaser.Scene): void {
   generateBoatArt(scene);
   generateMerchantTexture(scene);
 
-  // Bobber
+  // Bobber fallback only — real art is loaded in preload (do not overwrite keys)
   g.clear();
   g.fillStyle(0xff3333);
   g.fillCircle(8, 6, 6);
@@ -251,6 +273,20 @@ function makeTextures(scene: Phaser.Scene): void {
   g.fillStyle(0xb8860b);
   g.fillCircle(16, 17, 3);
   g.generateTexture("bestiary_book", 32, 32);
+
+  // Backpack shop icon (not worn on the player)
+  g.clear();
+  g.fillStyle(0x000000, 0.2);
+  g.fillEllipse(16, 28, 20, 5);
+  g.fillStyle(0x5a4030);
+  g.fillRoundedRect(6, 8, 20, 18, 3);
+  g.fillStyle(0x8b5a2b);
+  g.fillRect(6, 8, 20, 5);
+  g.fillStyle(0xc4a86a);
+  g.fillRect(14, 14, 4, 6);
+  g.fillStyle(0x3a2a1a);
+  g.fillCircle(16, 17, 2);
+  g.generateTexture("backpack_icon", 32, 32);
 
   // Water tile
   g.clear();
@@ -294,6 +330,12 @@ export class BootScene extends Phaser.Scene {
     this.load.image("spotted_mushrooms", "images/spotted_mushrooms.png");
     this.load.image("brown_gar", "images/brown_gar.png");
     this.load.image("crocodile", "images/crocodile.png");
+    this.load.image("bobber_red", "images/bobber_red.png");
+    this.load.image("bobber_red_double", "images/bobber_red_double.png");
+    this.load.image("bobber_yellow", "images/bobber_yellow.png");
+    this.load.image("bobber_grey", "images/bobber_grey.png");
+    this.load.image("lure_green_fish", "images/lure_green_fish.png");
+    this.load.image("lure_clover", "images/lure_clover.png");
     // Free procedural ambient loops (~32s each)
     this.load.audio("music_island", "audio/music_island.wav");
     this.load.audio("music_ocean", "audio/music_ocean.wav");

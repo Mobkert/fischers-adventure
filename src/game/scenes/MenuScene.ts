@@ -122,9 +122,9 @@ export class MenuScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xc4a86a);
 
     const title = this.add
-      .text(0, -panelH / 2 + 28, "The Swamp Update", {
+      .text(0, -panelH / 2 + 28, "Bobber & Weather Update", {
         fontFamily: "Georgia, serif",
-        fontSize: "26px",
+        fontSize: "24px",
         color: "#f0e6d2",
       })
       .setOrigin(0.5);
@@ -154,44 +154,25 @@ export class MenuScene extends Phaser.Scene {
 
     const bodyText =
       "WHAT'S NEW\n\n" +
-      "• Bestiary (hotbar slot 3) — browse Ocean and\n" +
-      "  Swamp Pond. Caught fish are revealed; others\n" +
-      "  stay as black silhouettes until you catch them\n" +
-      "• Claim discovery rewards by rarity:\n" +
-      "  Common $30 → Mythical $1000\n" +
-      "• Fishable swamp pond with six new catches:\n" +
-      "  Swamp Frog, Whisker Catfish, White Perch,\n" +
-      "  Mushroom Cluster, Arapaima, and Alligator\n" +
-      "• Amber Rod ($7000) in Bluefin Tackle Shop —\n" +
-      "  balanced luck, resilience, control, and depth\n" +
-      "  plus a chance at the Amber mutation (2× sell)\n" +
-      "• Catch mutations: Glowing, Earthly, Starlight,\n" +
-      "  Albino, Neon, Bloom, and Amber\n" +
-      "• Big & Giant size effects on swimming fish\n" +
-      "  (2× / 4× sell) — shown in water and inventory\n" +
-      "• Catch ding SFX — triple ding for epic+ or\n" +
-      "  mutated fish\n" +
-      "• Inventory hover tooltips: name, rarity,\n" +
-      "  mutation, size effect, and sell price\n" +
-      "• Right-click fish to Keep them (won't sell)\n" +
-      "• Spawn luck retuned — epics, legendaries, and\n" +
-      "  mythicals use fixed rates that rise with luck\n" +
-      "• Pond fishing: max 3 fish, half ocean rates\n" +
-      "  for epic / legendary / mythical\n\n" +
-      "CHANGES / FIXES\n\n" +
-      "• Pond bestiary lists common → mythical order\n" +
-      "• Merchant sell-all confirms total value first\n" +
-      "• Merchant no longer lists fish prices —\n" +
-      "  check sell value in your inventory tooltip\n" +
-      "• Bluefin shop rod list is scrollable\n" +
-      "• Equipment bag scrolls when you own more rods\n" +
-      "• Only one mushroom cluster in the pond at a time\n" +
-      "• Mushroom clusters despawn much faster\n" +
-      "• Alligator faces the right way and is no longer\n" +
-      "  squished\n" +
-      "• Swamp Frog is smaller; Arapaima is larger\n" +
-      "• Jungle island presented as a swamp with pond,\n" +
-      "  bridge, and swamp merchant";
+      "• Weather every 5 minutes — Rain, Sunny, Cloudy,\n" +
+      "  Thunderstorm (then always Clear next)\n" +
+      "• Pity after 3 Clears: Rain 50% · Sunny 30% ·\n" +
+      "  Cloudy 15% · Thunder 5%\n" +
+      "• Rain: rare+ fish higher · Sunny 1.5× luck ·\n" +
+      "  Cloudy 0.85× luck · Thunder 4× luck\n" +
+      "• Thunderstorm whirlpools — cast in for Thunder\n" +
+      "  mutation (5×), or F for storm clouds / Zeus Rod\n" +
+      "• Zeus Rod ($60k): +7% stats in Rain, +15% in\n" +
+      "  Thunderstorm (not depth) · 5% Thunder\n" +
+      "• Bobber Workshop (red house) — Twin Hook,\n" +
+      "  Reinforced, Mutation, Clover, Depth Lure\n" +
+      "• Pack Outfitter (green house) — bag upgrades\n" +
+      "  up to 25 slots\n\n" +
+      "CHANGES\n\n" +
+      "• Firm Rod resilience 30%\n" +
+      "• Wildflower Rod price $14,500\n" +
+      "• Sprout: 1% when Earthly is rolled\n" +
+      "• Mutation Bobber: $25k + Earthly/Sprout Yellowfin";
 
     const body = this.add
       .text(0, 0, bodyText, {

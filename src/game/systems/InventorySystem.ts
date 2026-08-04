@@ -1,7 +1,7 @@
 import {
   FISH_ITEM_IDS,
   HOTBAR_SIZE,
-  INVENTORY_SIZE,
+  MAX_INVENTORY_SIZE,
   ITEMS,
   ItemId,
   InventorySlot,
@@ -12,7 +12,11 @@ import {
   FishSizeId,
   mutationSellMult,
   sizeSellMult,
+  MUTATIONS,
   BESTIARY_CLAIM_REWARD,
+  BASE_ATTRACT_RADIUS,
+  backpackSlotCount,
+  backpackTier,
 } from "../data/items";
 import { SaveData, cloneSave, defaultSave } from "../save/SaveBank";
 
@@ -39,7 +43,7 @@ export class InventorySystem {
     keep: false,
   }));
 
-  bag: InventorySlot[] = Array.from({ length: INVENTORY_SIZE }, () => ({
+  bag: InventorySlot[] = Array.from({ length: MAX_INVENTORY_SIZE }, () => ({
     itemId: null,
     count: 0,
     mutation: null,
@@ -50,6 +54,9 @@ export class InventorySystem {
   /** Rods the player owns (shown in the equipment bag). */
   ownedRods: ItemId[] = ["starter_rod"];
   equippedRodId: ItemId = "starter_rod";
+  ownedBobbers: ItemId[] = ["bobber_starter"];
+  equippedBobberId: ItemId = "bobber_starter";
+  backpackId: ItemId = "backpack_starter";
 
   selectedHotbarIndex = 0;
   coins = 0;
@@ -89,9 +96,21 @@ export class InventorySystem {
     this.coins = save.coins;
     this.ownedRods = [...save.ownedRods];
     this.equippedRodId = save.equippedRodId;
+    this.ownedBobbers = [...save.ownedBobbers];
+    this.equippedBobberId = save.equippedBobberId;
+    this.backpackId = save.backpackId;
     this.selectedHotbarIndex = save.selectedHotbarIndex;
     this.hotbar = save.hotbar.map((s) => ({ ...s }));
     this.bag = save.bag.map((s) => ({ ...s }));
+    while (this.bag.length < MAX_INVENTORY_SIZE) {
+      this.bag.push({
+        itemId: null,
+        count: 0,
+        mutation: null,
+        size: null,
+        keep: false,
+      });
+    }
     this.bestiaryFound = [...save.bestiaryFound];
     this.bestiaryClaimed = [...save.bestiaryClaimed];
     // Keep bag / equipment bag / bestiary consistent
@@ -112,6 +131,9 @@ export class InventorySystem {
     if (!this.ownsRod(this.equippedRodId)) {
       this.equippedRodId = "starter_rod";
     }
+    if (!this.ownsBobber(this.equippedBobberId)) {
+      this.equippedBobberId = "bobber_starter";
+    }
     this.hotbar[0] = {
       itemId: this.equippedRodId,
       count: 1,
@@ -131,6 +153,9 @@ export class InventorySystem {
       coins: this.coins,
       ownedRods: [...this.ownedRods],
       equippedRodId: this.equippedRodId,
+      ownedBobbers: [...this.ownedBobbers],
+      equippedBobberId: this.equippedBobberId,
+      backpackId: this.backpackId,
       hotbar: this.hotbar.map((s) => ({ ...s })),
       bag: this.bag.map((s) => ({ ...s })),
       selectedHotbarIndex: this.selectedHotbarIndex,
@@ -157,12 +182,62 @@ export class InventorySystem {
     return this.equippedRodId;
   }
 
+  getEquippedBobberId(): ItemId {
+    return this.equippedBobberId;
+  }
+
+  getBackpackId(): ItemId {
+    return this.backpackId;
+  }
+
+  /** Usable bag slots for the current backpack. */
+  getBagCapacity(): number {
+    return backpackSlotCount(this.backpackId);
+  }
+
   getEquippedRodStats(): RodStats {
-    return ITEMS[this.equippedRodId].rodStats ?? { ...ZERO_ROD_STATS };
+    return this.getFishingStats();
+  }
+
+  /** Rod stats merged with equipped bobber bonuses. */
+  getFishingStats(): RodStats {
+    const rod = ITEMS[this.equippedRodId].rodStats ?? { ...ZERO_ROD_STATS };
+    const bob = ITEMS[this.equippedBobberId]?.bobberStats ?? {};
+    return {
+      luck: rod.luck + (bob.luck ?? 0),
+      resilience: rod.resilience,
+      control: rod.control + (bob.control ?? 0),
+      progressSpeed: rod.progressSpeed + (bob.progressSpeed ?? 0),
+      lineDepth: rod.lineDepth + (bob.lineDepth ?? 0),
+    };
+  }
+
+  getAttractRadius(): number {
+    const bonus =
+      ITEMS[this.equippedBobberId]?.bobberStats?.attractBonus ?? 0;
+    return BASE_ATTRACT_RADIUS + bonus;
+  }
+
+  getBobberHooks(): 1 | 2 {
+    return ITEMS[this.equippedBobberId]?.bobberStats?.hooks === 2 ? 2 : 1;
+  }
+
+  getMutationChanceMult(): number {
+    return (
+      ITEMS[this.equippedBobberId]?.bobberStats?.mutationChanceMult ?? 1
+    );
   }
 
   ownsRod(rodId: ItemId): boolean {
     return this.ownedRods.includes(rodId);
+  }
+
+  ownsBobber(bobberId: ItemId): boolean {
+    return this.ownedBobbers.includes(bobberId);
+  }
+
+  getOwnedBobbers(): ItemId[] {
+    return [...this.ownedBobbers];
   }
 
   equipRod(rodId: ItemId): boolean {
@@ -176,6 +251,12 @@ export class InventorySystem {
       keep: false,
     };
     this.selectedHotbarIndex = 0;
+    return true;
+  }
+
+  equipBobber(bobberId: ItemId): boolean {
+    if (!ITEMS[bobberId]?.isBobber || !this.ownsBobber(bobberId)) return false;
+    this.equippedBobberId = bobberId;
     return true;
   }
 
@@ -197,6 +278,168 @@ export class InventorySystem {
     this.coins -= def.buyPrice;
     this.ownedRods.push(rodId);
     return { ok: true, message: `Purchased ${def.name}!` };
+  }
+
+  buyBobber(bobberId: ItemId): { ok: boolean; message: string } {
+    const def = ITEMS[bobberId];
+    if (!def?.isBobber || def.buyPrice == null) {
+      return { ok: false, message: "That isn't for sale." };
+    }
+    if (this.ownsBobber(bobberId)) {
+      return { ok: false, message: `You already own the ${def.name}.` };
+    }
+    if (this.coins < def.buyPrice) {
+      return {
+        ok: false,
+        message: `Need $${def.buyPrice} — you have $${this.coins}.`,
+      };
+    }
+    this.coins -= def.buyPrice;
+    this.ownedBobbers.push(bobberId);
+    return { ok: true, message: `Purchased ${def.name}!` };
+  }
+
+  countFishMatching(
+    itemId: ItemId,
+    mutation?: FishMutationId | FishMutationId[] | null
+  ): number {
+    let n = 0;
+    const allowed = Array.isArray(mutation)
+      ? mutation
+      : mutation != null
+        ? [mutation]
+        : null;
+    for (const slot of [...this.bag, ...this.hotbar]) {
+      if (slot.itemId !== itemId || slot.count <= 0) continue;
+      if (allowed) {
+        if (!slot.mutation || !allowed.includes(slot.mutation)) continue;
+      }
+      n += slot.count;
+    }
+    return n;
+  }
+
+  private removeFishMatching(
+    itemId: ItemId,
+    count: number,
+    mutation?: FishMutationId | FishMutationId[]
+  ): boolean {
+    if (this.countFishMatching(itemId, mutation ?? null) < count) return false;
+    const allowed = Array.isArray(mutation)
+      ? mutation
+      : mutation != null
+        ? [mutation]
+        : null;
+    let left = count;
+    for (const slot of [...this.bag, ...this.hotbar]) {
+      if (left <= 0) break;
+      if (slot.itemId !== itemId || slot.count <= 0) continue;
+      if (allowed) {
+        if (!slot.mutation || !allowed.includes(slot.mutation)) continue;
+      }
+      const take = Math.min(slot.count, left);
+      slot.count -= take;
+      left -= take;
+      if (slot.count <= 0) {
+        slot.itemId = null;
+        slot.count = 0;
+        slot.mutation = null;
+        slot.size = null;
+        slot.keep = false;
+      }
+    }
+    return left === 0;
+  }
+
+  private craftIngredientMutations(
+    ing: import("../data/items").BobberCraftIngredient
+  ): FishMutationId[] | null {
+    if (ing.mutations && ing.mutations.length > 0) return ing.mutations;
+    if (ing.mutation) return [ing.mutation];
+    return null;
+  }
+
+  canCraftBobber(bobberId: ItemId): { ok: boolean; message: string } {
+    const def = ITEMS[bobberId];
+    if (!def?.isBobber || !def.craftCost) {
+      return { ok: false, message: "That can't be crafted." };
+    }
+    if (this.ownsBobber(bobberId)) {
+      return { ok: false, message: `You already own the ${def.name}.` };
+    }
+    if (this.coins < def.craftCost.coins) {
+      return {
+        ok: false,
+        message: `Need $${def.craftCost.coins} — you have $${this.coins}.`,
+      };
+    }
+    for (const ing of def.craftCost.ingredients) {
+      const muts = this.craftIngredientMutations(ing);
+      const have = this.countFishMatching(ing.itemId, muts);
+      if (have < ing.count) {
+        const mutLabel = muts
+          ? muts.map((m) => MUTATIONS[m]?.name ?? m).join("/") + " "
+          : "";
+        return {
+          ok: false,
+          message: `Need ${ing.count}× ${mutLabel}${ITEMS[ing.itemId].name} (have ${have}).`,
+        };
+      }
+    }
+    return { ok: true, message: "Ready to craft." };
+  }
+
+  craftBobber(bobberId: ItemId): { ok: boolean; message: string } {
+    const check = this.canCraftBobber(bobberId);
+    if (!check.ok) return check;
+    const def = ITEMS[bobberId];
+    const cost = def.craftCost!;
+    this.coins -= cost.coins;
+    for (const ing of cost.ingredients) {
+      this.removeFishMatching(
+        ing.itemId,
+        ing.count,
+        this.craftIngredientMutations(ing) ?? undefined
+      );
+    }
+    this.ownedBobbers.push(bobberId);
+    return { ok: true, message: `Crafted ${def.name}!` };
+  }
+
+  buyBackpack(backpackId: ItemId): { ok: boolean; message: string } {
+    const def = ITEMS[backpackId];
+    if (!def?.isBackpack || def.buyPrice == null) {
+      return { ok: false, message: "That isn't for sale." };
+    }
+    const nextTier = backpackTier(backpackId);
+    const curTier = backpackTier(this.backpackId);
+    if (nextTier <= curTier) {
+      return {
+        ok: false,
+        message:
+          nextTier < curTier
+            ? "You can't go back to a smaller pack."
+            : `You already have the ${def.name}.`,
+      };
+    }
+    if (nextTier !== curTier + 1) {
+      return {
+        ok: false,
+        message: "Buy the previous pack tier first.",
+      };
+    }
+    if (this.coins < def.buyPrice) {
+      return {
+        ok: false,
+        message: `Need $${def.buyPrice} — you have $${this.coins}.`,
+      };
+    }
+    this.coins -= def.buyPrice;
+    this.backpackId = backpackId;
+    return {
+      ok: true,
+      message: `Upgraded to ${def.name}! (${def.bagSlots} slots)`,
+    };
   }
 
   addItem(
@@ -221,7 +464,9 @@ export class InventorySystem {
       }
     }
 
-    const empty = this.bag.find((s) => s.itemId === null);
+    const empty = this.bag.find(
+      (s, i) => i < this.getBagCapacity() && s.itemId === null
+    );
     if (!empty) return false;
     empty.itemId = itemId;
     empty.count = count;

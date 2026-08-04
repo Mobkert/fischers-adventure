@@ -17,13 +17,15 @@ export type RodDrawStyle =
   | "lucky"
   | "firm"
   | "amber"
-  | "wildflower";
+  | "wildflower"
+  | "zeus";
 
 export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "lucky_rod") return "lucky";
   if (itemId === "firm_rod") return "firm";
   if (itemId === "amber_rod") return "amber";
   if (itemId === "wildflower_rod") return "wildflower";
+  if (itemId === "zeus_rod") return "zeus";
   return "starter";
 }
 
@@ -159,6 +161,7 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
     "firm",
     "amber",
     "wildflower",
+    "zeus",
   ];
   const withCarry = (pose: PlayerPose): PlayerPose => ({
     ...pose,
@@ -466,6 +469,35 @@ function drawHeldRod(
     return;
   }
 
+  if (style === "zeus") {
+    g.lineStyle(5, 0x2a5080, 1);
+    g.lineBetween(handX, handY, tipX, tipY);
+    g.lineStyle(3, 0x4da6ff, 1);
+    g.lineBetween(handX, handY, tipX, tipY);
+    g.lineStyle(1.5, 0xa8d4ff, 0.75);
+    g.lineBetween(handX, handY - 1, tipX, tipY - 1);
+    const mx = (handX + tipX) / 2;
+    const my = (handY + tipY) / 2;
+    g.lineStyle(2, 0xffe066, 1);
+    g.lineBetween(handX + 3, handY - 3, handX + 7, handY - 6);
+    g.lineBetween(mx - 2, my + 1, mx + 2, my - 2);
+    g.fillStyle(0xc4a574);
+    g.fillRect(handX - 3, handY - 2, 8, 8);
+    g.fillStyle(0xffe066);
+    g.fillRect(handX - 3, handY + 5, 8, 3);
+    g.fillStyle(0x4da6ff);
+    g.fillCircle(handX + 1, handY + 6, 3.5);
+    g.fillStyle(0xffe066);
+    g.fillCircle(handX + 1, handY + 6, 1.5);
+    g.lineStyle(2, 0xffe066);
+    g.strokeCircle(tipX, tipY, 2.8);
+    g.lineStyle(2, 0xffe066);
+    g.lineBetween(tipX + 2, tipY - 6, tipX + 5, tipY - 1);
+    g.lineBetween(tipX + 5, tipY - 1, tipX + 3, tipY - 1);
+    g.lineBetween(tipX + 3, tipY - 1, tipX + 7, tipY + 4);
+    return;
+  }
+
   // starter — wood blank
   g.lineStyle(5, 0x3e2a1a, 1);
   g.lineBetween(handX, handY, tipX, tipY);
@@ -523,6 +555,7 @@ function createPlayerAnimations(scene: Phaser.Scene): void {
     "firm",
     "amber",
     "wildflower",
+    "zeus",
   ];
   for (const style of rodStyles) {
     const idleKey = `player-idle-rod-${style}`;

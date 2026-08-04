@@ -1,6 +1,6 @@
 import {
   HOTBAR_SIZE,
-  INVENTORY_SIZE,
+  MAX_INVENTORY_SIZE,
   ITEMS,
   ItemId,
   InventorySlot,
@@ -19,6 +19,10 @@ export interface SaveData {
   coins: number;
   ownedRods: ItemId[];
   equippedRodId: ItemId;
+  ownedBobbers: ItemId[];
+  equippedBobberId: ItemId;
+  /** Highest backpack owned — cannot downgrade. */
+  backpackId: ItemId;
   hotbar: InventorySlot[];
   bag: InventorySlot[];
   selectedHotbarIndex: number;
@@ -112,8 +116,11 @@ export function defaultSave(): SaveData {
     coins: 0,
     ownedRods: ["starter_rod"],
     equippedRodId: "starter_rod",
+    ownedBobbers: ["bobber_starter"],
+    equippedBobberId: "bobber_starter",
+    backpackId: "backpack_starter",
     hotbar,
-    bag: Array.from({ length: INVENTORY_SIZE }, emptySlot),
+    bag: Array.from({ length: MAX_INVENTORY_SIZE }, emptySlot),
     selectedHotbarIndex: 0,
     playerX: DEFAULT_PLAYER_X,
     playerY: DEFAULT_PLAYER_Y,
@@ -127,6 +134,16 @@ export function defaultSave(): SaveData {
 function normalizeRodId(id: unknown): ItemId | null {
   if (typeof id !== "string" || !(id in ITEMS)) return null;
   return ITEMS[id as ItemId].isRod ? (id as ItemId) : null;
+}
+
+function normalizeBobberId(id: unknown): ItemId | null {
+  if (typeof id !== "string" || !(id in ITEMS)) return null;
+  return ITEMS[id as ItemId].isBobber ? (id as ItemId) : null;
+}
+
+function normalizeBackpackId(id: unknown): ItemId | null {
+  if (typeof id !== "string" || !(id in ITEMS)) return null;
+  return ITEMS[id as ItemId].isBackpack ? (id as ItemId) : null;
 }
 
 export function cloneSave(raw: unknown): SaveData {
@@ -147,6 +164,27 @@ export function cloneSave(raw: unknown): SaveData {
     normalizeRodId(s.equippedRodId) ?? uniqueRods[0] ?? "starter_rod";
   if (!uniqueRods.includes(equipped)) equipped = uniqueRods[0];
 
+  const ownedBobbers: ItemId[] = Array.isArray(s.ownedBobbers)
+    ? s.ownedBobbers
+        .map(normalizeBobberId)
+        .filter((id): id is ItemId => id != null)
+    : ["bobber_starter"];
+  if (!ownedBobbers.includes("bobber_starter")) {
+    ownedBobbers.unshift("bobber_starter");
+  }
+  const uniqueBobbers: ItemId[] = [...new Set(ownedBobbers)];
+  let equippedBobber: ItemId =
+    normalizeBobberId(s.equippedBobberId) ??
+    uniqueBobbers[0] ??
+    "bobber_starter";
+  if (!uniqueBobbers.includes(equippedBobber)) {
+    equippedBobber = uniqueBobbers[0];
+  }
+
+  let backpackId =
+    normalizeBackpackId(s.backpackId) ?? "backpack_starter";
+  if (!ITEMS[backpackId]?.isBackpack) backpackId = "backpack_starter";
+
   const hotbar = cloneSlots(s.hotbar, HOTBAR_SIZE);
   // Always keep equipment bag on slot 2 and bestiary on slot 3
   hotbar[1] = { itemId: "equipment_bag", count: 1, mutation: null, size: null, keep: false };
@@ -155,7 +193,7 @@ export function cloneSave(raw: unknown): SaveData {
     hotbar[0] = { itemId: equipped, count: 1, mutation: null, size: null, keep: false };
   }
 
-  const bag = cloneSlots(s.bag, INVENTORY_SIZE);
+  const bag = cloneSlots(s.bag, MAX_INVENTORY_SIZE);
   let bestiaryFound = parseFishIdList(s.bestiaryFound);
   const bestiaryClaimed = parseFishIdList(s.bestiaryClaimed);
   // Retroactively unlock any fish already in inventory (pre-bestiary saves)
@@ -171,6 +209,9 @@ export function cloneSave(raw: unknown): SaveData {
     coins: Math.max(0, Math.floor(Number(s.coins) || 0)),
     ownedRods: uniqueRods,
     equippedRodId: equipped,
+    ownedBobbers: uniqueBobbers,
+    equippedBobberId: equippedBobber,
+    backpackId,
     hotbar,
     bag,
     selectedHotbarIndex: Math.max(

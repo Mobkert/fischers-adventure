@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { HOTBAR_SIZE, ITEMS, MUTATIONS } from "../data/items";
+import { HOTBAR_SIZE, ITEMS, MUTATIONS, applyMutationTint } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
 
 export class Hotbar {
@@ -65,7 +65,7 @@ export class Hotbar {
           this.icons[i].setDisplaySize(28, 28);
         }
         if (slotData.mutation && MUTATIONS[slotData.mutation]) {
-          this.icons[i].setTint(MUTATIONS[slotData.mutation].tint);
+          applyMutationTint(this.icons[i], slotData.mutation);
         } else {
           this.icons[i].clearTint();
         }

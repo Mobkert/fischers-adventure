@@ -1019,22 +1019,28 @@ export function placeSwamp(
       .setScale(scale);
   }
 
-  // ——— Pond (kept): murkier swamp water ———
+  // ——— Pond (kept): deep murky swamp water ———
   const pondW = pondRight - pondLeft;
+  const pondDepth = 240;
   const pond = scene.add.graphics().setDepth(4);
-  pond.fillStyle(0x0a3028, 0.82);
-  pond.fillRect(pondLeft, groundY, pondW, 110);
-  pond.fillStyle(0x1a5040, 0.5);
-  pond.fillRect(pondLeft, groundY, pondW, 32);
-  pond.fillStyle(0x062018, 0.45);
-  pond.fillRect(pondLeft, groundY + 55, pondW, 55);
+  pond.fillStyle(0x0a3028, 0.88);
+  pond.fillRect(pondLeft, groundY, pondW, pondDepth);
+  pond.fillStyle(0x1a5040, 0.55);
+  pond.fillRect(pondLeft, groundY, pondW, 36);
+  pond.fillStyle(0x0c3a30, 0.5);
+  pond.fillRect(pondLeft, groundY + 50, pondW, 70);
+  pond.fillStyle(0x062018, 0.65);
+  pond.fillRect(pondLeft, groundY + 120, pondW, 70);
+  pond.fillStyle(0x03140e, 0.75);
+  pond.fillRect(pondLeft, groundY + 180, pondW, 60);
   pond.fillStyle(0x2a4a28, 0.55);
   pond.fillRect(pondLeft - 8, groundY - 3, 10, 14);
   pond.fillRect(pondRight - 2, groundY - 3, 10, 14);
   // Algae patches
   pond.fillStyle(0x3a6a28, 0.35);
   pond.fillEllipse(pondLeft + pondW * 0.3, groundY + 40, 50, 18);
-  pond.fillEllipse(pondLeft + pondW * 0.7, groundY + 55, 40, 14);
+  pond.fillEllipse(pondLeft + pondW * 0.7, groundY + 90, 40, 14);
+  pond.fillEllipse(pondLeft + pondW * 0.45, groundY + 150, 55, 16);
 
   for (let i = 0; i < 6; i++) {
     const strip = scene.add

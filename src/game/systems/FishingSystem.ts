@@ -9,7 +9,7 @@ import {
   RARITY_COLOR,
   rodMaxReachPx,
   DEPTH_PX_PER_METER,
-  rollRodMutation,
+  resolveCatchMutation,
   FishMutationId,
   FishSizeId,
   luckApproachSpeedMult,
@@ -19,6 +19,7 @@ export type FishingState =
   | "idle"
   | "casting"
   | "waiting"
+  | "second_wait"
   | "bite"
   | "minigame";
 
@@ -27,8 +28,14 @@ export interface WaterZone {
   right: number;
 }
 
-/** How close a fish must be to race the bobber. */
-const ATTRACT_RADIUS = 340;
+export interface CaughtFishResult {
+  speciesId: ItemId;
+  mutation: FishMutationId | null;
+  size: FishSizeId;
+}
+
+/** How long to wait for a second bite on the twin-hook bobber (ms). */
+const SECOND_BITE_WAIT_MS = 2500;
 
 export class FishingSystem {
   state: FishingState = "idle";
@@ -39,12 +46,22 @@ export class FishingSystem {
   private scene: Phaser.Scene;
   private waterZones: WaterZone[];
   private waterSurfaceY: number;
+  private weather: {
+    modifyStats: (
+      s: import("../data/items").RodStats,
+      rodId?: string | null
+    ) => import("../data/items").RodStats;
+    isInWhirlpool: (x: number, y: number, r?: number) => boolean;
+    getRodMutationChanceBonus?: (rodId?: string | null) => number;
+  } | null = null;
   private targetFish: Fish | null = null;
+  private secondFish: Fish | null = null;
   /** All fish currently racing the bobber — first to arrive wins. */
   private approachingFish: Fish[] = [];
   private castCooldown = 0;
   /** When waiting started (ms) — timeout if nothing bites. */
   private waitingSince = 0;
+  private secondWaitUntil = 0;
 
   onBite?: (speciesId: ItemId) => void;
   onMinigameStart?: () => void;
@@ -54,10 +71,12 @@ export class FishingSystem {
   onCastCameraFollow?: () => void;
   /** Restore camera to the player when fishing ends. */
   onCastCameraRelease?: () => void;
-  /** Mutation applied on the last successful catch (if any). */
+  /** Mutation applied on the last successful catch (primary). */
   lastCatchMutation: FishMutationId | null = null;
-  /** Size effect on the last successful catch. */
+  /** Size effect on the last successful catch (primary). */
   lastCatchSize: FishSizeId | null = null;
+  /** All fish landed on the last successful catch. */
+  lastCaughtFish: CaughtFishResult[] = [];
 
   constructor(
     scene: Phaser.Scene,
@@ -77,12 +96,35 @@ export class FishingSystem {
     this.waterSurfaceY = waterSurfaceY;
   }
 
+  setWeather(weather: {
+    modifyStats: (
+      s: import("../data/items").RodStats,
+      rodId?: string | null
+    ) => import("../data/items").RodStats;
+    isInWhirlpool: (x: number, y: number, r?: number) => boolean;
+    getRodMutationChanceBonus?: (rodId?: string | null) => number;
+  }): void {
+    this.weather = weather;
+  }
+
+  isBobberInWhirlpool(): boolean {
+    return (
+      this.weather?.isInWhirlpool(this.bobber.sprite.x, this.bobber.sprite.y) ??
+      false
+    );
+  }
+
+  private fishingStats() {
+    const base = this.inventory.getFishingStats();
+    return (
+      this.weather?.modifyStats(base, this.inventory.getEquippedRodId()) ?? base
+    );
+  }
+
   private isNearAnyShore(): boolean {
     const px = this.player.sprite.x;
     for (const z of this.waterZones) {
-      // Land on the left of this water (east shore / dock)
       if (px >= z.left - 220 && px <= z.left + 100) return true;
-      // Land on the right of this water (west shore)
       if (px >= z.right - 100 && px <= z.right + 220) return true;
     }
     return false;
@@ -105,11 +147,9 @@ export class FishingSystem {
   }
 
   private pickZone(castHintX: number): WaterZone {
-    // Prefer zone containing the click / hint
     for (const z of this.waterZones) {
       if (castHintX >= z.left && castHintX <= z.right) return z;
     }
-    // Else nearest zone to the player
     const px = this.player.sprite.x;
     let best = this.waterZones[0];
     let bestDist = Infinity;
@@ -138,23 +178,26 @@ export class FishingSystem {
       zone.left + 40,
       zone.right - 40
     );
-    const lineDepth = this.inventory.getEquippedRodStats().lineDepth ?? 0;
+    const stats = this.fishingStats();
+    const lineDepth = stats.lineDepth ?? 0;
     const surfaceY = this.waterSurfaceY + 16;
     const depthY = surfaceY + lineDepth * DEPTH_PX_PER_METER;
 
     this.state = "casting";
+    this.secondFish = null;
     this.player.setLocked(true);
     this.player.playFishCast(this.inventory.getEquippedRodId());
-
-    // Face toward the cast
     this.player.setFacing(castX >= this.player.sprite.x ? "right" : "left");
 
     const tip = this.player.getRodTip();
+    const bobberTex =
+      ITEMS[this.inventory.getEquippedBobberId()]?.textureKey ?? "bobber_red";
+    this.bobber.setTexture(bobberTex);
     this.bobber.castTo(tip.x, tip.y, castX, surfaceY, depthY);
     this.onCastCameraFollow?.();
 
-    // Wait for cast + sink before attracting fish
-    const waitMs = 480 + (lineDepth > 0 ? 280 + lineDepth * DEPTH_PX_PER_METER * 4 : 0);
+    const waitMs =
+      480 + (lineDepth > 0 ? 280 + lineDepth * DEPTH_PX_PER_METER * 4 : 0);
     this.scene.time.delayedCall(waitMs, () => {
       if (this.state !== "casting") return;
       this.state = "waiting";
@@ -170,15 +213,14 @@ export class FishingSystem {
     bobberY: number,
     zone: WaterZone
   ): void {
-    const reach = rodMaxReachPx(
-      this.inventory.getEquippedRodStats().lineDepth ?? 0
-    );
-    const luck = this.inventory.getEquippedRodStats().luck ?? 0;
+    const stats = this.fishingStats();
+    const reach = rodMaxReachPx(stats.lineDepth ?? 0);
+    const luck = stats.luck ?? 0;
+    const attract = this.inventory.getAttractRadius();
     const inReach = (f: Fish) => f.depthBelowSurface() <= reach + 6;
     const nearBobber = (f: Fish) =>
-      f.distanceTo(bobberX, bobberY) <= ATTRACT_RADIUS;
+      f.distanceTo(bobberX, bobberY) <= attract;
 
-    // Prefer fish near the bobber in this water zone + within line depth
     let pool = this.fishList.filter(
       (f) =>
         f.state === "idle" &&
@@ -188,7 +230,6 @@ export class FishingSystem {
         f.sprite.x <= zone.right + 40
     );
 
-    // Fallback: any idle fish in reach near the bobber (any zone)
     if (pool.length === 0) {
       pool = this.fishList.filter(
         (f) => f.state === "idle" && inReach(f) && nearBobber(f)
@@ -209,7 +250,6 @@ export class FishingSystem {
       return;
     }
 
-    // Mushrooms etc. ignore bait — racers chase; ignore-bait stay idle until contact
     const racers = pool.filter((f) => !f.ignoresBobber());
     this.approachingFish = racers;
     this.targetFish = null;
@@ -219,7 +259,6 @@ export class FishingSystem {
       const speedMult = luckApproachSpeedMult(luck, rarity);
       fish.approachBobber(bobberX, bobberY + 12, speedMult);
     }
-    // If only ignore-bait nearby, wait for the bobber to float onto them
   }
 
   update(delta: number): void {
@@ -234,15 +273,18 @@ export class FishingSystem {
 
     if (this.state === "waiting") {
       this.updateRace();
+    } else if (this.state === "second_wait") {
+      this.updateSecondWait();
     }
   }
 
-  /** Steer all racers; first fish into bite range wins the hook. */
   private updateRace(): void {
     const bx = this.bobber.sprite.x;
     const by = this.bobber.sprite.y + 8;
     let winner: Fish | null = null;
     let stillRacing = 0;
+    const attract = this.inventory.getAttractRadius();
+    const reach = rodMaxReachPx(this.fishingStats().lineDepth ?? 0);
 
     for (const fish of this.approachingFish) {
       if (fish.state === "approaching") {
@@ -254,12 +296,7 @@ export class FishingSystem {
       }
     }
 
-    // Ignore-bait fish (mushroom cluster): hook if bobber floats onto them
-    // Skip despawning mushrooms — bobber nearby must not keep them around
     if (!winner) {
-      const reach = rodMaxReachPx(
-        this.inventory.getEquippedRodStats().lineDepth ?? 0
-      );
       for (const fish of this.fishList) {
         if (
           fish.state === "idle" &&
@@ -276,45 +313,135 @@ export class FishingSystem {
 
     if (winner) {
       this.targetFish = winner;
-      // Losers peel off — only one gets the hook
-      for (const fish of this.approachingFish) {
-        if (fish !== winner && fish.state === "approaching") {
-          fish.abortApproach();
+      const dual = this.inventory.getBobberHooks() === 2;
+      if (dual) {
+        // Keep other racers going for a second hook
+        this.approachingFish = this.approachingFish.filter(
+          (f) => f === winner || f.state === "approaching"
+        );
+        this.beginSecondWait();
+      } else {
+        for (const fish of this.approachingFish) {
+          if (fish !== winner && fish.state === "approaching") {
+            fish.abortApproach();
+          }
         }
+        this.approachingFish = [winner];
+        this.triggerBiteAndMinigame();
       }
-      this.approachingFish = [winner];
-      this.triggerBite();
       return;
     }
 
     if (stillRacing === 0 && this.approachingFish.length > 0) {
-      // Racers gave up — keep waiting briefly for ignore-bait contact
       this.approachingFish = [];
     }
 
-    // Timeout empty waits (e.g. mushroom drift never hits the bobber)
     const waited = this.scene.time.now - this.waitingSince;
     if (this.approachingFish.length === 0 && waited > 7000) {
       this.cancelCast();
       return;
     }
 
-    // No racers and no ignore-bait in attract range → cancel
     if (this.approachingFish.length === 0) {
-      const reach = rodMaxReachPx(
-        this.inventory.getEquippedRodStats().lineDepth ?? 0
-      );
       const baitNearby = this.fishList.some(
         (f) =>
           f.state === "idle" &&
           !f.isDespawning() &&
           f.ignoresBobber() &&
           f.depthBelowSurface() <= reach + 6 &&
-          f.distanceTo(bx, by) <= ATTRACT_RADIUS
+          f.distanceTo(bx, by) <= attract
       );
       if (!baitNearby) {
         this.cancelCast();
       }
+    }
+  }
+
+  private beginSecondWait(): void {
+    if (!this.targetFish) return;
+    this.state = "second_wait";
+    this.targetFish.markBitten();
+    this.secondWaitUntil = this.scene.time.now + SECOND_BITE_WAIT_MS;
+    const rarity = ITEMS[this.targetFish.speciesId].rarity ?? "common";
+    const bangColor =
+      rarity === "common" ? "#ff2222" : RARITY_COLOR[rarity];
+    this.player.showExclamation(bangColor);
+    this.onBite?.(this.targetFish.speciesId);
+  }
+
+  private updateSecondWait(): void {
+    if (!this.targetFish) {
+      this.cancelCast();
+      return;
+    }
+    const bx = this.bobber.sprite.x;
+    const by = this.bobber.sprite.y + 8;
+    const reach = rodMaxReachPx(this.fishingStats().lineDepth ?? 0);
+    let second: Fish | null = null;
+
+    for (const fish of this.approachingFish) {
+      if (fish === this.targetFish) continue;
+      if (fish.state === "approaching") {
+        fish.updateApproachTarget(bx, by);
+        if (fish.distanceTo(bx, by) < fish.biteRadius()) {
+          second = fish;
+          break;
+        }
+      }
+    }
+
+    if (!second) {
+      for (const fish of this.fishList) {
+        if (
+          fish !== this.targetFish &&
+          fish.state === "idle" &&
+          !fish.isDespawning() &&
+          fish.ignoresBobber() &&
+          fish.depthBelowSurface() <= reach + 6 &&
+          fish.distanceTo(bx, by) < fish.biteRadius()
+        ) {
+          second = fish;
+          break;
+        }
+      }
+    }
+
+    if (second) {
+      this.secondFish = second;
+      second.markBitten();
+      for (const fish of this.approachingFish) {
+        if (
+          fish !== this.targetFish &&
+          fish !== second &&
+          fish.state === "approaching"
+        ) {
+          fish.abortApproach();
+        }
+      }
+      this.approachingFish = [this.targetFish, second];
+      this.state = "bite";
+      this.scene.time.delayedCall(500, () => {
+        if (this.state !== "bite") return;
+        this.state = "minigame";
+        this.onMinigameStart?.();
+      });
+      return;
+    }
+
+    if (this.scene.time.now >= this.secondWaitUntil) {
+      for (const fish of this.approachingFish) {
+        if (fish !== this.targetFish && fish.state === "approaching") {
+          fish.abortApproach();
+        }
+      }
+      this.approachingFish = this.targetFish ? [this.targetFish] : [];
+      this.secondFish = null;
+      this.state = "bite";
+      this.scene.time.delayedCall(400, () => {
+        if (this.state !== "bite") return;
+        this.state = "minigame";
+        this.onMinigameStart?.();
+      });
     }
   }
 
@@ -326,7 +453,7 @@ export class FishingSystem {
     this.approachingFish = except ? [except] : [];
   }
 
-  private triggerBite(): void {
+  private triggerBiteAndMinigame(): void {
     if (!this.targetFish) return;
     this.state = "bite";
     this.targetFish.markBitten();
@@ -343,38 +470,69 @@ export class FishingSystem {
     });
   }
 
+  private resolveMutationFor(fish: Fish): FishMutationId | null {
+    // Whirlpool always grants Thunder
+    if (
+      this.weather?.isInWhirlpool(this.bobber.sprite.x, this.bobber.sprite.y)
+    ) {
+      return "thunder";
+    }
+    const rodId = this.inventory.getEquippedRodId();
+    const rodChanceBonus =
+      this.weather?.getRodMutationChanceBonus?.(rodId) ?? 0;
+    return resolveCatchMutation(
+      rodId,
+      fish.mutation,
+      this.inventory.getMutationChanceMult(),
+      rodChanceBonus
+    );
+  }
+
   completeCatch(success: boolean): void {
     this.player.hideExclamation();
     this.bobber.reelIn();
     this.player.setLocked(false);
     this.castCooldown = 500;
     this.onCastCameraRelease?.();
-    this.releaseApproaching(this.targetFish);
 
-    if (success && this.targetFish) {
-      this.targetFish.markCaught();
-      const mutation =
-        rollRodMutation(this.inventory.getEquippedRodId()) ??
-        this.targetFish.mutation;
-      const size = this.targetFish.size;
-      this.lastCatchMutation = mutation;
-      this.lastCatchSize = size;
-      this.inventory.addItem(this.targetFish.speciesId, 1, mutation, size);
-      const fish = this.targetFish;
-      this.scene.time.delayedCall(2500, () => {
-        fish.resetIdle();
-      });
-    } else if (this.targetFish) {
-      this.lastCatchMutation = null;
-      this.lastCatchSize = null;
-      this.targetFish.resetIdle();
+    const hooked = [this.targetFish, this.secondFish].filter(
+      (f): f is Fish => f != null
+    );
+    for (const fish of this.approachingFish) {
+      if (!hooked.includes(fish) && fish.state === "approaching") {
+        fish.abortApproach();
+      }
+    }
+
+    this.lastCaughtFish = [];
+    if (success && hooked.length > 0) {
+      for (const fish of hooked) {
+        fish.markCaught();
+        const mutation = this.resolveMutationFor(fish);
+        const size = fish.size;
+        this.inventory.addItem(fish.speciesId, 1, mutation, size);
+        this.lastCaughtFish.push({
+          speciesId: fish.speciesId,
+          mutation,
+          size,
+        });
+        this.scene.time.delayedCall(2500, () => {
+          fish.resetIdle();
+        });
+      }
+      this.lastCatchMutation = this.lastCaughtFish[0]?.mutation ?? null;
+      this.lastCatchSize = this.lastCaughtFish[0]?.size ?? null;
     } else {
       this.lastCatchMutation = null;
       this.lastCatchSize = null;
+      for (const fish of hooked) {
+        fish.resetIdle();
+      }
     }
 
     this.approachingFish = [];
     this.targetFish = null;
+    this.secondFish = null;
     this.state = "idle";
     this.onFishingEnd?.(success);
   }
@@ -383,12 +541,28 @@ export class FishingSystem {
     return this.targetFish?.speciesId ?? null;
   }
 
+  getSecondSpeciesId() {
+    return this.secondFish?.speciesId ?? null;
+  }
+
   getTargetSize(): FishSizeId {
     return this.targetFish?.size ?? "normal";
   }
 
+  getSecondSize(): FishSizeId {
+    return this.secondFish?.size ?? "normal";
+  }
+
   getTargetMutation(): FishMutationId | null {
     return this.targetFish?.mutation ?? null;
+  }
+
+  getSecondMutation(): FishMutationId | null {
+    return this.secondFish?.mutation ?? null;
+  }
+
+  hasSecondFish(): boolean {
+    return this.secondFish != null;
   }
 
   cancelCast(): void {
@@ -397,15 +571,14 @@ export class FishingSystem {
     this.player.setLocked(false);
     this.onCastCameraRelease?.();
     this.releaseApproaching(null);
-    if (this.targetFish && this.targetFish.state !== "caught") {
-      if (this.targetFish.state === "approaching") {
-        this.targetFish.abortApproach();
-      } else if (this.targetFish.state === "bitten") {
-        this.targetFish.resetIdle();
-      }
+    for (const fish of [this.targetFish, this.secondFish]) {
+      if (!fish || fish.state === "caught") continue;
+      if (fish.state === "approaching") fish.abortApproach();
+      else if (fish.state === "bitten") fish.resetIdle();
     }
     this.approachingFish = [];
     this.targetFish = null;
+    this.secondFish = null;
     this.state = "idle";
     this.castCooldown = 400;
   }

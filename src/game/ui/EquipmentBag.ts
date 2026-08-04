@@ -1,15 +1,25 @@
 import Phaser from "phaser";
-import { ITEMS, ItemId, formatRodStats, ZERO_ROD_STATS, MUTATIONS } from "../data/items";
+import {
+  ITEMS,
+  ItemId,
+  formatRodStats,
+  formatBobberStats,
+  ZERO_ROD_STATS,
+  MUTATIONS,
+} from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
 
 const PANEL_W = 460;
 const PANEL_H = 520;
-const LIST_TOP = -170;
-const LIST_VIEW_H = 380;
+const LIST_TOP = -150;
+const LIST_VIEW_H = 360;
 const ROW_H = 136;
+const BOBBER_ROW_H = 118;
 const ROW_GAP = 12;
 
-/** Vertical rod list opened from hotbar slot 2. */
+type BagTab = "rods" | "bobbers";
+
+/** Vertical rod / bobber list opened from hotbar slot 2. */
 export class EquipmentBag {
   private root: Phaser.GameObjects.Container;
   private listRoot: Phaser.GameObjects.Container;
@@ -17,12 +27,18 @@ export class EquipmentBag {
   private maskShape: Phaser.GameObjects.Graphics;
   private scrollTrack: Phaser.GameObjects.Rectangle;
   private scrollThumb: Phaser.GameObjects.Rectangle;
+  private subtitle!: Phaser.GameObjects.Text;
+  private tabRodsBg!: Phaser.GameObjects.Rectangle;
+  private tabBobbersBg!: Phaser.GameObjects.Rectangle;
+  private tabRodsLabel!: Phaser.GameObjects.Text;
+  private tabBobbersLabel!: Phaser.GameObjects.Text;
   private inventory: InventorySystem;
   private scene: Phaser.Scene;
   private panelCx: number;
   private panelCy: number;
   visible = false;
-  private onChanged?: () => void;
+  private tab: BagTab = "rods";
+  private onChanged?: (message: string) => void;
   private scrollY = 0;
   private contentH = 0;
   private wheelHandler: (
@@ -57,19 +73,45 @@ export class EquipmentBag {
       })
       .setOrigin(0.5);
 
-    const subtitle = scene.add
-      .text(0, -198, "Your rods · Equip swaps hotbar slot 1 · Scroll for more", {
+    this.subtitle = scene.add
+      .text(0, -172, "Your rods · Equip swaps hotbar slot 1", {
         fontFamily: "Arial",
         fontSize: "13px",
         color: "#aaaaaa",
       })
       .setOrigin(0.5);
 
+    // Tabs
+    this.tabRodsBg = scene.add
+      .rectangle(-80, -200, 140, 28, 0x3a3428, 0.95)
+      .setStrokeStyle(2, 0xc4a86a)
+      .setInteractive({ useHandCursor: true });
+    this.tabRodsLabel = scene.add
+      .text(-80, -200, "Rods", {
+        fontFamily: "Arial",
+        fontSize: "14px",
+        color: "#f0e6d2",
+      })
+      .setOrigin(0.5);
+    this.tabBobbersBg = scene.add
+      .rectangle(80, -200, 140, 28, 0x2a2f3a, 0.95)
+      .setStrokeStyle(2, 0x666666)
+      .setInteractive({ useHandCursor: true });
+    this.tabBobbersLabel = scene.add
+      .text(80, -200, "Bobbers", {
+        fontFamily: "Arial",
+        fontSize: "14px",
+        color: "#aaaaaa",
+      })
+      .setOrigin(0.5);
+
+    this.tabRodsBg.on("pointerdown", () => this.setTab("rods"));
+    this.tabBobbersBg.on("pointerdown", () => this.setTab("bobbers"));
+
     this.listRoot = scene.add.container(0, LIST_TOP);
     this.listContent = scene.add.container(0, 0);
     this.listRoot.add(this.listContent);
 
-    // World-space mask for the list viewport
     this.maskShape = scene.make.graphics({ x: 0, y: 0 });
     this.redrawMask();
     this.maskShape.setVisible(false);
@@ -95,7 +137,11 @@ export class EquipmentBag {
     this.root.add([
       bg,
       title,
-      subtitle,
+      this.tabRodsBg,
+      this.tabRodsLabel,
+      this.tabBobbersBg,
+      this.tabBobbersLabel,
+      this.subtitle,
       this.listRoot,
       this.scrollTrack,
       this.scrollThumb,
@@ -104,7 +150,6 @@ export class EquipmentBag {
 
     this.wheelHandler = (pointer, _gos, _dx, dy) => {
       if (!this.visible) return;
-      // Only scroll when pointer is over the panel
       const localX = pointer.x - this.panelCx;
       const localY = pointer.y - this.panelCy;
       if (
@@ -118,6 +163,13 @@ export class EquipmentBag {
     scene.input.on("wheel", this.wheelHandler);
   }
 
+  private setTab(tab: BagTab): void {
+    if (this.tab === tab) return;
+    this.tab = tab;
+    this.scrollY = 0;
+    this.refresh();
+  }
+
   private redrawMask(): void {
     this.maskShape.clear();
     this.maskShape.fillStyle(0xffffff);
@@ -129,7 +181,7 @@ export class EquipmentBag {
     );
   }
 
-  setOnChanged(cb: () => void): void {
+  setOnChanged(cb: (message: string) => void): void {
     this.onChanged = cb;
   }
 
@@ -152,26 +204,61 @@ export class EquipmentBag {
       child.destroy(true);
     }
 
-    const rods = this.inventory.getOwnedRods();
+    const rodsActive = this.tab === "rods";
+    this.tabRodsBg.setStrokeStyle(2, rodsActive ? 0xc4a86a : 0x666666);
+    this.tabRodsBg.setFillStyle(rodsActive ? 0x3a3428 : 0x2a2f3a, 0.95);
+    this.tabRodsLabel.setColor(rodsActive ? "#f0e6d2" : "#aaaaaa");
+    this.tabBobbersBg.setStrokeStyle(2, !rodsActive ? 0xc4a86a : 0x666666);
+    this.tabBobbersBg.setFillStyle(!rodsActive ? 0x3a3428 : 0x2a2f3a, 0.95);
+    this.tabBobbersLabel.setColor(!rodsActive ? "#f0e6d2" : "#aaaaaa");
+
+    this.subtitle.setText(
+      rodsActive
+        ? "Your rods · Equip swaps hotbar slot 1"
+        : "Your bobbers · Equip for the next cast"
+    );
+
     let y = 0;
-
-    if (rods.length === 0) {
-      const empty = this.scene.add
-        .text(0, 80, "No rods yet.", {
-          fontFamily: "Arial",
-          fontSize: "16px",
-          color: "#888888",
-        })
-        .setOrigin(0.5);
-      this.listContent.add(empty);
-      this.contentH = LIST_VIEW_H;
-      this.applyScroll();
-      return;
-    }
-
-    for (const rodId of rods) {
-      this.listContent.add(this.makeRow(rodId, y, ROW_H));
-      y += ROW_H + ROW_GAP;
+    if (rodsActive) {
+      const rods = this.inventory.getOwnedRods();
+      if (rods.length === 0) {
+        this.listContent.add(
+          this.scene.add
+            .text(0, 80, "No rods yet.", {
+              fontFamily: "Arial",
+              fontSize: "16px",
+              color: "#888888",
+            })
+            .setOrigin(0.5)
+        );
+        this.contentH = LIST_VIEW_H;
+        this.applyScroll();
+        return;
+      }
+      for (const rodId of rods) {
+        this.listContent.add(this.makeRodRow(rodId, y, ROW_H));
+        y += ROW_H + ROW_GAP;
+      }
+    } else {
+      const bobbers = this.inventory.getOwnedBobbers();
+      if (bobbers.length === 0) {
+        this.listContent.add(
+          this.scene.add
+            .text(0, 80, "No bobbers yet.", {
+              fontFamily: "Arial",
+              fontSize: "16px",
+              color: "#888888",
+            })
+            .setOrigin(0.5)
+        );
+        this.contentH = LIST_VIEW_H;
+        this.applyScroll();
+        return;
+      }
+      for (const bobberId of bobbers) {
+        this.listContent.add(this.makeBobberRow(bobberId, y, BOBBER_ROW_H));
+        y += BOBBER_ROW_H + ROW_GAP;
+      }
     }
 
     this.contentH = Math.max(0, y - ROW_GAP);
@@ -205,7 +292,16 @@ export class EquipmentBag {
     this.scrollThumb.setSize(6, thumbH);
   }
 
-  private makeRow(
+  private fitIcon(key: string, maxSide: number): [number, number] {
+    const tex = this.scene.textures.get(key);
+    const frame = tex?.get();
+    const nw = Math.max(1, frame?.width ?? maxSide);
+    const nh = Math.max(1, frame?.height ?? maxSide);
+    const scale = Math.min(maxSide / nw, maxSide / nh);
+    return [Math.round(nw * scale), Math.round(nh * scale)];
+  }
+
+  private makeRodRow(
     rodId: ItemId,
     y: number,
     rowH: number
@@ -266,7 +362,7 @@ export class EquipmentBag {
       btn.on("pointerdown", () => {
         if (this.inventory.equipRod(rodId)) {
           this.refresh();
-          this.onChanged?.();
+          this.onChanged?.(`Equipped ${ITEMS[rodId].name}`);
         }
       });
       row.add([btn, label]);
@@ -286,6 +382,80 @@ export class EquipmentBag {
         })
         .setOrigin(0.5);
       row.add([tag, note]);
+    }
+
+    return row;
+  }
+
+  private makeBobberRow(
+    bobberId: ItemId,
+    y: number,
+    rowH: number
+  ): Phaser.GameObjects.Container {
+    const def = ITEMS[bobberId];
+    const equipped = this.inventory.getEquippedBobberId() === bobberId;
+
+    const card = this.scene.add
+      .rectangle(0, y, 400, rowH, equipped ? 0x3a3420 : 0x2a2f3a, 0.95)
+      .setStrokeStyle(2, equipped ? 0xffe066 : 0x6a7355)
+      .setOrigin(0.5, 0);
+
+    const [iw, ih] = this.fitIcon(def.textureKey, 52);
+    const icon = this.scene.add
+      .image(-150, y + rowH / 2, def.textureKey)
+      .setDisplaySize(iw, ih);
+
+    const name = this.scene.add
+      .text(-112, y + 14, def.name, {
+        fontFamily: "Georgia, serif",
+        fontSize: "18px",
+        color: equipped ? "#ffe066" : "#ffffff",
+      })
+      .setOrigin(0, 0);
+
+    const statsText = this.scene.add
+      .text(-112, y + 42, formatBobberStats(def), {
+        fontFamily: "Arial",
+        fontSize: "13px",
+        color: "#c8c8c8",
+        lineSpacing: 3,
+      })
+      .setOrigin(0, 0);
+
+    const row = this.scene.add.container(0, 0);
+    row.add([card, icon, name, statsText]);
+
+    if (!equipped) {
+      const btn = this.scene.add
+        .rectangle(140, y + rowH / 2, 100, 36, 0x3d6b4f)
+        .setStrokeStyle(1, 0x7dce7a)
+        .setInteractive({ useHandCursor: true });
+      const label = this.scene.add
+        .text(140, y + rowH / 2, "Equip", {
+          fontFamily: "Arial",
+          fontSize: "15px",
+          color: "#ffffff",
+        })
+        .setOrigin(0.5);
+
+      btn.on("pointerover", () => btn.setFillStyle(0x4a8a62));
+      btn.on("pointerout", () => btn.setFillStyle(0x3d6b4f));
+      btn.on("pointerdown", () => {
+        if (this.inventory.equipBobber(bobberId)) {
+          this.refresh();
+          this.onChanged?.(`Equipped ${ITEMS[bobberId].name}`);
+        }
+      });
+      row.add([btn, label]);
+    } else {
+      const tag = this.scene.add
+        .text(140, y + rowH / 2, "Equipped", {
+          fontFamily: "Arial",
+          fontSize: "14px",
+          color: "#ffe066",
+        })
+        .setOrigin(0.5);
+      row.add(tag);
     }
 
     return row;

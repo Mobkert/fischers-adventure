@@ -11,6 +11,7 @@ import {
   rollFishSize,
   rollWorldMutation,
   sizeScale,
+  applyMutationTint,
 } from "../data/items";
 
 export type FishState = "idle" | "approaching" | "bitten" | "caught";
@@ -38,6 +39,7 @@ export class Fish {
   private getLuck: () => number;
   /** Species blocked from spawning (e.g. only one mushroom cluster). */
   private getExcludeSpecies: (self: Fish) => ItemId[];
+  private getIsRainy: () => boolean = () => false;
 
   private approachTargetX = 0;
   private approachTargetY = 0;
@@ -58,10 +60,12 @@ export class Fish {
     getLuck: () => number = () => 0,
     habitat: FishHabitat = "ocean",
     speciesId?: ItemId,
-    getExcludeSpecies: (self: Fish) => ItemId[] = () => []
+    getExcludeSpecies: (self: Fish) => ItemId[] = () => [],
+    getIsRainy: () => boolean = () => false
   ) {
     this.getLuck = getLuck;
     this.getExcludeSpecies = getExcludeSpecies;
+    this.getIsRainy = getIsRainy;
     this.habitat = habitat;
     this.speciesId =
       speciesId ??
@@ -90,8 +94,8 @@ export class Fish {
   /** Depth below surface for this species (rarer → deeper, but legends/mythics can go shallow). */
   private depthForSpecies(): number {
     const rarity = ITEMS[this.speciesId].rarity ?? "common";
-    const maxDepth = this.habitat === "pond" ? 90 : undefined;
-    const y = this.surfaceY + rollSpawnDepthOffset(rarity);
+    const maxDepth = this.habitat === "pond" ? 210 : undefined;
+    const y = this.surfaceY + rollSpawnDepthOffset(rarity, this.getIsRainy());
     if (maxDepth != null) {
       return Math.min(y, this.surfaceY + maxDepth);
     }
@@ -115,10 +119,9 @@ export class Fish {
 
   private applyMutationVisual(w: number, h: number): void {
     this.clearGlow();
-    this.sprite.clearTint();
+    applyMutationTint(this.sprite, this.mutation);
     if (!this.mutation) return;
     const mut = MUTATIONS[this.mutation];
-    this.sprite.setTint(mut.tint);
     if (mut.glowColor == null) return;
 
     this.glow = this.sprite.scene.add
@@ -206,7 +209,7 @@ export class Fish {
   private setApproachTarget(bobberX: number, bobberY: number): void {
     this.approachTargetX = bobberX;
     // Stay underwater — never aim above the surface
-    const maxDepth = this.habitat === "pond" ? 100 : 165;
+    const maxDepth = this.habitat === "pond" ? 220 : 165;
     this.approachTargetY = Phaser.Math.Clamp(
       bobberY + 10,
       this.surfaceY + 16,
@@ -393,7 +396,7 @@ export class Fish {
 
   private clampUnderwater(): void {
     const minY = this.surfaceY + 12;
-    const maxY = this.surfaceY + (this.habitat === "pond" ? 100 : 165);
+    const maxY = this.surfaceY + (this.habitat === "pond" ? 220 : 165);
     if (this.sprite.y < minY) {
       this.sprite.y = minY;
       const body = this.sprite.body as Phaser.Physics.Arcade.Body;

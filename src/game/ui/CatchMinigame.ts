@@ -6,6 +6,11 @@ export class CatchMinigame {
   private whiteBar!: Phaser.GameObjects.Rectangle;
   private fishIcon!: Phaser.GameObjects.Image;
   private fishGlow!: Phaser.GameObjects.Image;
+  private fishIcon2!: Phaser.GameObjects.Image;
+  private fishGlow2!: Phaser.GameObjects.Image;
+  private dualCatch = false;
+  private facesLeft2 = false;
+  private glowColor2: number | null = null;
   private progressFill!: Phaser.GameObjects.Rectangle;
   private progressBg!: Phaser.GameObjects.Rectangle;
   private hint!: Phaser.GameObjects.Text;
@@ -83,6 +88,16 @@ export class CatchMinigame {
       .setAlpha(0)
       .setBlendMode(Phaser.BlendModes.ADD);
     this.fishIcon = scene.add.image(0, -8, "fish").setDisplaySize(42, 14);
+    this.fishGlow2 = scene.add
+      .image(18, -8, "fish")
+      .setDisplaySize(52, 20)
+      .setAlpha(0)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setVisible(false);
+    this.fishIcon2 = scene.add
+      .image(18, -8, "fish")
+      .setDisplaySize(42, 14)
+      .setVisible(false);
 
     this.progressBg = scene.add
       .rectangle(0, 34, this.barWidth, 14, 0x333333)
@@ -106,6 +121,8 @@ export class CatchMinigame {
       this.whiteBar,
       this.fishGlow,
       this.fishIcon,
+      this.fishGlow2,
+      this.fishIcon2,
       this.progressBg,
       this.progressFill,
       this.hint,
@@ -142,8 +159,20 @@ export class CatchMinigame {
       facesLeft?: boolean;
       /** Body tint for mutations. */
       tint?: number | null;
+      /** Use solid fill tint (albino / near-white). */
+      tintFill?: boolean;
       /** Glow aura color for mutations. */
       glowColor?: number | null;
+      /** Second hooked fish (twin-hook bobber). */
+      second?: {
+        textureKey?: string;
+        displayWidth?: number;
+        displayHeight?: number;
+        facesLeft?: boolean;
+        tint?: number | null;
+        tintFill?: boolean;
+        glowColor?: number | null;
+      };
     }
   ): void {
     this.onResult = onResult;
@@ -159,6 +188,9 @@ export class CatchMinigame {
       options?.pauseChance != null ? options.pauseChance : null;
     this.facesLeft = !!options?.facesLeft;
     this.glowColor = options?.glowColor ?? null;
+    this.dualCatch = !!options?.second;
+    this.facesLeft2 = !!options?.second?.facesLeft;
+    this.glowColor2 = options?.second?.glowColor ?? null;
 
     const control = options?.control ?? 0;
     const resilience = options?.resilience ?? 0;
@@ -196,10 +228,13 @@ export class CatchMinigame {
     const dh = options?.displayHeight ?? 14;
     this.fishIcon.setTexture(tex);
     this.fishIcon.setDisplaySize(dw, dh);
+    this.fishIcon.clearTint();
     if (options?.tint != null) {
-      this.fishIcon.setTint(options.tint);
-    } else {
-      this.fishIcon.clearTint();
+      if (options.tintFill) {
+        this.fishIcon.setTintFill(options.tint);
+      } else {
+        this.fishIcon.setTint(options.tint);
+      }
     }
     this.fishGlow.setTexture(tex);
     this.fishGlow.setDisplaySize(dw * 1.4, dh * 1.55);
@@ -209,6 +244,30 @@ export class CatchMinigame {
     } else {
       this.fishGlow.clearTint();
       this.fishGlow.setAlpha(0);
+    }
+
+    if (this.dualCatch && options?.second) {
+      const s = options.second;
+      const tex2 = s.textureKey ?? "fish";
+      const dw2 = s.displayWidth ?? 42;
+      const dh2 = s.displayHeight ?? 14;
+      this.fishIcon2.setVisible(true).setTexture(tex2).setDisplaySize(dw2, dh2);
+      this.fishIcon2.clearTint();
+      if (s.tint != null) {
+        if (s.tintFill) this.fishIcon2.setTintFill(s.tint);
+        else this.fishIcon2.setTint(s.tint);
+      }
+      this.fishGlow2.setVisible(true).setTexture(tex2).setDisplaySize(dw2 * 1.4, dh2 * 1.55);
+      if (this.glowColor2 != null) {
+        this.fishGlow2.setTint(this.glowColor2);
+        this.fishGlow2.setAlpha(0.5);
+      } else {
+        this.fishGlow2.clearTint();
+        this.fishGlow2.setAlpha(0);
+      }
+    } else {
+      this.fishIcon2.setVisible(false);
+      this.fishGlow2.setVisible(false).setAlpha(0);
     }
     const startDir = Math.random() > 0.5 ? 1 : -1;
     this.fishTargetVel =
@@ -479,16 +538,30 @@ export class CatchMinigame {
 
   private syncVisuals(): void {
     this.whiteBar.setX(this.whiteX);
-    this.fishIcon.setX(this.fishX);
-    this.fishGlow.setX(this.fishX);
+    const offset = this.dualCatch ? -14 : 0;
+    this.fishIcon.setX(this.fishX + offset);
+    this.fishGlow.setX(this.fishX + offset);
+    if (this.dualCatch) {
+      this.fishIcon2.setX(this.fishX + 14);
+      this.fishGlow2.setX(this.fishX + 14);
+    }
     if (Math.abs(this.fishVel) > 8) {
       const flip = this.facesLeft ? this.fishVel > 0 : this.fishVel < 0;
       this.fishIcon.setFlipX(flip);
       this.fishGlow.setFlipX(flip);
+      if (this.dualCatch) {
+        const flip2 = this.facesLeft2 ? this.fishVel > 0 : this.fishVel < 0;
+        this.fishIcon2.setFlipX(flip2);
+        this.fishGlow2.setFlipX(flip2);
+      }
     }
     if (this.glowColor != null) {
       const pulse = 0.38 + Math.sin(Date.now() / 220) * 0.18;
       this.fishGlow.setAlpha(pulse);
+    }
+    if (this.dualCatch && this.glowColor2 != null) {
+      const pulse = 0.38 + Math.sin(Date.now() / 220) * 0.18;
+      this.fishGlow2.setAlpha(pulse);
     }
     this.progressFill.width = this.barWidth * this.progress;
   }
