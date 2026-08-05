@@ -122,7 +122,7 @@ export class MenuScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xc4a86a);
 
     const title = this.add
-      .text(0, -panelH / 2 + 28, "Bobber & Weather Update", {
+      .text(0, -panelH / 2 + 28, "Coral Reef Update", {
         fontFamily: "Georgia, serif",
         fontSize: "24px",
         color: "#f0e6d2",
@@ -154,25 +154,18 @@ export class MenuScene extends Phaser.Scene {
 
     const bodyText =
       "WHAT'S NEW\n\n" +
-      "• Weather every 5 minutes — Rain, Sunny, Cloudy,\n" +
-      "  Thunderstorm (then always Clear next)\n" +
-      "• Pity after 3 Clears: Rain 50% · Sunny 30% ·\n" +
-      "  Cloudy 15% · Thunder 5%\n" +
-      "• Rain: rare+ fish higher · Sunny 1.5× luck ·\n" +
-      "  Cloudy 0.85× luck · Thunder 4× luck\n" +
-      "• Thunderstorm whirlpools — cast in for Thunder\n" +
-      "  mutation (5×), or F for storm clouds / Zeus Rod\n" +
-      "• Zeus Rod ($60k): +7% stats in Rain, +15% in\n" +
-      "  Thunderstorm (not depth) · 5% Thunder\n" +
-      "• Bobber Workshop (red house) — Twin Hook,\n" +
-      "  Reinforced, Mutation, Clover, Depth Lure\n" +
-      "• Pack Outfitter (green house) — bag upgrades\n" +
-      "  up to 25 slots\n\n" +
+      "• Coral Reef west of Starter Island — shallow\n" +
+      "  waters, tall coral, and new reef fish\n" +
+      "• Coral Rod — Luck +60% · Res +15% · Control +15%\n" +
+      "  Progress +20% · Depth 3m · world mutations on catch\n" +
+      "• Dolphin abundance — mythical dolphins leap\n" +
+      "  at the reef for a short time\n" +
+      "• Weather looks — sunny rays, storm clouds,\n" +
+      "  grey skies for rain and clouds\n" +
+      "• Dockside tip — talk to the guide on the left\n" +
+      "  dock about the reef\n\n" +
       "CHANGES\n\n" +
-      "• Firm Rod resilience 30%\n" +
-      "• Wildflower Rod price $14,500\n" +
-      "• Sprout: 1% when Earthly is rolled\n" +
-      "• Mutation Bobber: $25k + Earthly/Sprout Yellowfin";
+      "• Zeus Rod — luck 85%, progress 30%";
 
     const body = this.add
       .text(0, 0, bodyText, {

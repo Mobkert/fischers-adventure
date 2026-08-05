@@ -357,8 +357,127 @@ function makeJungle() {
   return samples;
 }
 
+/**
+ * Coral reef — chill tropical ambient (~32s).
+ * Soft pads, muted plucks, low steel accents — mature lounge, not sparkly/festive.
+ */
+function makeReef() {
+  const samples = new Float32Array(N);
+  const bpm = 78;
+  const beat = 60 / bpm;
+  // Laid-back maj7 / add9 colors (warm, not jingle-bells major)
+  const progression = [
+    [48, 55, 59, 62], // Cmaj7-ish low
+    [53, 57, 60, 64], // Fmaj7
+    [45, 52, 55, 60], // Am9-ish
+    [50, 57, 60, 64], // Gadd9-ish
+  ];
+  const events = [];
+
+  for (let bar = 0; bar < 12; bar++) {
+    const chord = progression[bar % 4];
+    const t0 = bar * 4 * beat;
+    if (t0 >= DURATION - 0.8) break;
+
+    // Deep bass on 1 and soft on 3
+    events.push({ t: t0, type: "bass", midi: chord[0], vel: 0.2 });
+    events.push({
+      t: t0 + beat * 2,
+      type: "bass",
+      midi: chord[0],
+      vel: 0.1,
+    });
+
+    // Sparse muted plucks (not busy uke chops)
+    const pluck = [chord[1], chord[2], chord[3], chord[2]];
+    pluck.forEach((m, i) => {
+      if ((bar + i) % 3 === 0) return; // leave holes
+      events.push({
+        t: t0 + beat * (0.5 + i * 0.75),
+        type: "pluck",
+        midi: m + 12,
+        vel: 0.08 + (i === 0 ? 0.03 : 0),
+      });
+    });
+
+    // Occasional soft mid-range accent (not high sparkly lead)
+    if (bar % 4 === 1 || bar % 4 === 3) {
+      events.push({
+        t: t0 + beat * 2.5,
+        type: "mallet",
+        midi: chord[2] + 12,
+        vel: 0.09,
+      });
+      events.push({
+        t: t0 + beat * 3.25,
+        type: "mallet",
+        midi: chord[1] + 12,
+        vel: 0.06,
+      });
+    }
+  }
+
+  let lp = 0;
+  for (let i = 0; i < N; i++) {
+    const time = i / SR;
+    let v = 0;
+
+    // Slow evolving pad — dark and warm
+    const drift = Math.sin(time * 0.09) * 1.5;
+    const padAmp = 0.016 * (0.75 + 0.25 * Math.sin(time * 0.18));
+    v += Math.sin(2 * Math.PI * (110 + drift) * time) * padAmp;
+    v += Math.sin(2 * Math.PI * (138 + drift * 0.4) * time) * padAmp * 0.55;
+    v += Math.sin(2 * Math.PI * (164 - drift * 0.3) * time) * padAmp * 0.35;
+    // Gentle fifth bed
+    v += Math.sin(2 * Math.PI * freq(55) * time) * 0.01;
+    v += Math.sin(2 * Math.PI * freq(62) * time) * 0.007;
+
+    for (const e of events) {
+      const age = time - e.t;
+      if (age < 0 || age > 4) continue;
+      const f = freq(e.midi);
+      if (e.type === "bass") {
+        const env = Math.min(1, age * 28) * Math.exp(-2.2 * age) * e.vel;
+        v += Math.sin(2 * Math.PI * f * age) * env;
+        v += Math.sin(2 * Math.PI * f * 2 * age) * env * 0.15;
+      } else if (e.type === "pluck") {
+        // Soft nylon-ish, quick decay — no metallic ring
+        const env = Math.min(1, age * 70) * Math.exp(-4.8 * age) * e.vel;
+        v +=
+          (Math.sin(2 * Math.PI * f * age) * 0.55 +
+            Math.sin(2 * Math.PI * f * 2 * age) * 0.18) *
+          env;
+      } else if (e.type === "mallet") {
+        // Soft wooden mallet, mid register only
+        const env = Math.min(1, age * 50) * Math.exp(-3.6 * age) * e.vel;
+        v +=
+          (Math.sin(2 * Math.PI * f * age) * 0.5 +
+            Math.sin(2 * Math.PI * f * 2.01 * age) * 0.12) *
+          env;
+      }
+    }
+
+    // Distant water hush (not foamy sparkle)
+    const wash =
+      noise() *
+      0.012 *
+      (0.5 + 0.5 * Math.sin(2 * Math.PI * 0.05 * time + 1.2));
+    lp = lp * 0.94 + (v + wash) * 0.06;
+    samples[i] = v * 0.7 + lp * 0.4;
+  }
+
+  const fade = Math.floor(SR * 0.6);
+  for (let i = 0; i < fade; i++) {
+    const w = i / fade;
+    samples[i] *= w;
+    samples[N - 1 - i] *= w;
+  }
+  return samples;
+}
+
 fs.mkdirSync(OUT, { recursive: true });
 writeWav(path.join(OUT, "music_island.wav"), makeIsland());
 writeWav(path.join(OUT, "music_ocean.wav"), makeOcean());
 writeWav(path.join(OUT, "music_jungle.wav"), makeJungle());
+writeWav(path.join(OUT, "music_reef.wav"), makeReef());
 console.log("done");

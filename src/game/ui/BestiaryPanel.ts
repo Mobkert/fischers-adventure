@@ -130,11 +130,11 @@ export class BestiaryPanel {
 
   private buildTabs(): void {
     const tabY = -182;
-    const tabW = 150;
-    const startX = -((BESTIARY_AREAS.length - 1) * (tabW + 10)) / 2;
+    const tabW = 128;
+    const startX = -((BESTIARY_AREAS.length - 1) * (tabW + 8)) / 2;
 
     BESTIARY_AREAS.forEach((area, i) => {
-      const x = startX + i * (tabW + 10);
+      const x = startX + i * (tabW + 8);
       const btn = this.scene.add.container(x, tabY);
       const bg = this.scene.add
         .rectangle(0, 0, tabW, 28, 0x2a2f3a, 0.95)

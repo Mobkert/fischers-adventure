@@ -13,6 +13,7 @@ import {
   sizeScale,
   applyMutationTint,
 } from "../data/items";
+import { playWaterSplash } from "../fx/WaterSplash";
 
 export type FishState = "idle" | "approaching" | "bitten" | "caught";
 
@@ -49,6 +50,19 @@ export class Fish {
   /** Idle fish despawn after this time (ms). Paused while chasing / hooked. */
   private despawnAt = 0;
   private despawning = false;
+  /** Keep this species on respawn (abundance dolphins). */
+  private lockSpecies = false;
+  /** Skip natural despawn cycle. */
+  private noDespawn = false;
+  /** Arc-jump state for surface-jumping species. */
+  private jumping = false;
+  private jumpT = 0;
+  private jumpDuration = 0;
+  private jumpStartX = 0;
+  private jumpEndX = 0;
+  private jumpPeak = 0;
+  private nextJumpAt = 0;
+  private jumpEntrySplashed = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -61,17 +75,21 @@ export class Fish {
     habitat: FishHabitat = "ocean",
     speciesId?: ItemId,
     getExcludeSpecies: (self: Fish) => ItemId[] = () => [],
-    getIsRainy: () => boolean = () => false
+    getIsRainy: () => boolean = () => false,
+    options?: { lockSpecies?: boolean; noDespawn?: boolean }
   ) {
     this.getLuck = getLuck;
     this.getExcludeSpecies = getExcludeSpecies;
     this.getIsRainy = getIsRainy;
     this.habitat = habitat;
+    this.lockSpecies = !!options?.lockSpecies;
+    this.noDespawn = !!options?.noDespawn;
     this.speciesId =
       speciesId ??
       rollFishSpecies(this.getLuck(), habitat, this.getExcludeSpecies(this));
-    this.size = rollFishSize();
-    this.mutation = rollWorldMutation();
+    const rareBonusMult = this.speciesId === "dolphin" ? 0.5 : 1;
+    this.size = rollFishSize(rareBonusMult);
+    this.mutation = rollWorldMutation(rareBonusMult);
     const def = ITEMS[this.speciesId];
     this.idleMinX = idleMinX;
     this.idleMaxX = idleMaxX;
@@ -85,17 +103,32 @@ export class Fish {
     body.allowGravity = false;
     this.pickNewIdleBehavior(true);
     this.scheduleDespawn();
+    if (def.surfaceJumps) {
+      this.nextJumpAt =
+        scene.time.now + Phaser.Math.Between(800, 2800);
+    }
   }
 
   ignoresBobber(): boolean {
-    return !!ITEMS[this.speciesId].ignoresBobber;
+    if (ITEMS[this.speciesId].ignoresBobber) return true;
+    // Mid-air dolphins can't take the bait
+    return this.jumping;
   }
 
   /** Depth below surface for this species (rarer → deeper, but legends/mythics can go shallow). */
   private depthForSpecies(): number {
-    const rarity = ITEMS[this.speciesId].rarity ?? "common";
-    const maxDepth = this.habitat === "pond" ? 210 : undefined;
-    const y = this.surfaceY + rollSpawnDepthOffset(rarity, this.getIsRainy());
+    const def = ITEMS[this.speciesId];
+    const rarity = def.rarity ?? "common";
+    const maxDepth =
+      this.habitat === "pond" ? 210 : this.habitat === "reef" ? 155 : undefined;
+    const y =
+      this.surfaceY +
+      rollSpawnDepthOffset(
+        rarity,
+        this.getIsRainy(),
+        def.depthBand ?? null,
+        !!def.depthCanShallow
+      );
     if (maxDepth != null) {
       return Math.min(y, this.surfaceY + maxDepth);
     }
@@ -209,7 +242,8 @@ export class Fish {
   private setApproachTarget(bobberX: number, bobberY: number): void {
     this.approachTargetX = bobberX;
     // Stay underwater — never aim above the surface
-    const maxDepth = this.habitat === "pond" ? 220 : 165;
+    const maxDepth =
+      this.habitat === "pond" ? 220 : this.habitat === "reef" ? 155 : 165;
     this.approachTargetY = Phaser.Math.Clamp(
       bobberY + 10,
       this.surfaceY + 16,
@@ -238,13 +272,17 @@ export class Fish {
   resetIdle(x?: number, y?: number): void {
     this.despawning = false;
     this.state = "idle";
-    this.speciesId = rollFishSpecies(
-      this.getLuck(),
-      this.habitat,
-      this.getExcludeSpecies(this)
-    );
-    this.size = rollFishSize();
-    this.mutation = rollWorldMutation();
+    this.jumping = false;
+    if (!this.lockSpecies) {
+      this.speciesId = rollFishSpecies(
+        this.getLuck(),
+        this.habitat,
+        this.getExcludeSpecies(this)
+      );
+      const rareBonusMult = this.speciesId === "dolphin" ? 0.5 : 1;
+      this.size = rollFishSize(rareBonusMult);
+      this.mutation = rollWorldMutation(rareBonusMult);
+    }
     this.applySpeciesVisual();
     this.applySpeciesSwimStats();
     this.sprite.setVisible(true);
@@ -263,12 +301,20 @@ export class Fish {
     this.syncGlow(this.sprite.scene.time.now);
     this.pickNewIdleBehavior(true);
     this.scheduleDespawn();
+    if (ITEMS[this.speciesId].surfaceJumps) {
+      this.nextJumpAt =
+        this.sprite.scene.time.now + Phaser.Math.Between(600, 2200);
+    }
   }
 
   private scheduleDespawn(): void {
+    if (this.noDespawn) {
+      this.despawnAt = Number.POSITIVE_INFINITY;
+      return;
+    }
     const now = this.sprite.scene.time.now;
     // Mushrooms cycle out fast; other fish ~2 minutes
-    if (this.ignoresBobber()) {
+    if (this.ignoresBobber() && !ITEMS[this.speciesId].surfaceJumps) {
       this.despawnAt = now + Phaser.Math.Between(14_000, 26_000);
     } else {
       this.despawnAt = now + Phaser.Math.Between(110_000, 130_000);
@@ -395,8 +441,11 @@ export class Fish {
   }
 
   private clampUnderwater(): void {
+    if (this.jumping) return;
     const minY = this.surfaceY + 12;
-    const maxY = this.surfaceY + (this.habitat === "pond" ? 220 : 165);
+    const maxY =
+      this.surfaceY +
+      (this.habitat === "pond" ? 220 : this.habitat === "reef" ? 155 : 165);
     if (this.sprite.y < minY) {
       this.sprite.y = minY;
       const body = this.sprite.body as Phaser.Physics.Arcade.Body;
@@ -409,6 +458,17 @@ export class Fish {
   }
 
   private updateIdleSwim(now: number, dt: number): void {
+    if (ITEMS[this.speciesId].surfaceJumps) {
+      if (this.jumping) {
+        this.updateSurfaceJump(dt);
+        return;
+      }
+      if (now >= this.nextJumpAt) {
+        this.beginSurfaceJump();
+        return;
+      }
+    }
+
     if (now >= this.nextDecisionAt) {
       this.pickNewIdleBehavior(false);
     }
@@ -454,6 +514,87 @@ export class Fish {
     this.sprite.y =
       this.baseY + Math.sin(now / 450 + this.sprite.x * 0.05) * bobAmp;
     this.clampUnderwater();
+  }
+
+  private beginSurfaceJump(): void {
+    // Prefer current swim direction so the leap continues the motion
+    let dir = Math.sign(this.velX || this.targetVelX);
+    if (dir === 0) {
+      dir = this.sprite.x > (this.idleMinX + this.idleMaxX) / 2 ? -1 : 1;
+    }
+    const span = Phaser.Math.Between(160, 240);
+    this.jumpStartX = this.sprite.x;
+    this.jumpEndX = Phaser.Math.Clamp(
+      this.sprite.x + dir * span,
+      this.idleMinX + 24,
+      this.idleMaxX - 24
+    );
+    // Low, quick arc — reads as a leap, not a float
+    this.jumpPeak = Phaser.Math.Between(28, 44);
+    this.jumpDuration = Phaser.Math.FloatBetween(0.48, 0.68);
+    this.jumpT = 0;
+    this.jumping = true;
+    this.jumpEntrySplashed = false;
+    this.velX = 0;
+    this.targetVelX = 0;
+    this.sprite.setVelocity(0, 0);
+    this.sprite.setAngle(0);
+    this.setFacing(this.jumpEndX - this.jumpStartX);
+    this.sprite.setDepth(14);
+    // Exit splash as they break the surface
+    playWaterSplash(this.sprite.scene, this.sprite.x, this.surfaceY, 1.05);
+  }
+
+  private updateSurfaceJump(dt: number): void {
+    this.jumpT += dt;
+    const u = Math.min(1, this.jumpT / this.jumpDuration);
+    // Slight ease so takeoff/landing aren't robotic
+    const ease = u * u * (3 - 2 * u);
+    const x = Phaser.Math.Linear(this.jumpStartX, this.jumpEndX, ease);
+    // Pure parabola through the surface (u=0 and u=1 at waterline)
+    const arc = 4 * u * (1 - u);
+    const y = this.surfaceY - this.jumpPeak * arc;
+    this.sprite.setPosition(x, y);
+    this.sprite.setVelocity(0, 0);
+
+    // Pitch follows the tangent of the arc — kept mild for a long flat sprite
+    const dx = this.jumpEndX - this.jumpStartX;
+    const dyDu = -this.jumpPeak * (4 - 8 * u);
+    const dxDu = dx * (6 * u * (1 - u)); // derivative of smoothstep
+    const facing = Math.sign(dx) || 1;
+    const targetAngle =
+      Phaser.Math.Clamp(
+        Phaser.Math.RadToDeg(Math.atan2(dyDu, Math.max(40, Math.abs(dxDu)))),
+        -22,
+        22
+      ) * facing;
+    this.sprite.setAngle(
+      Phaser.Math.Linear(this.sprite.angle, targetAngle, 0.28)
+    );
+
+    // Entry splash just before they hit the water again
+    if (!this.jumpEntrySplashed && u >= 0.86) {
+      this.jumpEntrySplashed = true;
+      playWaterSplash(this.sprite.scene, x, this.surfaceY, 1.25);
+    }
+
+    if (u >= 1) {
+      this.jumping = false;
+      this.sprite.setAngle(0);
+      this.sprite.setDepth(5);
+      this.baseY = this.surfaceY + Phaser.Math.Between(20, 36);
+      this.sprite.y = this.baseY;
+      // Keep gliding the same way after splashdown
+      this.targetVelX =
+        facing * Phaser.Math.FloatBetween(this.maxSpeed * 0.55, this.maxSpeed);
+      this.velX = this.targetVelX * 0.7;
+      this.sprite.setVelocityX(this.velX);
+      this.setFacing(this.velX);
+      this.nextJumpAt =
+        this.sprite.scene.time.now + Phaser.Math.Between(1800, 3800);
+      this.nextDecisionAt =
+        this.sprite.scene.time.now + Phaser.Math.Between(900, 1600);
+    }
   }
 
   private pickNewIdleBehavior(immediate: boolean): void {

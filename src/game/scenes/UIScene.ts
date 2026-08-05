@@ -9,6 +9,7 @@ import { ITEMS, RARITY_COLOR, RARITY_LABEL, MUTATIONS, FISH_SIZES, sizeScale, Fi
 import { BoatMenu } from "../ui/BoatMenu";
 import { CoinDisplay } from "../ui/CoinDisplay";
 import { WildflowerBuyPanel } from "../ui/WildflowerBuyPanel";
+import { CoralRodOfferPanel } from "../ui/CoralRodOfferPanel";
 import { SettingsMenu } from "../ui/SettingsMenu";
 import { OceanMarkers, OceanMarkerInfo } from "../ui/OceanMarkers";
 import { InventorySystem } from "../systems/InventorySystem";
@@ -31,6 +32,9 @@ interface UISceneData {
   tryEnterBobberShop: () => boolean;
   tryEnterBackpackShop: () => boolean;
   tryEnterWhirlpoolCloud: () => boolean;
+  isNearCoralRodOnBoat: () => boolean;
+  tryOpenCoralRodOffer: () => boolean;
+  offerCoralRodGift: (amount: number) => boolean;
   isNearBlueHouse: () => boolean;
   isNearRedHouse: () => boolean;
   isNearGreenHouse: () => boolean;
@@ -74,6 +78,8 @@ export class UIScene extends Phaser.Scene {
   private tryEnterBobberShop!: () => boolean;
   private tryEnterBackpackShop!: () => boolean;
   private tryEnterWhirlpoolCloud!: () => boolean;
+  private tryOpenCoralRodOffer!: () => boolean;
+  private offerCoralRodGift!: (amount: number) => boolean;
   private isNearBlueHouse!: () => boolean;
   private isNearRedHouse!: () => boolean;
   private isNearGreenHouse!: () => boolean;
@@ -91,6 +97,7 @@ export class UIScene extends Phaser.Scene {
   private minigame!: CatchMinigame;
   private boatMenu!: BoatMenu;
   private wildflowerBuy!: WildflowerBuyPanel;
+  private coralRodOffer!: CoralRodOfferPanel;
   private settings!: SettingsMenu;
   private coins!: CoinDisplay;
   private oceanMarkers!: OceanMarkers;
@@ -118,6 +125,8 @@ export class UIScene extends Phaser.Scene {
     this.tryEnterBobberShop = data.tryEnterBobberShop;
     this.tryEnterBackpackShop = data.tryEnterBackpackShop;
     this.tryEnterWhirlpoolCloud = data.tryEnterWhirlpoolCloud;
+    this.tryOpenCoralRodOffer = data.tryOpenCoralRodOffer;
+    this.offerCoralRodGift = data.offerCoralRodGift;
     this.isNearBlueHouse = data.isNearBlueHouse;
     this.isNearRedHouse = data.isNearRedHouse;
     this.isNearGreenHouse = data.isNearGreenHouse;
@@ -155,6 +164,14 @@ export class UIScene extends Phaser.Scene {
       this.tryBuyJungleRod();
       this.hotbar.refresh();
     });
+    this.coralRodOffer = new CoralRodOfferPanel(this);
+    this.coralRodOffer.setCallbacks(
+      (amount) => {
+        this.offerCoralRodGift(amount);
+        this.hotbar.refresh();
+      },
+      () => this.closeCoralRodOffer()
+    );
     this.settings = new SettingsMenu(
       this,
       () => this.getMusicVolume(),
@@ -212,6 +229,7 @@ export class UIScene extends Phaser.Scene {
       key.on("down", () => {
         if (this.tutorial.visible) return;
         if (this.minigame.isActive() || this.boatMenu.visible) return;
+        if (this.coralRodOffer.visible || this.wildflowerBuy.visible) return;
         this.inventory.selectHotbar(i);
         this.hotbar.refresh();
         // Slot 2 (index 1) = equipment bag · Slot 3 (index 2) = bestiary
@@ -302,6 +320,7 @@ export class UIScene extends Phaser.Scene {
       if (this.tutorial.visible) return;
       if (this.minigame.isActive() || this.boatMenu.visible) return;
       if (this.equipmentBag.visible || this.bestiaryPanel.visible) return;
+      if (this.coralRodOffer.visible) return;
       // Confirm wildflower buy if stats panel is open
       if (this.wildflowerBuy.visible) {
         this.tryBuyJungleRod();
@@ -317,6 +336,7 @@ export class UIScene extends Phaser.Scene {
         this.hotbar.refresh();
         return;
       }
+      if (this.tryOpenCoralRodOffer()) return;
       if (this.tryEnterWhirlpoolCloud()) return;
       this.tryBoardOrExitBoat();
     });
@@ -324,11 +344,22 @@ export class UIScene extends Phaser.Scene {
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X).on("down", () => {
       if (this.tutorial.visible) return;
       if (this.minigame.isActive() || this.boatMenu.visible) return;
+      if (this.coralRodOffer.visible) {
+        this.closeCoralRodOffer();
+        return;
+      }
       if (this.wildflowerBuy.visible) {
         this.closeWildflowerBuy();
         return;
       }
       this.declineMerchant();
+    });
+
+    // Digit entry for coral rod offer (and Esc/Enter)
+    this.input.keyboard?.on("keydown", (event: KeyboardEvent) => {
+      if (this.coralRodOffer.visible) {
+        this.coralRodOffer.handleKey(event);
+      }
     });
 
     // First-run fishing guide
@@ -449,6 +480,7 @@ export class UIScene extends Phaser.Scene {
           drainMult,
           unstoppableJerky: unstoppable,
           pauseChance: def.minigamePauseChance,
+          pauseDuration: def.minigamePauseDuration,
           facesLeft: def.facesLeft ?? false,
           tint: worldMutDef?.tint ?? null,
           tintFill: worldMutDef?.tintFill ?? false,
@@ -498,6 +530,7 @@ export class UIScene extends Phaser.Scene {
       this.minigame.isActive() ||
       this.boatMenu.visible ||
       this.wildflowerBuy.visible ||
+      this.coralRodOffer.visible ||
       this.settings.isOpen()
     );
   }
@@ -512,6 +545,18 @@ export class UIScene extends Phaser.Scene {
 
   closeWildflowerBuy(): void {
     this.wildflowerBuy.close();
+  }
+
+  openCoralRodOffer(): void {
+    this.coralRodOffer.setOpen(true);
+  }
+
+  closeCoralRodOffer(): void {
+    this.coralRodOffer.setOpen(false);
+  }
+
+  isCoralRodOfferOpen(): boolean {
+    return this.coralRodOffer.visible;
   }
 
   showToast(message: string, color: string): void {

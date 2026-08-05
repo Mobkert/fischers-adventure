@@ -5,6 +5,7 @@ export type ItemId =
   | "amber_rod"
   | "wildflower_rod"
   | "zeus_rod"
+  | "coral_rod"
   | "equipment_bag"
   | "bestiary"
   | "bobber_starter"
@@ -28,7 +29,13 @@ export type ItemId =
   | "white_perch"
   | "mushroom_cluster"
   | "arapaima"
-  | "alligator";
+  | "alligator"
+  | "clownfish"
+  | "angelfish"
+  | "pufferfish"
+  | "nurse_shark"
+  | "surgeon_fish"
+  | "dolphin";
 
 export type FishMutationId =
   | "bloom"
@@ -43,7 +50,7 @@ export type FishMutationId =
 
 export type FishSizeId = "normal" | "big" | "giant";
 
-export type FishHabitat = "ocean" | "pond";
+export type FishHabitat = "ocean" | "pond" | "reef";
 
 export type FishRarity =
   | "common"
@@ -255,13 +262,24 @@ export interface ItemDef {
   craftCost?: { coins: number; ingredients: BobberCraftIngredient[] };
   /** Mutation this rod can apply on a successful catch. */
   rodMutation?: RodMutationGrant;
+  /**
+   * On catch, roll world mutations at normal rates if the fish has none
+   * (excludes amber / bloom / thunder — same pool as swimming fish).
+   */
+  grantsWorldMutations?: boolean;
   rarity?: FishRarity;
   /** Relative chance to spawn in water (among fish species). */
   spawnWeight?: number;
-  /** Ocean (default) or pond-only fish. */
+  /** Ocean (default), pond, or coral reef fish. */
   habitat?: FishHabitat;
   /** Never races the bobber (e.g. mushroom cluster). */
   ignoresBobber?: boolean;
+  /** Only appears during a special abundance event (e.g. dolphin). */
+  abundanceOnly?: boolean;
+  /** Override preferred swim depth (px below surface). */
+  depthBand?: { min: number; max: number };
+  /** Extra chance to roll the shallow half of depthBand (like legends). */
+  depthCanShallow?: boolean;
   /** Catch-minigame movement multiplier. */
   minigameSpeed?: number;
   /** Instant direction snaps + rare pauses (vs smooth easing). */
@@ -276,6 +294,10 @@ export interface ItemDef {
   unstoppableJerky?: boolean;
   /** Override idle pause chance in the catch minigame (0–1). */
   minigamePauseChance?: number;
+  /** Override pause length in the catch minigame (seconds). */
+  minigamePauseDuration?: { min: number; max: number };
+  /** Jump in arcs above the surface while idle (dolphins). */
+  surfaceJumps?: boolean;
   /** Texture faces left (default fish face right). */
   facesLeft?: boolean;
   displayWidth?: number;
@@ -330,9 +352,11 @@ export function preferredDepthBand(rarity: FishRarity): {
  */
 export function rollSpawnDepthOffset(
   rarity: FishRarity,
-  rainy = false
+  rainy = false,
+  overrideBand?: { min: number; max: number } | null,
+  canShallow = false
 ): number {
-  const band = preferredDepthBand(rarity);
+  const band = overrideBand ?? preferredDepthBand(rarity);
   const rarePlus =
     rarity === "rare" ||
     rarity === "epic" ||
@@ -346,9 +370,12 @@ export function rollSpawnDepthOffset(
     return Math.floor(band.min + Math.random() * (highMax - band.min + 1));
   }
 
-  if (rarity === "legendary" || rarity === "mythical") {
+  if (rarity === "legendary" || rarity === "mythical" || canShallow) {
     if (Math.random() < 0.4) {
-      const shallowMax = Math.min(70, band.max);
+      const shallowMax = Math.min(
+        Math.max(band.min + 12, (band.min + band.max) / 2),
+        band.max
+      );
       return Math.floor(
         band.min + Math.random() * (shallowMax - band.min + 1)
       );
@@ -471,13 +498,31 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     buyPrice: 60000,
     shop: "cloud",
     rodStats: {
-      luck: 80,
+      luck: 85,
       resilience: 10,
       control: 20,
-      progressSpeed: 10,
+      progressSpeed: 30,
       lineDepth: 4,
     },
     rodMutation: { mutation: "thunder", chance: 0.05 },
+  },
+  coral_rod: {
+    id: "coral_rod",
+    name: "Coral Rod",
+    description:
+      "A rare reef relic. World mutations on catch at normal rates (no Amber/Bloom). It only accepts the right gift.",
+    stackable: false,
+    textureKey: "rod_coral",
+    isRod: true,
+    buyPrice: 43000,
+    grantsWorldMutations: true,
+    rodStats: {
+      luck: 60,
+      resilience: 15,
+      control: 15,
+      progressSpeed: 20,
+      lineDepth: 3,
+    },
   },
   equipment_bag: {
     id: "equipment_bag",
@@ -813,6 +858,115 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     displayWidth: 117,
     displayHeight: 22,
   },
+  clownfish: {
+    id: "clownfish",
+    name: "Clownfish",
+    description: "A common reef clownfish. Slow, prefers the deep coral.",
+    stackable: true,
+    textureKey: "clownfish",
+    sellPrice: 30,
+    rarity: "common",
+    habitat: "reef",
+    spawnWeight: 8,
+    minigameSpeed: 0.7,
+    depthBand: { min: 72, max: 118 },
+    displayWidth: 36,
+    displayHeight: 22,
+  },
+  angelfish: {
+    id: "angelfish",
+    name: "Angelfish",
+    description: "An uncommon reef angelfish. Medium pace, mid-depth.",
+    stackable: true,
+    textureKey: "angelfish",
+    sellPrice: 100,
+    rarity: "uncommon",
+    habitat: "reef",
+    spawnWeight: 5,
+    minigameSpeed: 1.1,
+    depthBand: { min: 40, max: 72 },
+    displayWidth: 42,
+    displayHeight: 28,
+  },
+  pufferfish: {
+    id: "pufferfish",
+    name: "Pufferfish",
+    description:
+      "A rare reef puffer. Fast and aggressive — can hug the shallows or go deep.",
+    stackable: true,
+    textureKey: "pufferfish",
+    sellPrice: 200,
+    rarity: "rare",
+    habitat: "reef",
+    spawnWeight: 3.2,
+    minigameSpeed: 1.45,
+    minigameJerky: true,
+    depthBand: { min: 18, max: 120 },
+    depthCanShallow: true,
+    // Near clownfish size (36×22), keep puffer aspect
+    displayWidth: 38,
+    displayHeight: 26,
+  },
+  nurse_shark: {
+    id: "nurse_shark",
+    name: "Nurse Shark",
+    description:
+      "An epic reef shark. Nearly as fast as a sunfish, deep and aggressive.",
+    stackable: true,
+    textureKey: "nurse_shark",
+    sellPrice: 780,
+    rarity: "epic",
+    habitat: "reef",
+    spawnWeight: 1,
+    minigameSpeed: 1.85,
+    minigameJerky: true,
+    minigameChaos: 0.6,
+    unstoppableJerky: true,
+    depthBand: { min: 88, max: 140 },
+    displayWidth: 90,
+    displayHeight: 34,
+  },
+  surgeon_fish: {
+    id: "surgeon_fish",
+    name: "Surgeon Fish",
+    description:
+      "A legendary surgeonfish. Fast swimmer that slows your catch progress.",
+    stackable: true,
+    textureKey: "surgeon_fish",
+    sellPrice: 2605,
+    rarity: "legendary",
+    habitat: "reef",
+    spawnWeight: 1,
+    minigameSpeed: 1.55,
+    minigameJerky: true,
+    catchProgress: -30,
+    displayWidth: 56,
+    displayHeight: 22,
+  },
+  dolphin: {
+    id: "dolphin",
+    name: "Dolphin",
+    description:
+      "A mythical dolphin. Only during reef abundances — fast, fierce, −80% progress, long pauses.",
+    stackable: true,
+    textureKey: "dolphin",
+    sellPrice: 10000,
+    rarity: "mythical",
+    habitat: "reef",
+    abundanceOnly: true,
+    spawnWeight: 0,
+    minigameSpeed: 1.95,
+    minigameJerky: true,
+    minigameChaos: 0.5,
+    unstoppableJerky: true,
+    minigamePauseChance: 0.28,
+    minigamePauseDuration: { min: 1, max: 2 },
+    surfaceJumps: true,
+    catchProgress: -80,
+    depthBand: { min: 16, max: 48 },
+    displayWidth: 92,
+    displayHeight: 28,
+  },
 };
 
 export const FISH_ITEM_IDS: ItemId[] = (
@@ -863,6 +1017,12 @@ export const BESTIARY_AREAS: BestiaryArea[] = [
     name: "Ocean",
     subtitle: "Open waters beyond the docks",
     fishIds: fishIdsByHabitat("ocean"),
+  },
+  {
+    id: "reef",
+    name: "Coral Reef",
+    subtitle: "Shallow western reef waters",
+    fishIds: fishIdsByHabitat("reef"),
   },
   {
     id: "pond",
@@ -923,9 +1083,12 @@ export const JUNGLE_SHOP_ROD_IDS: ItemId[] = ROD_ITEM_IDS.filter(
  *
  * Ocean: base + 2.5% per +25% luck (epic / legendary / mythical)
  * Pond:  base + 1.25% per +25% luck (half ocean scaling)
+ * Reef:  epic 3% + 2.5%/25 luck · legendary 2% + 1%/25 luck
+ *        (mythical reef fish are abundance-only)
  *
  * Bases — Ocean: Epic 7.5%, Legendary 5%, Mythical 1%
  *          Pond:  Epic 4%,   Legendary 2.5%, Mythical 0.5%
+ *          Reef:  Epic 3%,   Legendary 2%
  */
 function absoluteRareShare(
   rarity: FishRarity,
@@ -933,6 +1096,11 @@ function absoluteRareShare(
   habitat: FishHabitat
 ): number | null {
   const n = luckPercent / 25;
+  if (habitat === "reef") {
+    if (rarity === "epic") return Math.max(0, 0.03 + n * 0.025);
+    if (rarity === "legendary") return Math.max(0, 0.02 + n * 0.01);
+    return null;
+  }
   const perTier = habitat === "ocean" ? 0.025 : 0.0125;
   if (habitat === "ocean") {
     if (rarity === "epic") return Math.max(0, 0.075 + n * perTier);
@@ -955,9 +1123,13 @@ export function rollFishSpecies(
   const excluded = new Set(exclude);
   const fish = FISH_ITEM_IDS.filter(
     (id) =>
-      (ITEMS[id].habitat ?? "ocean") === habitat && !excluded.has(id)
+      (ITEMS[id].habitat ?? "ocean") === habitat &&
+      !ITEMS[id].abundanceOnly &&
+      !excluded.has(id)
   );
-  if (fish.length === 0) return "sockeye_salmon";
+  if (fish.length === 0) {
+    return habitat === "reef" ? "clownfish" : "sockeye_salmon";
+  }
 
   const weights = new Array(fish.length).fill(0);
   let fixedTotal = 0;
@@ -1060,12 +1232,13 @@ export function sizeScale(size?: FishSizeId | null): number {
 }
 
 /** Roll Big / Giant when a fish appears in the world. */
-export function rollFishSize(): FishSizeId {
+export function rollFishSize(chanceMult = 1): FishSizeId {
+  const m = Math.max(0, chanceMult);
   const r = Math.random();
-  if (r < FISH_SIZES.giant.spawnChance) return "giant";
-  if (r < FISH_SIZES.giant.spawnChance + FISH_SIZES.big.spawnChance) {
-    return "big";
-  }
+  const giant = FISH_SIZES.giant.spawnChance * m;
+  const big = FISH_SIZES.big.spawnChance * m;
+  if (r < giant) return "giant";
+  if (r < giant + big) return "big";
   return "normal";
 }
 
@@ -1116,32 +1289,44 @@ export function rollWorldMutation(chanceMult = 1): FishMutationId | null {
 /** Rod mutation only (Bloom / Amber / Thunder). Does not roll world mutations. */
 export function rollRodMutation(
   rodId: ItemId,
-  chanceBonus = 0
+  chanceBonus = 0,
+  chanceMult = 1
 ): FishMutationId | null {
   const grant = ITEMS[rodId]?.rodMutation;
   if (!grant) return null;
-  if (Math.random() < grant.chance + chanceBonus) return grant.mutation;
+  const chance = (grant.chance + chanceBonus) * Math.max(0, chanceMult);
+  if (Math.random() < chance) return grant.mutation;
   return null;
 }
+
+/** Exact coin gift the floating Coral Rod accepts (never shown in its offer UI). */
+export const CORAL_ROD_OFFER_AMOUNT = 43000;
 
 /**
  * Final catch mutation.
  * Already-mutated fish keep their mutation (never overwritten by rod / re-roll).
  * Mutation bobber can roll world mutations at 2× on unmutated fish.
+ * Coral Rod rolls world mutations at normal rates (no Amber/Bloom).
  * Rod mutations only apply if the fish still has none.
+ * @param speciesMutMult species modifier (e.g. 0.5 = half chance for dolphins)
  */
 export function resolveCatchMutation(
   rodId: ItemId,
   worldMutation: FishMutationId | null | undefined,
   mutationChanceMult = 1,
-  rodChanceBonus = 0
+  rodChanceBonus = 0,
+  speciesMutMult = 1
 ): FishMutationId | null {
   if (worldMutation) return worldMutation;
   if (mutationChanceMult > 1) {
-    const boosted = rollWorldMutation(mutationChanceMult);
+    const boosted = rollWorldMutation(mutationChanceMult * speciesMutMult);
     if (boosted) return boosted;
   }
-  return rollRodMutation(rodId, rodChanceBonus);
+  if (ITEMS[rodId]?.grantsWorldMutations) {
+    const fromRod = rollWorldMutation(speciesMutMult);
+    if (fromRod) return fromRod;
+  }
+  return rollRodMutation(rodId, rodChanceBonus, speciesMutMult);
 }
 
 /**
@@ -1220,6 +1405,20 @@ export function formatRodStats(stats: RodStats): string {
     `Control  ${fmt(stats.control)}   Progress  ${fmt(stats.progressSpeed)}`,
     `Line Depth  ${stats.lineDepth}m`,
   ].join("\n");
+}
+
+export function formatRodExtras(def: ItemDef): string {
+  const lines: string[] = [];
+  if (def.grantsWorldMutations) {
+    lines.push("World mutations on catch (normal rates)");
+  }
+  if (def.rodMutation) {
+    const m = MUTATIONS[def.rodMutation.mutation];
+    lines.push(
+      `${m.name}  ${Math.round(def.rodMutation.chance * 100)}%  ·  ${m.sellMult}× sell`
+    );
+  }
+  return lines.join("\n");
 }
 
 export interface InventorySlot {

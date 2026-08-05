@@ -36,6 +36,7 @@ export class CatchMinigame {
   private jerkyChaos = 1;
   /** Override idle pause chance in soft AI (null = default 0.2). */
   private pauseChance: number | null = null;
+  private pauseDuration: { min: number; max: number } | null = null;
   private facesLeft = false;
   private glowColor: number | null = null;
   private progress = 0.2;
@@ -153,8 +154,10 @@ export class CatchMinigame {
       drainMult?: number;
       /** Keep jerky even under high resilience. */
       unstoppableJerky?: boolean;
-      /** Override soft/jerky pause chance (0–1). */
+      /** Override idle pause chance (0–1). */
       pauseChance?: number;
+      /** Override pause length in seconds. */
+      pauseDuration?: { min: number; max: number };
       /** Texture faces left by default. */
       facesLeft?: boolean;
       /** Body tint for mutations. */
@@ -186,6 +189,7 @@ export class CatchMinigame {
     this.fishVel = 0;
     this.pauseChance =
       options?.pauseChance != null ? options.pauseChance : null;
+    this.pauseDuration = options?.pauseDuration ?? null;
     this.facesLeft = !!options?.facesLeft;
     this.glowColor = options?.glowColor ?? null;
     this.dualCatch = !!options?.second;
@@ -469,7 +473,7 @@ export class CatchMinigame {
         // Rare pause
         this.fishTargetVel = 0;
         this.fishVel = 0;
-        this.fishPauseTimer = Phaser.Math.FloatBetween(0.12, 0.35);
+        this.fishPauseTimer = this.rollPauseDuration(0.12, 0.35);
         this.fishDecisionTimer =
           this.fishPauseTimer + Phaser.Math.FloatBetween(0.05, 0.12);
         return;
@@ -505,7 +509,7 @@ export class CatchMinigame {
     if (roll < pauseChance) {
       // Full stop
       this.fishTargetVel = 0;
-      this.fishPauseTimer = Phaser.Math.FloatBetween(0.35, 1.1) / m;
+      this.fishPauseTimer = this.rollPauseDuration(0.35, 1.1) / m;
       this.fishDecisionTimer =
         this.fishPauseTimer + Phaser.Math.FloatBetween(0.2, 0.7) / m;
     } else if (roll < pauseChance + 0.2) {
@@ -534,6 +538,16 @@ export class CatchMinigame {
       this.fishTargetVel = dir * Phaser.Math.FloatBetween(45, 100) * m;
       this.fishDecisionTimer = Phaser.Math.FloatBetween(0.8, 2.0) / m;
     }
+  }
+
+  private rollPauseDuration(fallbackMin: number, fallbackMax: number): number {
+    if (this.pauseDuration) {
+      return Phaser.Math.FloatBetween(
+        this.pauseDuration.min,
+        this.pauseDuration.max
+      );
+    }
+    return Phaser.Math.FloatBetween(fallbackMin, fallbackMax);
   }
 
   private syncVisuals(): void {

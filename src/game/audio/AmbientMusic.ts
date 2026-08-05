@@ -1,11 +1,12 @@
 import Phaser from "phaser";
 
-export type MusicZone = "island" | "ocean" | "jungle";
+export type MusicZone = "island" | "ocean" | "jungle" | "reef";
 
 const TRACK: Record<MusicZone, string> = {
   island: "music_island",
   ocean: "music_ocean",
   jungle: "music_jungle",
+  reef: "music_reef",
 };
 
 const STORAGE_KEY = "fischers_music_volume";
@@ -166,5 +167,7 @@ export function areaNameForZone(zone: MusicZone): string {
       return "Swamp Island";
     case "ocean":
       return "Ocean";
+    case "reef":
+      return "Coral Reef";
   }
 }

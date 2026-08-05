@@ -222,6 +222,39 @@ function generateRodTextures(scene: Phaser.Scene): void {
   g.lineBetween(56, 10, 60, 16);
   g.generateTexture("rod_zeus", S, S);
 
+  // —— Coral rod: pink-teal blank, coral wraps ——
+  g.clear();
+  g.fillStyle(0x000000, 0.18);
+  g.fillEllipse(22, 56, 28, 8);
+  g.lineStyle(5, 0x2a6b6b);
+  g.lineBetween(12, 52, 50, 12);
+  g.lineStyle(3, 0x5ec4b8);
+  g.lineBetween(14, 50, 48, 14);
+  g.lineStyle(1.5, 0xff9ec8, 0.85);
+  g.lineBetween(18, 46, 46, 16);
+  g.lineStyle(2, 0xff8fb8);
+  g.lineBetween(20, 44, 24, 40);
+  g.lineBetween(28, 36, 32, 32);
+  g.lineBetween(36, 28, 40, 24);
+  g.fillStyle(0xc4a574);
+  g.fillRoundedRect(8, 44, 14, 12, 3);
+  g.fillStyle(0xff8fb8);
+  g.fillRect(8, 54, 14, 3);
+  g.fillStyle(0x5ec4b8);
+  g.fillRect(18, 40, 5, 6);
+  g.lineStyle(2, 0xffb6d9);
+  g.strokeCircle(50, 12, 3.5);
+  g.fillStyle(0xffe8f0);
+  g.fillCircle(50, 12, 1.2);
+  // small coral tip
+  g.fillStyle(0xff6b9d);
+  g.fillCircle(56, 7, 2.8);
+  g.fillStyle(0x5ec4b8);
+  g.fillCircle(58, 10, 2.2);
+  g.fillStyle(0xffb6d9);
+  g.fillCircle(54, 11, 1.8);
+  g.generateTexture("rod_coral", S, S);
+
   g.destroy();
 }
 
@@ -330,6 +363,12 @@ export class BootScene extends Phaser.Scene {
     this.load.image("spotted_mushrooms", "images/spotted_mushrooms.png");
     this.load.image("brown_gar", "images/brown_gar.png");
     this.load.image("crocodile", "images/crocodile.png");
+    this.load.image("clownfish", "images/clownfish.png");
+    this.load.image("angelfish", "images/angelfish.png");
+    this.load.image("pufferfish", "images/pufferfish.png");
+    this.load.image("nurse_shark", "images/nurse_shark.png");
+    this.load.image("surgeon_fish", "images/surgeon_fish.png");
+    this.load.image("dolphin", "images/dolphin.png");
     this.load.image("bobber_red", "images/bobber_red.png");
     this.load.image("bobber_red_double", "images/bobber_red_double.png");
     this.load.image("bobber_yellow", "images/bobber_yellow.png");
@@ -340,6 +379,7 @@ export class BootScene extends Phaser.Scene {
     this.load.audio("music_island", "audio/music_island.wav");
     this.load.audio("music_ocean", "audio/music_ocean.wav");
     this.load.audio("music_jungle", "audio/music_jungle.wav");
+    this.load.audio("music_reef", "audio/music_reef.wav");
     this.load.audio("sfx_ding", "audio/sfx_ding.wav");
     this.load.audio("sfx_ding_triple", "audio/sfx_ding_triple.wav");
   }

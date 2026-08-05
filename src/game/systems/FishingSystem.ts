@@ -71,6 +71,10 @@ export class FishingSystem {
   onCastCameraFollow?: () => void;
   /** Restore camera to the player when fishing ends. */
   onCastCameraRelease?: () => void;
+  /** Abundance fish removed after a successful catch. */
+  onAbundanceFishRemoved?: (fish: Fish) => void;
+  /** Whether a dolphin abundance is currently active. */
+  isAbundanceActive?: () => boolean;
   /** Mutation applied on the last successful catch (primary). */
   lastCatchMutation: FishMutationId | null = null;
   /** Size effect on the last successful catch (primary). */
@@ -480,11 +484,14 @@ export class FishingSystem {
     const rodId = this.inventory.getEquippedRodId();
     const rodChanceBonus =
       this.weather?.getRodMutationChanceBonus?.(rodId) ?? 0;
+    // Dolphins: half chance for rod / mutation-bobber rolls
+    const dolphinMult = fish.speciesId === "dolphin" ? 0.5 : 1;
     return resolveCatchMutation(
       rodId,
       fish.mutation,
       this.inventory.getMutationChanceMult(),
-      rodChanceBonus
+      rodChanceBonus,
+      dolphinMult
     );
   }
 
@@ -517,7 +524,14 @@ export class FishingSystem {
           size,
         });
         this.scene.time.delayedCall(2500, () => {
-          fish.resetIdle();
+          if (ITEMS[fish.speciesId].abundanceOnly) {
+            const idx = this.fishList.indexOf(fish);
+            if (idx >= 0) this.fishList.splice(idx, 1);
+            this.onAbundanceFishRemoved?.(fish);
+            fish.destroy();
+          } else {
+            fish.resetIdle();
+          }
         });
       }
       this.lastCatchMutation = this.lastCaughtFish[0]?.mutation ?? null;
@@ -526,7 +540,17 @@ export class FishingSystem {
       this.lastCatchMutation = null;
       this.lastCatchSize = null;
       for (const fish of hooked) {
-        fish.resetIdle();
+        if (
+          ITEMS[fish.speciesId].abundanceOnly &&
+          !this.isAbundanceActive?.()
+        ) {
+          const idx = this.fishList.indexOf(fish);
+          if (idx >= 0) this.fishList.splice(idx, 1);
+          this.onAbundanceFishRemoved?.(fish);
+          fish.destroy();
+        } else {
+          fish.resetIdle();
+        }
       }
     }
 

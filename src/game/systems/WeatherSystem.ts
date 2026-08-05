@@ -98,6 +98,20 @@ export class WeatherSystem {
   private splashTimer?: Phaser.Time.TimerEvent;
   private rainGfx?: Phaser.GameObjects.Rectangle;
 
+  /** Sky / sun / rays / weather clouds */
+  private skyGfx?: Phaser.GameObjects.Graphics;
+  private sunRoot?: Phaser.GameObjects.Container;
+  private sunRays?: Phaser.GameObjects.Graphics;
+  private atmosOverlay?: Phaser.GameObjects.Rectangle;
+  private weatherClouds: Phaser.GameObjects.Image[] = [];
+  private skyWorldLeft = 0;
+  private skyWorldWidth = 2000;
+  private skyHeight = 400;
+  private sunX = 160;
+  private sunY = 90;
+  private rayAngle = 0;
+  private lastAtmosId: WeatherId | null = null;
+
   onWeatherChange?: (id: WeatherId, name: string) => void;
   onLightningAnnounce?: (message: string) => void;
 
@@ -115,6 +129,30 @@ export class WeatherSystem {
     this.setupRainParticles();
   }
 
+  /**
+   * Hook GameScene sky/sun so weather can recolor the sky, rays, and clouds.
+   */
+  bindSky(opts: {
+    sky: Phaser.GameObjects.Graphics;
+    sun: Phaser.GameObjects.Container;
+    sunX: number;
+    sunY: number;
+    worldLeft: number;
+    worldWidth: number;
+    skyHeight: number;
+  }): void {
+    this.skyGfx = opts.sky;
+    this.sunRoot = opts.sun;
+    this.sunX = opts.sunX;
+    this.sunY = opts.sunY;
+    this.skyWorldLeft = opts.worldLeft;
+    this.skyWorldWidth = opts.worldWidth;
+    this.skyHeight = opts.skyHeight;
+    this.ensureSunRays();
+    this.ensureAtmosOverlay();
+    this.syncAtmosphere(true);
+  }
+
   /** Force a weather for testing / events. Special weathers still require Clear next. */
   forceWeather(id: WeatherId): void {
     this.clearWhirlpool();
@@ -125,6 +163,7 @@ export class WeatherSystem {
     this.lastLightningCheck = this.scene.time.now;
     this.onWeatherChange?.(id, WEATHER[id].name);
     this.syncRainFx();
+    this.syncAtmosphere(true);
   }
 
   isRainy(): boolean {
@@ -203,7 +242,7 @@ export class WeatherSystem {
     return dx <= radiusX && dy <= 140;
   }
 
-  update(_delta: number): void {
+  update(delta: number): void {
     const now = this.scene.time.now;
     if (now >= this.weatherEndsAt) {
       this.rollNextWeather();
@@ -220,6 +259,11 @@ export class WeatherSystem {
 
     this.updateWhirlpoolVisual(now);
     this.syncRainFx();
+    this.syncAtmosphere(false);
+    if (this.weather === "sunny" && this.sunRays) {
+      this.rayAngle += delta * 0.00012;
+      this.drawSunRays();
+    }
   }
 
   private rollNextWeather(): void {
@@ -251,6 +295,7 @@ export class WeatherSystem {
     this.weatherEndsAt = this.scene.time.now + WEATHER_DURATION_MS;
     this.lastLightningCheck = this.scene.time.now;
     this.onWeatherChange?.(next, WEATHER[next].name);
+    this.syncAtmosphere(true);
   }
 
   private spawnLightningStrike(): void {
@@ -431,6 +476,219 @@ export class WeatherSystem {
     g.destroy();
   }
 
+  private ensureSunRays(): void {
+    if (this.sunRays) return;
+    this.sunRays = this.scene.add.graphics().setDepth(-1.5);
+    this.sunRays.setVisible(false);
+  }
+
+  private ensureAtmosOverlay(): void {
+    if (this.atmosOverlay) return;
+    this.atmosOverlay = this.scene.add
+      .rectangle(
+        this.scene.scale.width / 2,
+        this.scene.scale.height / 2,
+        this.scene.scale.width * 1.2,
+        this.scene.scale.height * 1.2,
+        0x000000,
+        0
+      )
+      .setScrollFactor(0)
+      .setDepth(84);
+  }
+
+  private atmosLook(id: WeatherId): {
+    top: number;
+    bottom: number;
+    overlay: number;
+    overlayA: number;
+    sunVisible: boolean;
+    sunBright: boolean;
+    rays: boolean;
+    cloudCount: number;
+    cloudTint: number;
+    cloudAlpha: number;
+  } {
+    switch (id) {
+      case "sunny":
+        return {
+          top: 0xf0c040,
+          bottom: 0xffe9a0,
+          overlay: 0xffcc44,
+          overlayA: 0.1,
+          sunVisible: true,
+          sunBright: true,
+          rays: true,
+          cloudCount: 3,
+          cloudTint: 0xfff0d0,
+          cloudAlpha: 0.55,
+        };
+      case "rain":
+        return {
+          top: 0x4a5560,
+          bottom: 0x7a8894,
+          overlay: 0x1a3040,
+          overlayA: 0.18,
+          sunVisible: false,
+          sunBright: false,
+          rays: false,
+          cloudCount: 16,
+          cloudTint: 0x8a96a0,
+          cloudAlpha: 0.82,
+        };
+      case "cloudy":
+        return {
+          top: 0x6a7580,
+          bottom: 0xa0a8b0,
+          overlay: 0x405060,
+          overlayA: 0.12,
+          sunVisible: false,
+          sunBright: false,
+          rays: false,
+          cloudCount: 14,
+          cloudTint: 0xb0b8c0,
+          cloudAlpha: 0.78,
+        };
+      case "thunder":
+        return {
+          top: 0x06060a,
+          bottom: 0x161820,
+          overlay: 0x000000,
+          overlayA: 0.32,
+          sunVisible: false,
+          sunBright: false,
+          rays: false,
+          cloudCount: 22,
+          cloudTint: 0x2a2e38,
+          cloudAlpha: 0.92,
+        };
+      case "clear":
+      default:
+        return {
+          top: 0x5eb0e0,
+          bottom: 0xd4effc,
+          overlay: 0xffffff,
+          overlayA: 0,
+          sunVisible: true,
+          sunBright: false,
+          rays: false,
+          cloudCount: 0,
+          cloudTint: 0xffffff,
+          cloudAlpha: 0.5,
+        };
+    }
+  }
+
+  private syncAtmosphere(force: boolean): void {
+    if (!this.skyGfx) return;
+    if (!force && this.lastAtmosId === this.weather) return;
+    this.lastAtmosId = this.weather;
+
+    const look = this.atmosLook(this.weather);
+    this.skyGfx.clear();
+    this.skyGfx.fillGradientStyle(
+      look.top,
+      look.top,
+      look.bottom,
+      look.bottom,
+      1
+    );
+    this.skyGfx.fillRect(
+      this.skyWorldLeft,
+      0,
+      this.skyWorldWidth,
+      this.skyHeight
+    );
+
+    if (this.sunRoot) {
+      this.sunRoot.setVisible(look.sunVisible);
+      this.sunRoot.setAlpha(look.sunBright ? 1 : 0.85);
+      if (look.sunBright) {
+        this.sunRoot.setScale(1.12);
+      } else {
+        this.sunRoot.setScale(1);
+      }
+    }
+
+    this.ensureSunRays();
+    if (this.sunRays) {
+      this.sunRays.setVisible(look.rays);
+      if (look.rays) this.drawSunRays();
+      else this.sunRays.clear();
+    }
+
+    this.ensureAtmosOverlay();
+    if (this.atmosOverlay) {
+      this.atmosOverlay.setFillStyle(look.overlay, look.overlayA);
+      this.atmosOverlay.setVisible(look.overlayA > 0.001);
+    }
+
+    this.syncWeatherClouds(look.cloudCount, look.cloudTint, look.cloudAlpha);
+  }
+
+  private drawSunRays(): void {
+    if (!this.sunRays) return;
+    const g = this.sunRays;
+    g.clear();
+    const cx = this.sunX;
+    const cy = this.sunY;
+    const rays = 10;
+    const len = 280;
+    for (let i = 0; i < rays; i++) {
+      const a = this.rayAngle + (i / rays) * Math.PI * 2;
+      const a0 = a - 0.07;
+      const a1 = a + 0.07;
+      g.fillStyle(0xffe066, 0.16 + (i % 2) * 0.05);
+      g.beginPath();
+      g.moveTo(cx, cy);
+      g.lineTo(cx + Math.cos(a0) * len, cy + Math.sin(a0) * len);
+      g.lineTo(cx + Math.cos(a1) * len, cy + Math.sin(a1) * len);
+      g.closePath();
+      g.fillPath();
+    }
+    // Soft glow disc behind sun
+    g.fillStyle(0xfff0a0, 0.12);
+    g.fillCircle(cx, cy, 70);
+  }
+
+  private syncWeatherClouds(
+    count: number,
+    tint: number,
+    alpha: number
+  ): void {
+    while (this.weatherClouds.length > count) {
+      this.weatherClouds.pop()?.destroy();
+    }
+    while (this.weatherClouds.length < count) {
+      const i = this.weatherClouds.length;
+      const x =
+        this.skyWorldLeft +
+        80 +
+        (i * this.skyWorldWidth) / Math.max(count, 1) +
+        Phaser.Math.Between(-60, 60);
+      const y = 40 + (i % 5) * 28 + Phaser.Math.Between(-10, 14);
+      const cloud = this.scene.add
+        .image(x, y, "cloud")
+        .setDepth(-1)
+        .setScrollFactor(0.12, 0.08)
+        .setScale(Phaser.Math.FloatBetween(1.1, 2.1));
+      this.scene.tweens.add({
+        targets: cloud,
+        x: cloud.x + Phaser.Math.Between(30, 70),
+        duration: Phaser.Math.Between(9000, 16000),
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.InOut",
+      });
+      this.weatherClouds.push(cloud);
+    }
+    for (const c of this.weatherClouds) {
+      c.setTint(tint);
+      c.setAlpha(alpha);
+      c.setVisible(true);
+    }
+  }
+
   private syncRainFx(): void {
     const raining = this.isRainy();
     if (raining && !this.rainEmitter) {
@@ -441,37 +699,25 @@ export class WeatherSystem {
   }
 
   private startRain(): void {
+    const heavy = this.weather === "thunder";
     this.rainEmitter = this.scene.add.particles(0, 0, "rain_drop", {
       x: { min: 0, max: this.scene.scale.width },
       y: -20,
-      speedY: { min: 420, max: 620 },
-      speedX: { min: -40, max: -10 },
+      speedY: { min: heavy ? 520 : 420, max: heavy ? 780 : 620 },
+      speedX: { min: -50, max: -10 },
       lifespan: 1800,
-      quantity: 6,
-      frequency: 16,
-      alpha: { start: 0.55, end: 0.15 },
-      scaleY: { min: 0.8, max: 1.4 },
+      quantity: heavy ? 10 : 6,
+      frequency: heavy ? 12 : 16,
+      alpha: { start: heavy ? 0.7 : 0.55, end: 0.15 },
+      scaleY: { min: 0.8, max: heavy ? 1.8 : 1.4 },
     });
     this.rainEmitter.setScrollFactor(0).setDepth(90);
 
     this.splashTimer = this.scene.time.addEvent({
-      delay: 50,
+      delay: heavy ? 35 : 50,
       loop: true,
       callback: () => this.spawnSplash(),
     });
-
-    // Soft blue overlay
-    this.rainGfx = this.scene.add
-      .rectangle(
-        this.scene.scale.width / 2,
-        this.scene.scale.height / 2,
-        this.scene.scale.width,
-        this.scene.scale.height,
-        0x1a3a55,
-        0.12
-      )
-      .setScrollFactor(0)
-      .setDepth(85);
   }
 
   private spawnSplash(): void {
@@ -513,5 +759,9 @@ export class WeatherSystem {
   destroy(): void {
     this.stopRain();
     this.clearWhirlpool();
+    for (const c of this.weatherClouds) c.destroy();
+    this.weatherClouds = [];
+    this.sunRays?.destroy();
+    this.atmosOverlay?.destroy();
   }
 }

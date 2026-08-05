@@ -4,9 +4,12 @@ import { Fish } from "../entities/Fish";
 import { Bobber } from "../entities/Bobber";
 import { Sailboat } from "../entities/Sailboat";
 import { FishMerchant } from "../entities/FishMerchant";
+import { TalkNpc } from "../entities/TalkNpc";
 import { FishingSystem } from "../systems/FishingSystem";
 import { InventorySystem } from "../systems/InventorySystem";
 import { WeatherSystem } from "../systems/WeatherSystem";
+import { DolphinAbundance } from "../systems/DolphinAbundance";
+import { CoralRodSpawn } from "../systems/CoralRodSpawn";
 import { placeVillage, placeJungle, placeCoralReef } from "../world/WorldDecor";
 import { AmbientMusic, musicZoneForX, areaNameForZone, MusicZone } from "../audio/AmbientMusic";
 import { loadActiveSave, saveActiveSave } from "../save/SaveBank";
@@ -20,13 +23,25 @@ export class GameScene extends Phaser.Scene {
   fishing!: FishingSystem;
   inventory!: InventorySystem;
   weather!: WeatherSystem;
+  private dolphinAbundance!: DolphinAbundance;
+  private coralRodSpawn!: CoralRodSpawn;
   sailboat: Sailboat | null = null;
   merchant!: FishMerchant;
   jungleMerchant!: FishMerchant;
+  reefGuide!: TalkNpc;
   private music!: AmbientMusic;
   private tutorialDone = false;
   private autosaveTimer?: Phaser.Time.TimerEvent;
   private lastAreaZone: MusicZone | "reef" | null = null;
+  private skyVisual?: {
+    sky: Phaser.GameObjects.Graphics;
+    sun: Phaser.GameObjects.Container;
+    sunX: number;
+    sunY: number;
+    worldLeft: number;
+    worldWidth: number;
+    skyH: number;
+  };
 
   /** West ocean → village → long east ocean → jungle → far ocean */
   /** Coral reef far west of the starter left port. */
@@ -159,6 +174,17 @@ export class GameScene extends Phaser.Scene {
       "Swamp Merchant"
     );
     this.jungleMerchant.sprite.setTint(0xb8d8a0);
+    this.reefGuide = new TalkNpc(
+      this,
+      this.islandLeft + 90,
+      this.groundY,
+      "Dock Guide",
+      "Over there is a coral reef — I've heard there are\n" +
+        "rewards there, but quite rare ones.\n\n" +
+        "If I can remember, some told me there's a fishing\n" +
+        "rod there priced around 40k… but when I checked,\n" +
+        "I couldn't find it."
+    );
     this.placeWildflowerRodProp();
 
     this.bobber = new Bobber(this);
@@ -177,6 +203,44 @@ export class GameScene extends Phaser.Scene {
       this.waterSurfaceY,
       this.groundY
     );
+    if (this.skyVisual) {
+      this.weather.bindSky({
+        sky: this.skyVisual.sky,
+        sun: this.skyVisual.sun,
+        sunX: this.skyVisual.sunX,
+        sunY: this.skyVisual.sunY,
+        worldLeft: this.skyVisual.worldLeft,
+        worldWidth: this.skyVisual.worldWidth,
+        skyHeight: this.skyVisual.skyH,
+      });
+    }
+
+    const getLuck = () =>
+      this.weather.getLuck(
+        this.inventory.getFishingStats().luck,
+        this.inventory.getEquippedRodId()
+      );
+    const getIsRainy = () => this.weather.isRainy();
+    this.dolphinAbundance = new DolphinAbundance(
+      this,
+      this.reefLeft,
+      this.reefRight,
+      this.waterSurfaceY,
+      this.fishList,
+      getLuck,
+      getIsRainy,
+      (msg) => {
+        const ui = this.scene.get("UIScene") as UIScene;
+        ui.showWeatherBanner(msg, "#7ec8ff");
+      }
+    );
+    this.coralRodSpawn = new CoralRodSpawn(
+      this,
+      this.reefLeft,
+      this.reefRight,
+      this.waterSurfaceY,
+      this.inventory
+    );
 
     this.fishing = new FishingSystem(
       this,
@@ -190,6 +254,10 @@ export class GameScene extends Phaser.Scene {
     this.fishing.setWeather(this.weather);
     this.fishing.onCastCameraFollow = () => this.followBobberCamera();
     this.fishing.onCastCameraRelease = () => this.followPlayerCamera();
+    this.fishing.onAbundanceFishRemoved = (fish) => {
+      this.dolphinAbundance.notifyFishRemoved(fish);
+    };
+    this.fishing.isAbundanceActive = () => this.dolphinAbundance.isActive();
 
     this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0.1);
     this.cameras.main.setDeadzone(80, 60);
@@ -225,6 +293,9 @@ export class GameScene extends Phaser.Scene {
       tryEnterBobberShop: () => this.tryEnterBobberShop(),
       tryEnterBackpackShop: () => this.tryEnterBackpackShop(),
       tryEnterWhirlpoolCloud: () => this.tryEnterWhirlpoolCloud(),
+      isNearCoralRodOnBoat: () => this.isNearCoralRodOnBoat(),
+      tryOpenCoralRodOffer: () => this.tryOpenCoralRodOffer(),
+      offerCoralRodGift: (amount: number) => this.offerCoralRodGift(amount),
       isNearBlueHouse: () => this.isNearBlueHouse(),
       isNearRedHouse: () => this.isNearRedHouse(),
       isNearGreenHouse: () => this.isNearGreenHouse(),
@@ -390,6 +461,14 @@ export class GameScene extends Phaser.Scene {
     if (this.fishing.isBusy()) return false;
 
     const ui = this.scene.get("UIScene") as UIScene;
+
+    if (
+      this.reefGuide.talking ||
+      this.reefGuide.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      return this.reefGuide.interact();
+    }
+
     const tryOne = (m: FishMerchant) => {
       if (
         !m.talking &&
@@ -420,6 +499,7 @@ export class GameScene extends Phaser.Scene {
   declineAnyMerchant(): void {
     this.merchant.decline();
     this.jungleMerchant.decline();
+    this.reefGuide.decline();
   }
 
   private placeWildflowerRodProp(): void {
@@ -486,6 +566,44 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
+  isNearCoralRodOnBoat(): boolean {
+    if (!this.player.isOnBoat() || !this.sailboat) return false;
+    if (this.inventory.ownsRod("coral_rod")) return false;
+    return this.coralRodSpawn.isNear(
+      this.player.sprite.x,
+      this.player.sprite.y
+    );
+  }
+
+  tryOpenCoralRodOffer(): boolean {
+    if (!this.isNearCoralRodOnBoat()) return false;
+    if (this.fishing.isBusy()) return false;
+    const ui = this.scene.get("UIScene") as UIScene;
+    ui.openCoralRodOffer();
+    return true;
+  }
+
+  offerCoralRodGift(amount: number): boolean {
+    if (!this.coralRodSpawn.isActive()) {
+      const ui = this.scene.get("UIScene") as UIScene;
+      ui.closeCoralRodOffer();
+      ui.showToast("The rod has drifted away…", "#ffaa66");
+      return true;
+    }
+    const ui = this.scene.get("UIScene") as UIScene;
+    const result = this.inventory.offerCoralRod(amount);
+    ui.showToast(result.message, result.ok ? "#ff9ec8" : "#ffaa66");
+    ui.onCoinsChanged();
+    if (result.ok) {
+      this.coralRodSpawn.claim();
+      ui.closeCoralRodOffer();
+      this.inventory.equipRod("coral_rod");
+      this.player.syncCarriedRod(this.inventory.getSelectedItem());
+      this.persistSave();
+    }
+    return true;
+  }
+
   tryBoardOrExitBoat(): boolean {
     const ui = this.scene.get("UIScene") as UIScene;
     if (this.merchant.talking || this.jungleMerchant.talking) return false;
@@ -531,14 +649,22 @@ export class GameScene extends Phaser.Scene {
   private createBackground(): void {
     const worldLeft = this.westWaterLeft;
     const worldWidth = this.farWaterRight - worldLeft + 80;
+    const skyH = this.waterSurfaceY + 8;
     // World-space sky so it scrolls away when the camera dives underwater
     const sky = this.add.graphics().setDepth(-2);
     sky.fillGradientStyle(0x5eb0e0, 0x5eb0e0, 0xd4effc, 0xd4effc, 1);
-    sky.fillRect(worldLeft, 0, worldWidth, this.waterSurfaceY + 8);
+    sky.fillRect(worldLeft, 0, worldWidth, skyH);
 
-    this.add.circle(160, 90, 52, 0xfff0b0, 0.25).setDepth(-1);
-    this.add.circle(160, 90, 36, 0xffe08a, 0.95).setDepth(-1);
-    this.add.circle(152, 84, 10, 0xfff6d0, 0.7).setDepth(-1);
+    const sunX = 160;
+    const sunY = 90;
+    const sun = this.add.container(sunX, sunY).setDepth(-1);
+    sun.add([
+      this.add.circle(0, 0, 52, 0xfff0b0, 0.25),
+      this.add.circle(0, 0, 36, 0xffe08a, 0.95),
+      this.add.circle(-8, -6, 10, 0xfff6d0, 0.7),
+    ]);
+
+    this.skyVisual = { sky, sun, sunX, sunY, worldLeft, worldWidth, skyH };
   }
 
   private addIslandBedrock(left: number, right: number, lushFringe: boolean): void {
@@ -849,10 +975,16 @@ export class GameScene extends Phaser.Scene {
       left: number;
       right: number;
       count: number;
-      habitat: "ocean" | "pond";
+      habitat: "ocean" | "pond" | "reef";
     }[] = [
       {
-        // Deep west only — no fish on the coral reef
+        left: this.reefLeft,
+        right: this.reefRight,
+        count: 8,
+        habitat: "reef",
+      },
+      {
+        // Deep west approach east of the reef blend
         left: this.reefBlendEnd,
         right: this.westWaterRight,
         count: 10,
@@ -902,6 +1034,8 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.weather?.update(delta);
+    this.dolphinAbundance?.update(delta);
+    this.coralRodSpawn?.update(delta);
     this.player.syncCarriedRod(this.inventory.getSelectedItem());
     this.player.update();
     for (const fish of this.fishList) {
@@ -912,7 +1046,7 @@ export class GameScene extends Phaser.Scene {
 
     const areaId = this.getAreaId(this.player.sprite.x);
     const musicZone =
-      areaId === "reef" ? "ocean" : (areaId as MusicZone);
+      areaId === "reef" ? "reef" : (areaId as MusicZone);
     this.music.setZone(musicZone);
 
     const ui = this.scene.get("UIScene") as UIScene;
@@ -930,6 +1064,8 @@ export class GameScene extends Phaser.Scene {
     if (this.player.isOnBoat() && this.sailboat) {
       if (this.fishing.isBusy()) {
         ui.setPrompt("Fishing…");
+      } else if (this.isNearCoralRodOnBoat()) {
+        ui.setPrompt("F — Approach the floating rod");
       } else if (this.isBoatNearAnyPort()) {
         ui.setPrompt("LMB cast · F leave port");
       } else {
@@ -937,6 +1073,12 @@ export class GameScene extends Phaser.Scene {
       }
     } else if (this.merchant.talking || this.jungleMerchant.talking) {
       ui.setPrompt("F — Confirm    X — Decline");
+    } else if (this.reefGuide.talking) {
+      ui.setPrompt("F / X — Close");
+    } else if (
+      this.reefGuide.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      ui.setPrompt("F — Talk to Dock Guide");
     } else if (
       this.merchant.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
@@ -981,6 +1123,15 @@ export class GameScene extends Phaser.Scene {
     if (uiScene.isWildflowerBuyOpen() && !this.isNearWildflowerRod()) {
       uiScene.closeWildflowerBuy();
     }
+    if (uiScene.isCoralRodOfferOpen() && !this.isNearCoralRodOnBoat()) {
+      uiScene.closeCoralRodOffer();
+    }
+    if (
+      this.reefGuide.talking &&
+      !this.reefGuide.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      this.reefGuide.decline();
+    }
   }
 
   private getAreaId(x: number): MusicZone | "reef" {
@@ -998,10 +1149,13 @@ export class GameScene extends Phaser.Scene {
     return areaNameForZone(id);
   }
 
-  /** Nearest island / reef left / right of the player while at sea. */
+  /**
+   * Islands / reef left & right while at sea.
+   * Each side lists landmarks nearest-first; UI stacks farther ones underneath, faded.
+   */
   private getOceanMarkers(playerX: number): {
-    name: string;
     side: "left" | "right";
+    names: string[];
   }[] {
     const landmarks = [
       {
@@ -1018,19 +1172,19 @@ export class GameScene extends Phaser.Scene {
       },
     ];
 
-    let left: (typeof landmarks)[0] | null = null;
-    let right: (typeof landmarks)[0] | null = null;
-    for (const lm of landmarks) {
-      if (lm.x < playerX - 120) {
-        if (!left || lm.x > left.x) left = lm;
-      } else if (lm.x > playerX + 120) {
-        if (!right || lm.x < right.x) right = lm;
-      }
-    }
+    const leftNames = landmarks
+      .filter((lm) => lm.x < playerX - 120)
+      .sort((a, b) => b.x - a.x) // nearest first (largest x still left of player)
+      .map((lm) => lm.name);
 
-    const out: { name: string; side: "left" | "right" }[] = [];
-    if (left) out.push({ name: left.name, side: "left" });
-    if (right) out.push({ name: right.name, side: "right" });
+    const rightNames = landmarks
+      .filter((lm) => lm.x > playerX + 120)
+      .sort((a, b) => a.x - b.x) // nearest first (smallest x still right of player)
+      .map((lm) => lm.name);
+
+    const out: { side: "left" | "right"; names: string[] }[] = [];
+    if (leftNames.length) out.push({ side: "left", names: leftNames });
+    if (rightNames.length) out.push({ side: "right", names: rightNames });
     return out;
   }
 

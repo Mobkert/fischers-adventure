@@ -280,6 +280,27 @@ export class InventorySystem {
     return { ok: true, message: `Purchased ${def.name}!` };
   }
 
+  /**
+   * Offer coins to the floating Coral Rod.
+   * Only the exact gift amount works — never reveals the price in the message.
+   */
+  offerCoralRod(amount: number): { ok: boolean; message: string } {
+    if (this.ownsRod("coral_rod")) {
+      return { ok: false, message: "You already own the Coral Rod." };
+    }
+    const gift = Math.floor(amount);
+    const price = ITEMS.coral_rod.buyPrice ?? 43000;
+    if (gift !== price || this.coins < gift) {
+      return {
+        ok: false,
+        message: `The coral rod doesn't accept your gift of $${gift.toLocaleString("en-US")}.`,
+      };
+    }
+    this.coins -= gift;
+    this.ownedRods.push("coral_rod");
+    return { ok: true, message: "The Coral Rod accepts your gift…" };
+  }
+
   buyBobber(bobberId: ItemId): { ok: boolean; message: string } {
     const def = ITEMS[bobberId];
     if (!def?.isBobber || def.buyPrice == null) {

@@ -332,8 +332,11 @@ export class EquipmentBag {
       def.rodMutation && MUTATIONS[def.rodMutation.mutation]
         ? `\n${MUTATIONS[def.rodMutation.mutation].name}  ${Math.round(def.rodMutation.chance * 100)}%  ·  ${MUTATIONS[def.rodMutation.mutation].sellMult}× sell`
         : "";
+    const worldMutLine = def.grantsWorldMutations
+      ? "\nWorld mutations on catch (normal rates)"
+      : "";
     const statsText = this.scene.add
-      .text(-112, y + 42, statsLines + mutLine, {
+      .text(-112, y + 42, statsLines + mutLine + worldMutLine, {
         fontFamily: "Arial",
         fontSize: "13px",
         color: "#c8c8c8",

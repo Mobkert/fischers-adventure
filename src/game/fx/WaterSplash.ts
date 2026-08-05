@@ -1,0 +1,127 @@
+import Phaser from "phaser";
+
+function ensureSplashTextures(scene: Phaser.Scene): void {
+  if (scene.textures.exists("water_splash_drop")) return;
+
+  const g = scene.make.graphics({ x: 0, y: 0 });
+  g.fillStyle(0xffffff, 1);
+  g.fillCircle(4, 4, 3.5);
+  g.fillStyle(0xb8e4ff, 1);
+  g.fillCircle(3, 3, 1.6);
+  g.generateTexture("water_splash_drop", 8, 8);
+  g.clear();
+  g.fillStyle(0xe8f6ff, 1);
+  g.fillEllipse(12, 6, 22, 10);
+  g.generateTexture("water_splash_sheet", 24, 12);
+  g.destroy();
+}
+
+/**
+ * Burst splash at the waterline — used for dolphin leap exit / entry.
+ */
+export function playWaterSplash(
+  scene: Phaser.Scene,
+  x: number,
+  surfaceY: number,
+  power = 1
+): void {
+  ensureSplashTextures(scene);
+  const p = Phaser.Math.Clamp(power, 0.6, 1.6);
+  const depth = 13;
+
+  // Expanding surface ring
+  const ring = scene.add
+    .ellipse(x, surfaceY + 2, 14, 6, 0xd0ecff, 0.7)
+    .setDepth(depth)
+    .setBlendMode(Phaser.BlendModes.ADD);
+  scene.tweens.add({
+    targets: ring,
+    scaleX: 5.2 * p,
+    scaleY: 2.4 * p,
+    alpha: 0,
+    duration: 480,
+    ease: "Cubic.Out",
+    onComplete: () => ring.destroy(),
+  });
+
+  // Second softer ring
+  const ring2 = scene.add
+    .ellipse(x, surfaceY + 2, 10, 4, 0xffffff, 0.45)
+    .setDepth(depth);
+  scene.tweens.add({
+    targets: ring2,
+    scaleX: 3.4 * p,
+    scaleY: 1.6 * p,
+    alpha: 0,
+    duration: 360,
+    ease: "Quad.Out",
+    onComplete: () => ring2.destroy(),
+  });
+
+  // Foam sheet flash
+  const sheet = scene.add
+    .image(x, surfaceY + 1, "water_splash_sheet")
+    .setDepth(depth)
+    .setAlpha(0.85)
+    .setScale(0.6 * p, 0.5 * p);
+  scene.tweens.add({
+    targets: sheet,
+    scaleX: 2.8 * p,
+    scaleY: 1.1 * p,
+    alpha: 0,
+    y: surfaceY + 4,
+    duration: 320,
+    ease: "Quad.Out",
+    onComplete: () => sheet.destroy(),
+  });
+
+  // Droplet burst upward
+  const drops = scene.add.particles(x, surfaceY, "water_splash_drop", {
+    speed: { min: 90 * p, max: 240 * p },
+    angle: { min: -125, max: -55 },
+    gravityY: 680,
+    lifespan: { min: 420, max: 780 },
+    quantity: 0,
+    scale: { start: 1.15 * p, end: 0.15 },
+    alpha: { start: 0.95, end: 0 },
+    tint: [0xffffff, 0xd8f0ff, 0x9fd0ff],
+    emitting: false,
+  });
+  drops.setDepth(depth + 1);
+  drops.explode(Math.round(12 * p));
+
+  // Side spray
+  const spray = scene.add.particles(x, surfaceY + 2, "water_splash_drop", {
+    speed: { min: 40 * p, max: 140 * p },
+    angle: { min: -30, max: 30 },
+    gravityY: 420,
+    lifespan: { min: 280, max: 520 },
+    quantity: 0,
+    scale: { start: 0.7 * p, end: 0.1 },
+    alpha: { start: 0.7, end: 0 },
+    tint: [0xffffff, 0xb8e0ff],
+    emitting: false,
+  });
+  spray.setDepth(depth + 1);
+  spray.explode(Math.round(8 * p));
+  // Mirrored left spray
+  const sprayL = scene.add.particles(x, surfaceY + 2, "water_splash_drop", {
+    speed: { min: 40 * p, max: 140 * p },
+    angle: { min: 150, max: 210 },
+    gravityY: 420,
+    lifespan: { min: 280, max: 520 },
+    quantity: 0,
+    scale: { start: 0.7 * p, end: 0.1 },
+    alpha: { start: 0.7, end: 0 },
+    tint: [0xffffff, 0xb8e0ff],
+    emitting: false,
+  });
+  sprayL.setDepth(depth + 1);
+  sprayL.explode(Math.round(8 * p));
+
+  scene.time.delayedCall(900, () => {
+    drops.destroy();
+    spray.destroy();
+    sprayL.destroy();
+  });
+}
