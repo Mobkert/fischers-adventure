@@ -183,7 +183,8 @@ export class MenuScene extends Phaser.Scene {
       "• Cave water runs deeper so long casts stay in\n" +
       "  the abyss; cave fish stay in the upper depths\n" +
       "• Nautilus spawn chance raised in the cave\n" +
-      "• Common → mythical sell prices +$140\n" +
+      "• Frostpeak Cave fish pay more than surface\n" +
+      "  catches (ocean / pond / reef prices unchanged)\n" +
       "• Collector's Harbor bargainers, day/night, and\n" +
       "  Crystal Rod still in play from earlier builds";
 
