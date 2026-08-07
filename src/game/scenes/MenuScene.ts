@@ -129,7 +129,7 @@ export class MenuScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xc4a86a);
 
     const title = this.add
-      .text(0, -panelH / 2 + 28, "Collector's Update", {
+      .text(0, -panelH / 2 + 28, "Frostpeak Cave Update", {
         fontFamily: "Georgia, serif",
         fontSize: "24px",
         color: "#f0e6d2",
@@ -161,30 +161,31 @@ export class MenuScene extends Phaser.Scene {
 
     const bodyText =
       "WHAT'S NEW\n\n" +
-      "• Collector's Island — harbor town west of the\n" +
-      "  coral reef, with hills, beaches, and docks\n" +
-      "• Fish Collector — name your sell price; they may\n" +
-      "  accept, reject, or counter\n" +
-      "• Curio Trader — restocks every 3 minutes with\n" +
-      "  curios; rare Earthly Yellowfin (~10%), Augment\n" +
-      "  Rod (~30%), discounted craft bobbers (~8%, fish\n" +
-      "  still required — no Mutation Bobber)\n" +
-      "• Augment Rod — grey star tip; 7.5% chance after\n" +
-      "  a catch to upgrade a stat (capped)\n" +
-      "• Bargain stands — haggle fish and curios on the\n" +
-      "  island; talk near a trader and press F\n" +
-      "• New island music and map marker for Collector's\n" +
-      "  Harbor\n" +
-      "• Sail west past the reef to reach the island\n\n" +
-      "ALSO IN THIS BUILD\n\n" +
-      "• Coral Reef — shallow waters, tall coral, reef fish\n" +
-      "• Coral Rod — Luck +60% · Res +15% · Control +15%\n" +
-      "  Progress +20% · Depth 3m · world mutations\n" +
-      "• Dolphin abundance at the reef\n" +
-      "• Day / night cycle + weather looks\n\n" +
+      "• Frostpeak Cave — explore the mountain depths:\n" +
+      "  merchants, Shell Seeker, vault gems, and a\n" +
+      "  crystal gallery memory challenge\n" +
+      "• Crystal Rod skin — unlock from the gallery;\n" +
+      "  equip it for a crystal look and white burst FX\n" +
+      "• Hats & accessories — Hats tab in the Equipment\n" +
+      "  Bag and Accessories in the menu\n" +
+      "• Starter hats — Top Hat, Banana, and Straw Hat\n" +
+      "• Shell Hat — Shell Seeker quest (turn in 1\n" +
+      "  nautilus in the Entrance Hall)\n" +
+      "• Yellowfin Hat — catch a yellowfin to unlock\n" +
+      "• Gem Halo — claim the Coral Rod to unlock\n" +
+      "• Fish Quests — talk to Fish Quest NPCs on each\n" +
+      "  island; one active quest at a time; coin and\n" +
+      "  rare amulet rewards (no mythicals as targets)\n" +
+      "• Quest tracker HUD for your active fish quest\n\n" +
       "CHANGES\n\n" +
-      "• Zeus Rod — luck 85%, progress 30%\n" +
-      "• Wildflower Rod — 15% Bloom, control 25%, progress 10%";
+      "• Vault Keeper — needs 5 bestiary discoveries\n" +
+      "  (not the full bestiary)\n" +
+      "• Cave water runs deeper so long casts stay in\n" +
+      "  the abyss; cave fish stay in the upper depths\n" +
+      "• Nautilus spawn chance raised in the cave\n" +
+      "• Common → mythical sell prices +$140\n" +
+      "• Collector's Harbor bargainers, day/night, and\n" +
+      "  Crystal Rod still in play from earlier builds";
 
     const body = this.add
       .text(0, 0, bodyText, {
