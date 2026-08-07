@@ -155,16 +155,21 @@ export class QuestTracker {
       const done = this.inventory.frostpeakEpicRods;
       const doneCount = done.length;
       const total = FROSTPEAK_EPIC_RODS.length;
-      title = `Hermit — Quest 2  (${doneCount}/${total})`;
+      const legDone = this.inventory.frostpeakWildflowerLegendary;
+      title = `Hermit — Quest 2  (${doneCount}/${total} + Leg)`;
       const lines = FROSTPEAK_EPIC_RODS.map((id) => {
         const ok = done.includes(id);
-        return `${ok ? "☑" : "☐"}  ${rodDisplayName(id)}`;
+        return `${ok ? "☑" : "☐"}  Epic · ${rodDisplayName(id)}`;
       });
+      lines.push(
+        `${legDone ? "☑" : "☐"}  Legendary · Wildflower Rod`
+      );
+      const allDone = this.inventory.frostpeakQuest2Complete();
       body =
-        doneCount >= total
-          ? `All rods done!\nReturn to the Hermit for the next quest`
-          : `Catch an Epic with each rod:\n${lines.join("\n")}`;
-      key += `|${done.slice().sort().join(",")}`;
+        allDone
+          ? `All goals done!\nReturn to the Hermit for the next quest`
+          : `Quest goals:\n${lines.join("\n")}`;
+      key += `|${done.slice().sort().join(",")}|${legDone ? 1 : 0}`;
     } else {
       const have = this.inventory.hasFrostpeakMythicalOffer() ? 1 : 0;
       title = "Hermit — Quest 3";

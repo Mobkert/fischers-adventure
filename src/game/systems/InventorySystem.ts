@@ -93,6 +93,7 @@ export class InventorySystem {
   ownedBoats: BoatId[] = ["sailboat"];
   frostpeakQuestStage: FrostpeakQuestStage = 0;
   frostpeakEpicRods: ItemId[] = [];
+  frostpeakWildflowerLegendary = false;
   frostpeakCaveOpen = false;
   vaultGemQuestAccepted = false;
   vaultGemsPlaced: VaultGemId[] = [];
@@ -151,6 +152,7 @@ export class InventorySystem {
     this.ownedBoats = [...save.ownedBoats];
     this.frostpeakQuestStage = save.frostpeakQuestStage;
     this.frostpeakEpicRods = [...save.frostpeakEpicRods];
+    this.frostpeakWildflowerLegendary = save.frostpeakWildflowerLegendary;
     this.frostpeakCaveOpen = save.frostpeakCaveOpen;
     this.vaultGemQuestAccepted = save.vaultGemQuestAccepted;
     this.vaultGemsPlaced = [...save.vaultGemsPlaced];
@@ -240,6 +242,7 @@ export class InventorySystem {
       weatherId: extra.weatherId,
       frostpeakQuestStage: this.frostpeakQuestStage,
       frostpeakEpicRods: [...this.frostpeakEpicRods],
+      frostpeakWildflowerLegendary: this.frostpeakWildflowerLegendary,
       frostpeakCaveOpen: this.frostpeakCaveOpen,
       vaultGemQuestAccepted: this.vaultGemQuestAccepted,
       vaultGemsPlaced: [...this.vaultGemsPlaced],
@@ -1383,22 +1386,47 @@ export class InventorySystem {
     return true;
   }
 
+  /** Quest 2: legendary caught with Wildflower Rod. */
+  recordFrostpeakWildflowerLegendary(
+    rodId: ItemId,
+    rarity: string | undefined
+  ): boolean {
+    if (this.frostpeakQuestStage !== 2) return false;
+    if (this.frostpeakWildflowerLegendary) return false;
+    if (rodId !== "wildflower_rod") return false;
+    if (rarity !== "legendary") return false;
+    this.frostpeakWildflowerLegendary = true;
+    return true;
+  }
+
   frostpeakEpicMissing(): ItemId[] {
     return missingEpicRods(this.frostpeakEpicRods);
+  }
+
+  frostpeakQuest2Complete(): boolean {
+    return (
+      this.frostpeakEpicMissing().length === 0 &&
+      this.frostpeakWildflowerLegendary
+    );
   }
 
   frostpeakEpicProgressLabel(): string {
     const done = this.frostpeakEpicRods.length;
     const total = FROSTPEAK_EPIC_RODS.length;
     const missing = this.frostpeakEpicMissing().map(rodDisplayName);
-    if (missing.length === 0) return `${done}/${total} — all done!`;
-    return `${done}/${total}\nStill need: ${missing.join(", ")}`;
+    const leg = this.frostpeakWildflowerLegendary
+      ? "Legendary with Wildflower — done"
+      : "Still need: Legendary with Wildflower";
+    if (missing.length === 0) {
+      return `${done}/${total} epics done\n${leg}`;
+    }
+    return `${done}/${total}\nStill need epic: ${missing.join(", ")}\n${leg}`;
   }
 
-  /** Advance to quest 3 when all epic rods are done — only via Hermit talk. */
+  /** Advance to quest 3 when all quest-2 goals are done — only via Hermit talk. */
   advanceFrostpeakEpicQuestIfDone(): boolean {
     if (this.frostpeakQuestStage !== 2) return false;
-    if (this.frostpeakEpicMissing().length > 0) return false;
+    if (!this.frostpeakQuest2Complete()) return false;
     this.frostpeakQuestStage = 3;
     return true;
   }

@@ -1398,10 +1398,11 @@ export class GameScene extends Phaser.Scene {
       if (inv.turnInFrostpeakAngelfish()) {
         text =
           "Aye… that'll do. Quest one done.\n\n" +
-          "Quest 2: Catch an Epic with each of these rods —\n" +
-          "Amber, Firm, Wildflower, Augment, and Coral.\n" +
+          "Quest 2: Catch an Epic with Amber, Firm,\n" +
+          "Wildflower, and Augment — and a Legendary\n" +
+          "with the Wildflower Rod.\n" +
           "Come back when you're done.";
-        ui.showToast("Quest 2: Epic with 5 rods", "#a8d8ff");
+        ui.showToast("Quest 2: Epics + Wildflower Legendary", "#a8d8ff");
       } else {
         text =
           "Still need an Earthly or Sprout Angelfish.\n" +
@@ -1417,7 +1418,7 @@ export class GameScene extends Phaser.Scene {
         ui.showToast("Quest 3: Sellable Mythical > $4000", "#a8d8ff");
       } else {
         text =
-          "Epic catches with the five rods:\n" +
+          "Quest 2 progress:\n" +
           inv.frostpeakEpicProgressLabel();
       }
     } else if (inv.frostpeakQuestStage === 3) {
@@ -1487,11 +1488,18 @@ export class GameScene extends Phaser.Scene {
           "#c8b0ff"
         );
       }
+      if (this.inventory.recordFrostpeakWildflowerLegendary(rodId, rarity)) {
+        any = true;
+        ui?.showToast(
+          "Hermit quest: Legendary with Wildflower!",
+          "#c8b0ff"
+        );
+      }
     }
     if (!any) return;
-    if (this.inventory.frostpeakEpicMissing().length === 0) {
+    if (this.inventory.frostpeakQuest2Complete()) {
       ui?.showToast(
-        "All 5 rods done — return to the Hermit!",
+        "Quest 2 done — return to the Hermit!",
         "#7CFC00"
       );
     }

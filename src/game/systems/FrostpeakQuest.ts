@@ -16,8 +16,10 @@ export const FROSTPEAK_EPIC_RODS: readonly ItemId[] = [
   "firm_rod",
   "wildflower_rod",
   "augment_rod",
-  "coral_rod",
 ] as const;
+
+/** Quest 2 also requires a legendary caught with the Wildflower Rod. */
+export const FROSTPEAK_LEGENDARY_ROD: ItemId = "wildflower_rod";
 
 export const FROSTPEAK_MYTHICAL_MIN_VALUE = 4000;
 

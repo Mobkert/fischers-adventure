@@ -61,6 +61,8 @@ export interface SaveData {
   frostpeakQuestStage: import("../systems/FrostpeakQuest").FrostpeakQuestStage;
   /** Rods that have landed an epic during Frostpeak quest 2. */
   frostpeakEpicRods: ItemId[];
+  /** Legendary caught with Wildflower during Frostpeak quest 2. */
+  frostpeakWildflowerLegendary: boolean;
   /** Cave boards removed after quest complete. */
   frostpeakCaveOpen: boolean;
   /** Accepted the Vault Keeper's lost-gems quest. */
@@ -184,6 +186,7 @@ export function defaultSave(): SaveData {
     weatherId: "clear",
     frostpeakQuestStage: 0,
     frostpeakEpicRods: [],
+    frostpeakWildflowerLegendary: false,
     frostpeakCaveOpen: false,
     vaultGemQuestAccepted: false,
     vaultGemsPlaced: [],
@@ -377,6 +380,7 @@ export function cloneSave(raw: unknown): SaveData {
     weatherId: normalizeWeatherId(s.weatherId),
     frostpeakQuestStage: normalizeFrostpeakStage(s.frostpeakQuestStage),
     frostpeakEpicRods: normalizeFrostpeakEpicRods(s.frostpeakEpicRods),
+    frostpeakWildflowerLegendary: Boolean(s.frostpeakWildflowerLegendary),
     frostpeakCaveOpen: Boolean(s.frostpeakCaveOpen),
     vaultGemQuestAccepted: Boolean(s.vaultGemQuestAccepted),
     vaultGemsPlaced: normalizeVaultGemsPlaced(s.vaultGemsPlaced),
