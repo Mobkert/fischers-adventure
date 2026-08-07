@@ -66,7 +66,7 @@ const STALL_MUTATIONS: Array<{ id: FishMutationId | null; weight: number }> = [
 
 /**
  * Curio Trader inventory — restocks every 3 minutes.
- * Earthly Yellowfin ~10%, Earthly Angelfish ~13%,
+ * Earthly Yellowfin ~10%, Earthly Angelfish ~20%,
  * Augment Rod ~30%, craft bobbers ~8%.
  */
 export class CurioTraderStock {
@@ -131,7 +131,7 @@ export class CurioTraderStock {
       this.entries.push(this.makeFish("yellowfin_tuna", "earthly", null));
     }
 
-    if (Math.random() < 0.13) {
+    if (Math.random() < 0.2) {
       this.entries.push(this.makeFish("angelfish", "earthly", null));
     }
 
