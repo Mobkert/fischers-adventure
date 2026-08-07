@@ -8,16 +8,22 @@ export class Hotbar {
   private icons: Phaser.GameObjects.Image[] = [];
   private labels: Phaser.GameObjects.Text[] = [];
   private inventory: InventorySystem;
+  private scene: Phaser.Scene;
+  private baseY: number;
+  private onSlotSelect?: (index: number) => void;
 
   constructor(scene: Phaser.Scene, inventory: InventorySystem) {
+    this.scene = scene;
     this.inventory = inventory;
     const slotSize = 56;
     const gap = 8;
     const totalWidth = HOTBAR_SIZE * slotSize + (HOTBAR_SIZE - 1) * gap;
     const startX = -totalWidth / 2 + slotSize / 2;
-    const y = scene.scale.height - 48;
+    this.baseY = scene.scale.height - 48;
 
-    this.container = scene.add.container(scene.scale.width / 2, y).setDepth(100);
+    this.container = scene.add
+      .container(scene.scale.width / 2, this.baseY)
+      .setDepth(100);
     this.container.setScrollFactor(0);
 
     for (let i = 0; i < HOTBAR_SIZE; i++) {
@@ -41,6 +47,29 @@ export class Hotbar {
     }
 
     this.refresh();
+  }
+
+  setOnSlotSelect(cb: (index: number) => void): void {
+    this.onSlotSelect = cb;
+  }
+
+  /** Raise hotbar and enable tap-to-select when mobile controls are on. */
+  setMobileLayout(on: boolean): void {
+    this.container.setY(on ? this.scene.scale.height - 168 : this.baseY);
+    for (let i = 0; i < this.slots.length; i++) {
+      const slot = this.slots[i];
+      slot.removeAllListeners();
+      if (on) {
+        slot.setInteractive({ useHandCursor: true });
+        const index = i;
+        slot.on("pointerdown", (p: Phaser.Input.Pointer) => {
+          p.event?.stopPropagation?.();
+          this.onSlotSelect?.(index);
+        });
+      } else {
+        slot.disableInteractive();
+      }
+    }
   }
 
   setVisible(visible: boolean): void {

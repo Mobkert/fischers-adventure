@@ -24,6 +24,9 @@ export class Player {
     right: Phaser.Input.Keyboard.Key;
     jump: Phaser.Input.Keyboard.Key;
   };
+  /** On-screen mobile / virtual hold state. */
+  private virtual = { left: false, right: false, jump: false };
+  private jumpQueued = false;
   private facing: "left" | "right" = "right";
   private locked = false;
   private animMode: PlayerAnimMode = "move";
@@ -456,7 +459,17 @@ export class Player {
   }
 
   isKeyDown(key: "left" | "right" | "jump"): boolean {
-    return this.cursors[key].isDown;
+    return this.cursors[key].isDown || this.virtual[key];
+  }
+
+  /** Hold / release a virtual control (mobile on-screen buttons). */
+  setVirtualKey(key: "left" | "right" | "jump", down: boolean): void {
+    this.virtual[key] = down;
+  }
+
+  /** Queue a jump press from a mobile tap (edge-triggered). */
+  queueJump(): void {
+    this.jumpQueued = true;
   }
 
   getFacing(): "left" | "right" {
@@ -535,20 +548,26 @@ export class Player {
 
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     const onGround = body.blocked.down || body.touching.down;
-    const moving =
-      this.cursors.left.isDown || this.cursors.right.isDown;
+    const left = this.cursors.left.isDown || this.virtual.left;
+    const right = this.cursors.right.isDown || this.virtual.right;
+    const moving = left || right;
 
-    if (this.cursors.left.isDown) {
+    if (left && !right) {
       this.sprite.setVelocityX(-280);
       this.facing = "left";
       this.sprite.setFlipX(true);
-    } else if (this.cursors.right.isDown) {
+    } else if (right && !left) {
       this.sprite.setVelocityX(280);
       this.facing = "right";
       this.sprite.setFlipX(false);
+    } else {
+      this.sprite.setVelocityX(0);
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.cursors.jump) && onGround) {
+    const jumpPressed =
+      Phaser.Input.Keyboard.JustDown(this.cursors.jump) || this.jumpQueued;
+    this.jumpQueued = false;
+    if (jumpPressed && onGround) {
       this.sprite.setVelocityY(-520);
       this.playMoveAnim("jump");
     }

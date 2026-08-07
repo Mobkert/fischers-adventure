@@ -22,6 +22,9 @@ const config: Phaser.Types.Core.GameConfig = {
   dom: {
     createContainer: true,
   },
+  input: {
+    activePointers: 3,
+  },
   physics: {
     default: "arcade",
     arcade: {

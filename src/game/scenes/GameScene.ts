@@ -497,7 +497,12 @@ export class GameScene extends Phaser.Scene {
       fishing: this.fishing,
       weather: this.weather,
       dayNight: this.dayNight,
-      getPointerDown: () => this.input.activePointer.isDown,
+      player: this.player,
+      getPointerDown: () =>
+        this.input.pointer1.isDown ||
+        this.input.pointer2.isDown ||
+        this.input.activePointer.isDown,
+      tryMobileCast: () => this.tryMobileCast(),
       canOpenBoatMenu: () =>
         this.isPlayerOnPort() &&
         !this.player.isOnBoat() &&
@@ -552,11 +557,25 @@ export class GameScene extends Phaser.Scene {
       const ui = this.scene.get("UIScene") as UIScene | undefined;
       if (!ui || !ui.sys.settings.active) return;
       if (ui.isBlockingInput?.()) return;
+      // Mobile Mode: cast only via the CAST button (avoids mis-taps)
+      if (ui.isMobileMode?.()) return;
+      if (ui.isMobileCapturing?.()) return;
       if (this.fishing.state === "minigame") return;
 
       const worldX = this.cameras.main.getWorldPoint(pointer.x, pointer.y).x;
       this.fishing.tryCast(worldX);
     });
+  }
+
+  /** Cast ahead of the player (mobile CAST button). */
+  tryMobileCast(): void {
+    const ui = this.scene.get("UIScene") as UIScene | undefined;
+    if (ui?.isBlockingInput?.()) return;
+    if (this.fishing.state === "minigame") return;
+    const facing = this.player.getFacing();
+    const aimX =
+      this.player.sprite.x + (facing === "left" ? -180 : 180);
+    this.fishing.tryCast(aimX);
   }
 
   private followBobberCamera(): void {

@@ -1,27 +1,36 @@
 import Phaser from "phaser";
+import {
+  isMobileModeEnabled,
+  setMobileModeEnabled,
+} from "../input/MobileMode";
 
-/** Gear button + settings panel (music volume). */
+/** Gear button + settings panel (music volume, mobile mode). */
 export class SettingsMenu {
   private gearBtn: Phaser.GameObjects.Container;
   private panel: Phaser.GameObjects.Container;
   private fill!: Phaser.GameObjects.Rectangle;
   private trackHit!: Phaser.GameObjects.Rectangle;
   private valueText!: Phaser.GameObjects.Text;
+  private mobileBtn!: Phaser.GameObjects.Rectangle;
+  private mobileLabel!: Phaser.GameObjects.Text;
   private dragging = false;
   visible = false;
   private getVolume: () => number;
   private setVolume: (v: number) => void;
   private onQuitToMenu?: () => void;
+  private onMobileModeChange?: (on: boolean) => void;
 
   constructor(
     scene: Phaser.Scene,
     getVolume: () => number,
     setVolume: (v: number) => void,
-    onQuitToMenu?: () => void
+    onQuitToMenu?: () => void,
+    onMobileModeChange?: (on: boolean) => void
   ) {
     this.getVolume = getVolume;
     this.setVolume = setVolume;
     this.onQuitToMenu = onQuitToMenu;
+    this.onMobileModeChange = onMobileModeChange;
 
     // Top-right gear
     this.gearBtn = scene.add.container(scene.scale.width - 36, 36);
@@ -50,11 +59,11 @@ export class SettingsMenu {
       .setVisible(false);
 
     const bg = scene.add
-      .rectangle(0, 0, 380, 280, 0x1a1c22, 0.96)
+      .rectangle(0, 0, 380, 340, 0x1a1c22, 0.96)
       .setStrokeStyle(2, 0xc4a86a);
 
     const title = scene.add
-      .text(0, -108, "Settings", {
+      .text(0, -138, "Settings", {
         fontFamily: "Georgia, serif",
         fontSize: "26px",
         color: "#f0e6d2",
@@ -62,7 +71,7 @@ export class SettingsMenu {
       .setOrigin(0.5);
 
     const musicLabel = scene.add
-      .text(-150, -48, "Music volume", {
+      .text(-150, -78, "Music volume", {
         fontFamily: "Arial",
         fontSize: "16px",
         color: "#d0d0d0",
@@ -70,7 +79,7 @@ export class SettingsMenu {
       .setOrigin(0, 0.5);
 
     this.valueText = scene.add
-      .text(150, -48, "25%", {
+      .text(150, -78, "25%", {
         fontFamily: "Arial",
         fontSize: "16px",
         color: "#ffe066",
@@ -78,22 +87,46 @@ export class SettingsMenu {
       .setOrigin(1, 0.5);
 
     const track = scene.add
-      .rectangle(0, 0, 300, 10, 0x3a3f4a)
+      .rectangle(0, -30, 300, 10, 0x3a3f4a)
       .setOrigin(0.5);
     this.fill = scene.add
-      .rectangle(-150, 0, 75, 10, 0xc4a86a)
+      .rectangle(-150, -30, 75, 10, 0xc4a86a)
       .setOrigin(0, 0.5);
 
     this.trackHit = scene.add
-      .rectangle(0, 0, 300, 36, 0x000000, 0.001)
+      .rectangle(0, -30, 300, 36, 0x000000, 0.001)
       .setInteractive({ useHandCursor: true });
 
+    this.mobileBtn = scene.add
+      .rectangle(0, 28, 260, 42, 0x2a4a3a)
+      .setStrokeStyle(1, 0xc4a86a)
+      .setInteractive({ useHandCursor: true });
+    this.mobileLabel = scene.add
+      .text(0, 28, "Mobile Mode: Off", {
+        fontFamily: "Arial",
+        fontSize: "16px",
+        color: "#ffffff",
+      })
+      .setOrigin(0.5);
+    this.mobileBtn.on("pointerover", () => {
+      this.mobileBtn.setFillStyle(
+        isMobileModeEnabled() ? 0x3a6a4a : 0x3a5a4a
+      );
+    });
+    this.mobileBtn.on("pointerout", () => this.refreshMobileBtn());
+    this.mobileBtn.on("pointerdown", () => {
+      const next = !isMobileModeEnabled();
+      setMobileModeEnabled(next);
+      this.refreshMobileBtn();
+      this.onMobileModeChange?.(next);
+    });
+
     const quitBtn = scene.add
-      .rectangle(0, 58, 240, 40, 0x6a3a2a)
+      .rectangle(0, 90, 240, 40, 0x6a3a2a)
       .setStrokeStyle(1, 0xc4a86a)
       .setInteractive({ useHandCursor: true });
     const quitLabel = scene.add
-      .text(0, 58, "Save & Quit to Menu", {
+      .text(0, 90, "Save & Quit to Menu", {
         fontFamily: "Arial",
         fontSize: "15px",
         color: "#ffffff",
@@ -107,7 +140,7 @@ export class SettingsMenu {
     });
 
     const hint = scene.add
-      .text(0, 108, "Esc / click ⚙ to close", {
+      .text(0, 140, "Esc / click ⚙ to close", {
         fontFamily: "Arial",
         fontSize: "12px",
         color: "#888888",
@@ -122,6 +155,8 @@ export class SettingsMenu {
       track,
       this.fill,
       this.trackHit,
+      this.mobileBtn,
+      this.mobileLabel,
       quitBtn,
       quitLabel,
       hint,
@@ -140,6 +175,13 @@ export class SettingsMenu {
     });
 
     this.refreshSlider();
+    this.refreshMobileBtn();
+  }
+
+  private refreshMobileBtn(): void {
+    const on = isMobileModeEnabled();
+    this.mobileBtn.setFillStyle(on ? 0x2a6a4a : 0x2a4a3a);
+    this.mobileLabel.setText(on ? "Mobile Mode: On" : "Mobile Mode: Off");
   }
 
   private applyPointer(p: Phaser.Input.Pointer): void {
@@ -165,7 +207,10 @@ export class SettingsMenu {
   setOpen(open: boolean): void {
     this.visible = open;
     this.panel.setVisible(open);
-    if (open) this.refreshSlider();
+    if (open) {
+      this.refreshSlider();
+      this.refreshMobileBtn();
+    }
   }
 
   isOpen(): boolean {

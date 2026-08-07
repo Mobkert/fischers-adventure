@@ -24,6 +24,8 @@ import { BargainPanel, BargainSession } from "../ui/BargainPanel";
 import { AugmentUpgradePanel } from "../ui/AugmentUpgradePanel";
 import { BargainKind } from "../systems/BargainLogic";
 import { SettingsMenu } from "../ui/SettingsMenu";
+import { MobileControls } from "../ui/MobileControls";
+import { isMobileModeEnabled } from "../input/MobileMode";
 import { OceanMarkers, OceanMarkerInfo } from "../ui/OceanMarkers";
 import { InventorySystem } from "../systems/InventorySystem";
 import { FishingSystem } from "../systems/FishingSystem";
@@ -32,13 +34,16 @@ import { WeatherSystem } from "../systems/WeatherSystem";
 import { DayNightCycle } from "../systems/DayNightCycle";
 import { CurioStockEntry } from "../systems/CurioTraderStock";
 import { playCatchSfx } from "../audio/CatchSfx";
+import type { Player } from "../entities/Player";
 
 interface UISceneData {
   inventory: InventorySystem;
   fishing: FishingSystem;
   weather: WeatherSystem;
   dayNight: DayNightCycle;
+  player: Player;
   getPointerDown: () => boolean;
+  tryMobileCast: () => void;
   canOpenBoatMenu: () => boolean;
   spawnBoat: (id: import("../data/boats").BoatId) => void;
   buyBoat: (
@@ -101,7 +106,9 @@ export class UIScene extends Phaser.Scene {
   private fishing!: FishingSystem;
   private weather!: WeatherSystem;
   private dayNight!: DayNightCycle;
+  private player!: Player;
   private getPointerDown!: () => boolean;
+  private tryMobileCast!: () => void;
   private canOpenBoatMenu!: () => boolean;
   private spawnBoat!: (id: import("../data/boats").BoatId) => void;
   private buyBoat!: (
@@ -150,6 +157,7 @@ export class UIScene extends Phaser.Scene {
   private bargainPanel!: BargainPanel;
   private augmentUpgrade!: AugmentUpgradePanel;
   private settings!: SettingsMenu;
+  private mobileControls!: MobileControls;
   private coins!: CoinDisplay;
   private questTracker!: QuestTracker;
   private oceanMarkers!: OceanMarkers;
@@ -167,7 +175,9 @@ export class UIScene extends Phaser.Scene {
     this.fishing = data.fishing;
     this.weather = data.weather;
     this.dayNight = data.dayNight;
+    this.player = data.player;
     this.getPointerDown = data.getPointerDown;
+    this.tryMobileCast = data.tryMobileCast;
     this.canOpenBoatMenu = data.canOpenBoatMenu;
     this.spawnBoat = data.spawnBoat;
     this.buyBoat = data.buyBoat;
@@ -299,8 +309,19 @@ export class UIScene extends Phaser.Scene {
       this,
       () => this.getMusicVolume(),
       (v) => this.setMusicVolume(v),
-      () => this.quitToMenu()
+      () => this.quitToMenu(),
+      (on) => this.applyMobileMode(on)
     );
+    this.mobileControls = new MobileControls(this, {
+      setVirtual: (key, down) => this.player.setVirtualKey(key, down),
+      pressJump: () => this.player.queueJump(),
+      onCast: () => this.tryMobileCast(),
+      onInteract: () => this.handleInteractKey(),
+      onInventory: () => this.handleInventoryKey(),
+      onBoat: () => this.handleBoatKey(),
+    });
+    this.hotbar.setOnSlotSelect((i) => this.selectHotbarSlot(i));
+    this.applyMobileMode(isMobileModeEnabled());
     this.coins = new CoinDisplay(this, this.inventory);
     this.coins.setWeather(this.weather);
     this.coins.setDayNight(this.dayNight);
@@ -347,35 +368,12 @@ export class UIScene extends Phaser.Scene {
     for (let i = 0; i < 5; i++) {
       const key = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE + i);
       key.on("down", () => {
-        if (this.tutorial.visible) return;
-        if (this.minigame.isActive() || this.boatMenu.visible) return;
-        if (this.coralRodOffer.visible || this.wildflowerBuy.visible) return;
-        if (this.bargainPanel.visible) return;
-        if (this.augmentUpgrade.visible) return;
-        this.inventory.selectHotbar(i);
-        this.hotbar.refresh();
-        // Slot 2 (index 1) = equipment bag · Slot 3 (index 2) = bestiary
-        if (i === 1) {
-          this.bestiaryPanel.setOpen(false);
-          this.inventoryPanel.setOpen(false);
-          this.equipmentBag.toggle();
-        } else if (i === 2) {
-          this.equipmentBag.setOpen(false);
-          this.inventoryPanel.setOpen(false);
-          this.bestiaryPanel.toggle();
-        } else {
-          if (this.equipmentBag.visible) this.equipmentBag.setOpen(false);
-          if (this.bestiaryPanel.visible) this.bestiaryPanel.setOpen(false);
-        }
+        this.selectHotbarSlot(i);
       });
     }
 
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E).on("down", () => {
-      if (this.tutorial.visible) return;
-      if (this.minigame.isActive() || this.boatMenu.visible) return;
-      this.equipmentBag.setOpen(false);
-      this.bestiaryPanel.setOpen(false);
-      this.inventoryPanel.toggle();
+      this.handleInventoryKey();
     });
 
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).on("down", () => {
@@ -420,60 +418,11 @@ export class UIScene extends Phaser.Scene {
     });
 
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.B).on("down", () => {
-      if (this.tutorial.visible) return;
-      if (this.minigame.isActive()) return;
-      if (
-        this.inventoryPanel.visible ||
-        this.equipmentBag.visible ||
-        this.bestiaryPanel.visible
-      )
-        return;
-      if (this.boatMenu.visible) {
-        this.boatMenu.setOpen(false);
-        return;
-      }
-      if (!this.canOpenBoatMenu()) {
-        this.showToast("Stand on the port to open the boat menu.", "#ffaa66");
-        return;
-      }
-      this.boatMenu.setOpen(true);
+      this.handleBoatKey();
     });
 
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F).on("down", () => {
-      if (this.tutorial.visible) return;
-      if (this.minigame.isActive() || this.boatMenu.visible) return;
-      if (this.equipmentBag.visible || this.bestiaryPanel.visible) return;
-      if (this.coralRodOffer.visible) return;
-      if (this.augmentUpgrade.visible) return;
-      if (this.bargainPanel.visible) return;
-      // Confirm wildflower buy if stats panel is open
-      if (this.wildflowerBuy.visible) {
-        this.tryBuyJungleRod();
-        this.hotbar.refresh();
-        return;
-      }
-      // Silent secret first (no toast / prompt)
-      if (this.trySecretFallThrough()) return;
-      // NPC talk takes priority over boarding
-      if (this.tryTalkToMerchant()) {
-        this.inventoryPanel.refresh();
-        return;
-      }
-      if (this.tryVaultGemInteract()) {
-        this.inventoryPanel.refresh();
-        this.hotbar.refresh();
-        return;
-      }
-      if (this.tryOpenBargain()) return;
-      if (this.tryBuyJungleRod()) {
-        this.hotbar.refresh();
-        return;
-      }
-      if (this.tryOpenCoralRodOffer()) return;
-      if (this.tryEnterWhirlpoolCloud()) return;
-      if (this.tryEnterFrostpeakCave()) return;
-      if (this.tryEnterAmuletCave()) return;
-      this.tryBoardOrExitBoat();
+      this.handleInteractKey();
     });
 
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER).on("down", () => {
@@ -709,6 +658,105 @@ export class UIScene extends Phaser.Scene {
 
   refreshQuestTracker(): void {
     this.questTracker.refresh();
+  }
+
+  private applyMobileMode(on: boolean): void {
+    this.mobileControls.setEnabled(on);
+    this.hotbar.setMobileLayout(on);
+  }
+
+  /** True while a mobile control is held (blocks world tap-cast). */
+  isMobileCapturing(): boolean {
+    return this.mobileControls?.isEnabled() && this.mobileControls.capturing;
+  }
+
+  isMobileMode(): boolean {
+    return this.mobileControls?.isEnabled() ?? false;
+  }
+
+  selectHotbarSlot(i: number): void {
+    if (this.tutorial.visible) return;
+    if (this.minigame.isActive() || this.boatMenu.visible) return;
+    if (this.coralRodOffer.visible || this.wildflowerBuy.visible) return;
+    if (this.bargainPanel.visible) return;
+    if (this.augmentUpgrade.visible) return;
+    this.inventory.selectHotbar(i);
+    this.hotbar.refresh();
+    // Slot 2 (index 1) = equipment bag · Slot 3 (index 2) = bestiary
+    if (i === 1) {
+      this.bestiaryPanel.setOpen(false);
+      this.inventoryPanel.setOpen(false);
+      this.equipmentBag.toggle();
+    } else if (i === 2) {
+      this.equipmentBag.setOpen(false);
+      this.inventoryPanel.setOpen(false);
+      this.bestiaryPanel.toggle();
+    } else {
+      if (this.equipmentBag.visible) this.equipmentBag.setOpen(false);
+      if (this.bestiaryPanel.visible) this.bestiaryPanel.setOpen(false);
+    }
+  }
+
+  private handleInventoryKey(): void {
+    if (this.tutorial.visible) return;
+    if (this.minigame.isActive() || this.boatMenu.visible) return;
+    this.equipmentBag.setOpen(false);
+    this.bestiaryPanel.setOpen(false);
+    this.inventoryPanel.toggle();
+  }
+
+  private handleBoatKey(): void {
+    if (this.tutorial.visible) return;
+    if (this.minigame.isActive()) return;
+    if (
+      this.inventoryPanel.visible ||
+      this.equipmentBag.visible ||
+      this.bestiaryPanel.visible
+    )
+      return;
+    if (this.boatMenu.visible) {
+      this.boatMenu.setOpen(false);
+      return;
+    }
+    if (!this.canOpenBoatMenu()) {
+      this.showToast("Stand on the port to open the boat menu.", "#ffaa66");
+      return;
+    }
+    this.boatMenu.setOpen(true);
+  }
+
+  private handleInteractKey(): void {
+    if (this.tutorial.visible) return;
+    if (this.minigame.isActive() || this.boatMenu.visible) return;
+    if (this.equipmentBag.visible || this.bestiaryPanel.visible) return;
+    if (this.coralRodOffer.visible) return;
+    if (this.augmentUpgrade.visible) return;
+    if (this.bargainPanel.visible) return;
+    if (this.wildflowerBuy.visible) {
+      this.tryBuyJungleRod();
+      this.hotbar.refresh();
+      return;
+    }
+    if (this.trySecretFallThrough()) return;
+    if (this.tryTalkToMerchant()) {
+      this.inventoryPanel.refresh();
+      return;
+    }
+    if (this.tryVaultGemInteract()) {
+      this.inventoryPanel.refresh();
+      this.hotbar.refresh();
+      return;
+    }
+    if (this.tryOpenBargain()) return;
+    if (this.tryBuyJungleRod()) {
+      this.hotbar.refresh();
+      return;
+    }
+    if (this.tryOpenCoralRodOffer()) return;
+    if (this.tryEnterWhirlpoolCloud()) return;
+    if (this.tryEnterFrostpeakCave()) return;
+    if (this.tryEnterAmuletCave()) return;
+    this.tryBoardOrExitBoat();
   }
 
   isBlockingInput(): boolean {
