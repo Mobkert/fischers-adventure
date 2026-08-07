@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 
-function ensureSplashTextures(scene: Phaser.Scene): void {
+export function ensureSplashTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists("water_splash_drop")) return;
 
   const g = scene.make.graphics({ x: 0, y: 0 });
@@ -124,4 +124,62 @@ export function playWaterSplash(
     spray.destroy();
     sprayL.destroy();
   });
+}
+
+function ensureBubbleTexture(scene: Phaser.Scene): void {
+  if (scene.textures.exists("water_bubble")) return;
+  const g = scene.make.graphics({ x: 0, y: 0 });
+  g.fillStyle(0xffffff, 0.55);
+  g.fillCircle(5, 5, 4.5);
+  g.lineStyle(1.2, 0xffffff, 0.9);
+  g.strokeCircle(5, 5, 4.5);
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(3.5, 3.2, 1.4);
+  g.generateTexture("water_bubble", 10, 10);
+  g.destroy();
+}
+
+/**
+ * Rising bubbles that follow a sinking bobber until `stop()` is called.
+ */
+export function createSinkBubbles(
+  scene: Phaser.Scene,
+  getPos: () => { x: number; y: number }
+): { stop: () => void } {
+  ensureBubbleTexture(scene);
+  const emitter = scene.add.particles(0, 0, "water_bubble", {
+    speedX: { min: -18, max: 18 },
+    speedY: { min: -55, max: -28 },
+    lifespan: { min: 420, max: 900 },
+    frequency: 70,
+    quantity: 1,
+    scale: { start: 0.55, end: 0.15 },
+    alpha: { start: 0.75, end: 0 },
+    tint: [0xffffff, 0xd8f4ff, 0xb0e0ff],
+    blendMode: Phaser.BlendModes.ADD,
+  });
+  emitter.setDepth(12);
+
+  const follow = scene.time.addEvent({
+    delay: 40,
+    loop: true,
+    callback: () => {
+      const p = getPos();
+      emitter.setPosition(p.x, p.y);
+    },
+  });
+  // Seed at current pos
+  const start = getPos();
+  emitter.setPosition(start.x, start.y);
+
+  let stopped = false;
+  return {
+    stop: () => {
+      if (stopped) return;
+      stopped = true;
+      follow.remove(false);
+      emitter.stop();
+      scene.time.delayedCall(950, () => emitter.destroy());
+    },
+  };
 }

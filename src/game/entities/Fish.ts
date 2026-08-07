@@ -10,10 +10,12 @@ import {
   rollFishSpecies,
   rollFishSize,
   rollWorldMutation,
+  rollSunnyMutation,
   sizeScale,
   applyMutationTint,
 } from "../data/items";
 import { playWaterSplash } from "../fx/WaterSplash";
+import { CAVE_FISH_MAX_DEPTH_PX } from "../world/FrostpeakCaveWorld";
 
 export type FishState = "idle" | "approaching" | "bitten" | "caught";
 
@@ -41,6 +43,7 @@ export class Fish {
   /** Species blocked from spawning (e.g. only one mushroom cluster). */
   private getExcludeSpecies: (self: Fish) => ItemId[];
   private getIsRainy: () => boolean = () => false;
+  private getIsSunny: () => boolean = () => false;
 
   private approachTargetX = 0;
   private approachTargetY = 0;
@@ -63,6 +66,9 @@ export class Fish {
   private jumpPeak = 0;
   private nextJumpAt = 0;
   private jumpEntrySplashed = false;
+  /** Whale blowhole spout timer. */
+  private nextSpoutAt = 0;
+  private diving = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -76,11 +82,13 @@ export class Fish {
     speciesId?: ItemId,
     getExcludeSpecies: (self: Fish) => ItemId[] = () => [],
     getIsRainy: () => boolean = () => false,
-    options?: { lockSpecies?: boolean; noDespawn?: boolean }
+    options?: { lockSpecies?: boolean; noDespawn?: boolean },
+    getIsSunny: () => boolean = () => false
   ) {
     this.getLuck = getLuck;
     this.getExcludeSpecies = getExcludeSpecies;
     this.getIsRainy = getIsRainy;
+    this.getIsSunny = getIsSunny;
     this.habitat = habitat;
     this.lockSpecies = !!options?.lockSpecies;
     this.noDespawn = !!options?.noDespawn;
@@ -89,7 +97,7 @@ export class Fish {
       rollFishSpecies(this.getLuck(), habitat, this.getExcludeSpecies(this));
     const rareBonusMult = this.speciesId === "dolphin" ? 0.5 : 1;
     this.size = rollFishSize(rareBonusMult);
-    this.mutation = rollWorldMutation(rareBonusMult);
+    this.mutation = this.rollSpawnMutation(rareBonusMult);
     const def = ITEMS[this.speciesId];
     this.idleMinX = idleMinX;
     this.idleMaxX = idleMaxX;
@@ -107,6 +115,46 @@ export class Fish {
       this.nextJumpAt =
         scene.time.now + Phaser.Math.Between(800, 2800);
     }
+    if (def.surfaceSpout) {
+      this.nextSpoutAt =
+        scene.time.now + Phaser.Math.Between(1200, 2800);
+    }
+  }
+
+  /** World mutation, then Sunny → Tanned if still plain. */
+  private rollSpawnMutation(rareBonusMult: number): FishMutationId | null {
+    const world = rollWorldMutation(rareBonusMult);
+    if (world) return world;
+    if (this.getIsSunny()) {
+      return rollSunnyMutation(rareBonusMult);
+    }
+    return null;
+  }
+
+  /** Dive deep and despawn (cave whale timeout). */
+  diveDespawn(onDone?: () => void): void {
+    if (this.diving) return;
+    this.diving = true;
+    this.state = "caught";
+    this.jumping = false;
+    this.velX = 0;
+    this.targetVelX = 0;
+    this.sprite.setVelocity(0, 0);
+    this.sprite.setAngle(0);
+    playWaterSplash(this.sprite.scene, this.sprite.x, this.surfaceY, 1.4);
+    this.sprite.scene.tweens.add({
+      targets: this.sprite,
+      y: this.surfaceY + 420,
+      alpha: 0,
+      duration: 2200,
+      ease: "Quad.easeIn",
+      onUpdate: () => this.syncGlow(this.sprite.scene.time.now),
+      onComplete: () => {
+        this.clearGlow();
+        this.sprite.destroy();
+        onDone?.();
+      },
+    });
   }
 
   ignoresBobber(): boolean {
@@ -120,7 +168,13 @@ export class Fish {
     const def = ITEMS[this.speciesId];
     const rarity = def.rarity ?? "common";
     const maxDepth =
-      this.habitat === "pond" ? 210 : this.habitat === "reef" ? 155 : undefined;
+      this.habitat === "pond"
+        ? 210
+        : this.habitat === "reef"
+          ? 155
+          : this.habitat === "cave"
+            ? CAVE_FISH_MAX_DEPTH_PX
+            : undefined;
     const y =
       this.surfaceY +
       rollSpawnDepthOffset(
@@ -184,6 +238,12 @@ export class Fish {
       this.maxSpeed = 28;
       return;
     }
+    // Cave whale — big and lumbering, not a speedster
+    if (ITEMS[this.speciesId].surfaceSpout) {
+      this.accel = 28;
+      this.maxSpeed = 48;
+      return;
+    }
     this.accel = 55 * (0.85 + speed * 0.2);
     this.maxSpeed = 70 * (0.9 + speed * 0.25);
   }
@@ -243,7 +303,13 @@ export class Fish {
     this.approachTargetX = bobberX;
     // Stay underwater — never aim above the surface
     const maxDepth =
-      this.habitat === "pond" ? 220 : this.habitat === "reef" ? 155 : 165;
+      this.habitat === "pond"
+        ? 220
+        : this.habitat === "reef"
+          ? 155
+          : this.habitat === "cave"
+            ? CAVE_FISH_MAX_DEPTH_PX
+            : 165;
     this.approachTargetY = Phaser.Math.Clamp(
       bobberY + 10,
       this.surfaceY + 16,
@@ -281,7 +347,7 @@ export class Fish {
       );
       const rareBonusMult = this.speciesId === "dolphin" ? 0.5 : 1;
       this.size = rollFishSize(rareBonusMult);
-      this.mutation = rollWorldMutation(rareBonusMult);
+      this.mutation = this.rollSpawnMutation(rareBonusMult);
     }
     this.applySpeciesVisual();
     this.applySpeciesSwimStats();
@@ -441,11 +507,17 @@ export class Fish {
   }
 
   private clampUnderwater(): void {
-    if (this.jumping) return;
+    if (this.jumping || this.diving) return;
     const minY = this.surfaceY + 12;
     const maxY =
       this.surfaceY +
-      (this.habitat === "pond" ? 220 : this.habitat === "reef" ? 155 : 165);
+      (this.habitat === "pond"
+        ? 220
+        : this.habitat === "reef"
+          ? 155
+          : this.habitat === "cave"
+            ? CAVE_FISH_MAX_DEPTH_PX
+            : 165);
     if (this.sprite.y < minY) {
       this.sprite.y = minY;
       const body = this.sprite.body as Phaser.Physics.Arcade.Body;
@@ -458,6 +530,7 @@ export class Fish {
   }
 
   private updateIdleSwim(now: number, dt: number): void {
+    if (this.diving) return;
     if (ITEMS[this.speciesId].surfaceJumps) {
       if (this.jumping) {
         this.updateSurfaceJump(dt);
@@ -467,6 +540,11 @@ export class Fish {
         this.beginSurfaceJump();
         return;
       }
+    }
+
+    if (ITEMS[this.speciesId].surfaceSpout && now >= this.nextSpoutAt) {
+      this.fireWhaleSpout();
+      this.nextSpoutAt = now + Phaser.Math.Between(1800, 3600);
     }
 
     if (now >= this.nextDecisionAt) {
@@ -514,6 +592,35 @@ export class Fish {
     this.sprite.y =
       this.baseY + Math.sin(now / 450 + this.sprite.x * 0.05) * bobAmp;
     this.clampUnderwater();
+  }
+
+  /** Blowhole spout — water shoots upward like a whale. */
+  private fireWhaleSpout(): void {
+    const scene = this.sprite.scene;
+    const x = this.sprite.x;
+    const top = this.sprite.y - this.sprite.displayHeight * 0.35;
+    playWaterSplash(scene, x, this.surfaceY, 1.35);
+    // Vertical column of spray
+    for (let i = 0; i < 10; i++) {
+      const drop = scene.add
+        .circle(
+          x + Phaser.Math.Between(-10, 10),
+          top,
+          Phaser.Math.Between(2, 4),
+          0xd0ecff,
+          0.85
+        )
+        .setDepth(15);
+      scene.tweens.add({
+        targets: drop,
+        y: top - Phaser.Math.Between(70, 140),
+        x: drop.x + Phaser.Math.Between(-18, 18),
+        alpha: 0,
+        duration: 480 + i * 40,
+        ease: "Quad.easeOut",
+        onComplete: () => drop.destroy(),
+      });
+    }
   }
 
   private beginSurfaceJump(): void {

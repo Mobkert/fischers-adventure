@@ -1,12 +1,22 @@
 import Phaser from "phaser";
 
-export type MusicZone = "island" | "ocean" | "jungle" | "reef";
+export type MusicZone = "island" | "ocean" | "jungle" | "reef" | "collectors";
 
 const TRACK: Record<MusicZone, string> = {
   island: "music_island",
   ocean: "music_ocean",
   jungle: "music_jungle",
   reef: "music_reef",
+  collectors: "music_collectors",
+};
+
+/** Per-zone gain vs master music volume (reef a bit louder). */
+const ZONE_GAIN: Record<MusicZone, number> = {
+  island: 1,
+  ocean: 1,
+  jungle: 1,
+  reef: 1.4,
+  collectors: 1,
 };
 
 const STORAGE_KEY = "fischers_music_volume";
@@ -14,7 +24,7 @@ const DEFAULT_VOLUME = 0.25;
 
 /**
  * Zone-based ambient loops (~32s each). Crossfades when the player moves
- * between starter island, open ocean, and jungle.
+ * between biomes.
  */
 export class AmbientMusic {
   private scene: Phaser.Scene;
@@ -54,12 +64,18 @@ export class AmbientMusic {
     this.applyVolumeToPlaying();
   }
 
+  private zoneVolume(zone: MusicZone): number {
+    return this.volume * (ZONE_GAIN[zone] ?? 1);
+  }
+
   private applyVolumeToPlaying(): void {
     if (!this.current) return;
     const s = this.scene.sound.get(TRACK[this.current]);
     if (s?.isPlaying) {
       this.scene.tweens.killTweensOf(s);
-      (s as Phaser.Sound.WebAudioSound).setVolume(this.volume);
+      (s as Phaser.Sound.WebAudioSound).setVolume(
+        this.zoneVolume(this.current)
+      );
     }
   }
 
@@ -99,7 +115,7 @@ export class AmbientMusic {
     if (!s) return;
     this.scene.tweens.killTweensOf(s);
     if (!s.isPlaying) s.play();
-    (s as Phaser.Sound.WebAudioSound).setVolume(this.volume);
+    (s as Phaser.Sound.WebAudioSound).setVolume(this.zoneVolume(zone));
   }
 
   private fadeTo(from: MusicZone | null, to: MusicZone): void {
@@ -115,7 +131,7 @@ export class AmbientMusic {
     const fadeMs = 1600;
     this.scene.tweens.add({
       targets: next,
-      volume: this.volume,
+      volume: this.zoneVolume(to),
       duration: fadeMs,
       ease: "Sine.easeInOut",
     });
@@ -169,5 +185,7 @@ export function areaNameForZone(zone: MusicZone): string {
       return "Ocean";
     case "reef":
       return "Coral Reef";
+    case "collectors":
+      return "Collector's Island";
   }
 }

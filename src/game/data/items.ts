@@ -6,6 +6,7 @@ export type ItemId =
   | "wildflower_rod"
   | "zeus_rod"
   | "coral_rod"
+  | "augment_rod"
   | "equipment_bag"
   | "bestiary"
   | "bobber_starter"
@@ -35,7 +36,39 @@ export type ItemId =
   | "pufferfish"
   | "nurse_shark"
   | "surgeon_fish"
-  | "dolphin";
+  | "dolphin"
+  | "chilled_clownfish"
+  | "crystal_frog"
+  | "crystalfin_tuna"
+  | "nautilus"
+  | "serpent_eel"
+  | "cave_whale"
+  | "amulet_celestial"
+  | "amulet_moonlight"
+  | "amulet_tempest"
+  | "amulet_dusky"
+  | "amulet_sunlit"
+  | "amulet_thunder"
+  | "gem_red"
+  | "gem_green"
+  | "gem_blue"
+  | "gem_yellow"
+  | "gem_purple"
+  | "crystal_rod"
+  | "hat_tophat"
+  | "hat_banana"
+  | "hat_cap"
+  | "hat_shell"
+  | "hat_yellowfin"
+  | "hat_gem";
+
+export type AmuletEffectId =
+  | "celestial"
+  | "moonlight"
+  | "tempest"
+  | "dusky"
+  | "sunlit"
+  | "thunder";
 
 export type FishMutationId =
   | "bloom"
@@ -46,11 +79,14 @@ export type FishMutationId =
   | "albino"
   | "neon"
   | "amber"
-  | "thunder";
+  | "thunder"
+  | "moonlight"
+  | "lunar"
+  | "tanned";
 
 export type FishSizeId = "normal" | "big" | "giant";
 
-export type FishHabitat = "ocean" | "pond" | "reef";
+export type FishHabitat = "ocean" | "pond" | "reef" | "cave";
 
 export type FishRarity =
   | "common"
@@ -169,6 +205,33 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     toastColor: "#ffe066",
     label: "Thunder! ",
   },
+  moonlight: {
+    id: "moonlight",
+    name: "Moonlight",
+    sellMult: 2,
+    tint: 0x6eb6ff,
+    glowColor: 0xa8d8ff,
+    toastColor: "#8ec8ff",
+    label: "Moonlight! ",
+  },
+  lunar: {
+    id: "lunar",
+    name: "Lunar",
+    sellMult: 4,
+    tint: 0x5aa8ff,
+    glowColor: 0xffe066,
+    toastColor: "#ffe066",
+    label: "Lunar! ",
+  },
+  tanned: {
+    id: "tanned",
+    name: "Tanned",
+    sellMult: 2,
+    tint: 0xc49868,
+    glowColor: 0xd4a878,
+    toastColor: "#c49868",
+    label: "Tanned! ",
+  },
 };
 
 export interface SizeDef {
@@ -213,6 +276,67 @@ export interface RodStats {
   lineDepth: number;
 }
 
+/** Persistent upgrade counts for the Augment Rod. */
+export type AugmentStatKey =
+  | "luck"
+  | "resilience"
+  | "control"
+  | "progressSpeed"
+  | "lineDepth";
+
+export type AugmentUpgrades = Record<AugmentStatKey, number>;
+
+export const AUGMENT_UPGRADE_CAPS: AugmentUpgrades = {
+  luck: 3,
+  resilience: 3,
+  control: 4,
+  progressSpeed: 4,
+  lineDepth: 2,
+};
+
+/** Chance to open the Augment upgrade panel after a successful catch. */
+export const AUGMENT_UPGRADE_CHANCE = 0.075;
+
+export const ZERO_AUGMENT_UPGRADES: AugmentUpgrades = {
+  luck: 0,
+  resilience: 0,
+  control: 0,
+  progressSpeed: 0,
+  lineDepth: 0,
+};
+
+export function clampAugmentUpgrades(
+  raw: Partial<AugmentUpgrades> | null | undefined
+): AugmentUpgrades {
+  const out = { ...ZERO_AUGMENT_UPGRADES };
+  if (!raw || typeof raw !== "object") return out;
+  for (const key of Object.keys(AUGMENT_UPGRADE_CAPS) as AugmentStatKey[]) {
+    const n = Math.floor(Number(raw[key]) || 0);
+    out[key] = Math.max(0, Math.min(AUGMENT_UPGRADE_CAPS[key], n));
+  }
+  return out;
+}
+
+/** Apply Augment Rod upgrade counts onto base rod stats. */
+export function applyAugmentUpgrades(
+  base: RodStats,
+  upgrades: AugmentUpgrades
+): RodStats {
+  return {
+    luck: base.luck + upgrades.luck * 5,
+    resilience: base.resilience + upgrades.resilience * 5,
+    control: base.control + upgrades.control * 5,
+    progressSpeed: base.progressSpeed + upgrades.progressSpeed * 5,
+    lineDepth: base.lineDepth + upgrades.lineDepth,
+  };
+}
+
+export function augmentHasUpgradeableStat(upgrades: AugmentUpgrades): boolean {
+  return (Object.keys(AUGMENT_UPGRADE_CAPS) as AugmentStatKey[]).some(
+    (k) => upgrades[k] < AUGMENT_UPGRADE_CAPS[k]
+  );
+}
+
 export interface BobberStats {
   luck?: number;
   control?: number;
@@ -254,6 +378,11 @@ export interface ItemDef {
   isBestiary?: boolean;
   isBobber?: boolean;
   isBackpack?: boolean;
+  isAmulet?: boolean;
+  /** Cosmetic hat unlocked for the accessories tab. */
+  isHat?: boolean;
+  /** Effect triggered when using this amulet from the equipment bag. */
+  amuletEffect?: AmuletEffectId;
   /** Bag slot capacity when this backpack is owned. */
   bagSlots?: number;
   rodStats?: RodStats;
@@ -267,6 +396,10 @@ export interface ItemDef {
    * (excludes amber / bloom / thunder — same pool as swimming fish).
    */
   grantsWorldMutations?: boolean;
+  /** Catch-minigame special ability (Crystal Rod burst, etc.). */
+  rodMinigamePower?: "crystal_burst";
+  /** Quest item — never sold by merchants. */
+  isQuestItem?: boolean;
   rarity?: FishRarity;
   /** Relative chance to spawn in water (among fish species). */
   spawnWeight?: number;
@@ -298,10 +431,17 @@ export interface ItemDef {
   minigamePauseDuration?: { min: number; max: number };
   /** Jump in arcs above the surface while idle (dolphins). */
   surfaceJumps?: boolean;
+  /** Periodically spout water upward from the blowhole (whales). */
+  surfaceSpout?: boolean;
+  /** Added to rod resilience during the catch minigame (can be negative). */
+  catchResilience?: number;
   /** Texture faces left (default fish face right). */
   facesLeft?: boolean;
   displayWidth?: number;
   displayHeight?: number;
+  /** Override sprite size in the catch minigame (keeps world size separate). */
+  minigameDisplayWidth?: number;
+  minigameDisplayHeight?: number;
 }
 
 export const ZERO_ROD_STATS: RodStats = {
@@ -472,7 +612,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "wildflower_rod",
     name: "Wildflower Rod",
     description:
-      "Orange and pink swamp rod. Deep line, high luck — 20% Bloom (3× sell).",
+      "Orange and pink swamp rod. Deep line, high luck — 15% Bloom (3× sell).",
     stackable: false,
     textureKey: "rod_wildflower",
     isRod: true,
@@ -481,17 +621,17 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     rodStats: {
       luck: 75,
       resilience: -35,
-      control: 35,
-      progressSpeed: 30,
+      control: 25,
+      progressSpeed: 10,
       lineDepth: 3,
     },
-    rodMutation: { mutation: "bloom", chance: 0.2 },
+    rodMutation: { mutation: "bloom", chance: 0.15 },
   },
   zeus_rod: {
     id: "zeus_rod",
     name: "Zeus Rod",
     description:
-      "Forged in storm clouds — 5% Thunder (5×). +7% stats in Rain, +15% in Thunderstorms (not depth).",
+      "Forged in storm clouds — 5% Thunder (5×). +15% stats in Thunderstorms (not depth).",
     stackable: false,
     textureKey: "rod_zeus",
     isRod: true,
@@ -524,6 +664,80 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       lineDepth: 3,
     },
   },
+  augment_rod: {
+    id: "augment_rod",
+    name: "Augment Rod",
+    description:
+      "A unique grey rod with a star tip. Each catch has a 7.5% chance to upgrade one of its stats.",
+    stackable: false,
+    textureKey: "rod_augment",
+    isRod: true,
+    buyPrice: 17000,
+    rodStats: {
+      luck: 35,
+      resilience: 5,
+      control: 5,
+      progressSpeed: 0,
+      lineDepth: 2,
+    },
+  },
+  crystal_rod: {
+    id: "crystal_rod",
+    name: "Crystal Rod",
+    description:
+      "Restored vault crystal. Every 0.5s while fighting a fish, 15% chance to burst — stun and +10% progress.",
+    stackable: false,
+    textureKey: "rod_crystal",
+    isRod: true,
+    rodMinigamePower: "crystal_burst",
+    rodStats: {
+      luck: 70,
+      resilience: 5,
+      control: 15,
+      progressSpeed: 15,
+      lineDepth: 4,
+    },
+  },
+  gem_red: {
+    id: "gem_red",
+    name: "Ruby Gem",
+    description: "A lost vault jewel. Unsellable — return it to a pedestal.",
+    stackable: false,
+    textureKey: "gem_red",
+    isQuestItem: true,
+  },
+  gem_green: {
+    id: "gem_green",
+    name: "Emerald Gem",
+    description: "A lost vault jewel. Unsellable — return it to a pedestal.",
+    stackable: false,
+    textureKey: "gem_green",
+    isQuestItem: true,
+  },
+  gem_blue: {
+    id: "gem_blue",
+    name: "Sapphire Gem",
+    description: "A lost vault jewel. Unsellable — return it to a pedestal.",
+    stackable: false,
+    textureKey: "gem_blue",
+    isQuestItem: true,
+  },
+  gem_yellow: {
+    id: "gem_yellow",
+    name: "Topaz Gem",
+    description: "A lost vault jewel. Unsellable — return it to a pedestal.",
+    stackable: false,
+    textureKey: "gem_yellow",
+    isQuestItem: true,
+  },
+  gem_purple: {
+    id: "gem_purple",
+    name: "Amethyst Gem",
+    description: "A lost vault jewel. Unsellable — return it to a pedestal.",
+    stackable: false,
+    textureKey: "gem_purple",
+    isQuestItem: true,
+  },
   equipment_bag: {
     id: "equipment_bag",
     name: "Equipment Bag",
@@ -531,6 +745,54 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     stackable: false,
     textureKey: "equipment_bag",
     isEquipmentBag: true,
+  },
+  hat_tophat: {
+    id: "hat_tophat",
+    name: "Top Hat",
+    description: "A finely detailed top hat. Yours from the start.",
+    stackable: false,
+    textureKey: "hat_tophat",
+    isHat: true,
+  },
+  hat_banana: {
+    id: "hat_banana",
+    name: "Banana Peel",
+    description: "A slippery classic. Free for every angler.",
+    stackable: false,
+    textureKey: "hat_banana",
+    isHat: true,
+  },
+  hat_cap: {
+    id: "hat_cap",
+    name: "Straw Hat",
+    description: "A finely woven straw hat. Yours from the start.",
+    stackable: false,
+    textureKey: "hat_cap",
+    isHat: true,
+  },
+  hat_shell: {
+    id: "hat_shell",
+    name: "Shell Hat",
+    description: "A nautilus shell worn as a hat. Gift from a grateful cave friend.",
+    stackable: false,
+    textureKey: "hat_shell",
+    isHat: true,
+  },
+  hat_yellowfin: {
+    id: "hat_yellowfin",
+    name: "Yellowfin Hat",
+    description: "Awarded for landing a Yellowfin Tuna.",
+    stackable: false,
+    textureKey: "yellowfin_tuna",
+    isHat: true,
+  },
+  hat_gem: {
+    id: "hat_gem",
+    name: "Gem Halo",
+    description: "A floating coral gem above your head. Gift of the reef.",
+    stackable: false,
+    textureKey: "hat_gem",
+    isHat: true,
   },
   bestiary: {
     id: "bestiary",
@@ -623,6 +885,66 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       ingredients: [{ itemId: "mushroom_cluster", count: 3 }],
     },
   },
+  amulet_celestial: {
+    id: "amulet_celestial",
+    name: "Celestial Amulet",
+    description: "Spins the heavens — races time to the next day or night.",
+    stackable: true,
+    textureKey: "amulet_celestial",
+    buyPrice: 20000,
+    isAmulet: true,
+    amuletEffect: "celestial",
+  },
+  amulet_moonlight: {
+    id: "amulet_moonlight",
+    name: "Moonlight Amulet",
+    description: "Calls a Full Moon (replaces other weather). Night only.",
+    stackable: true,
+    textureKey: "amulet_moonlight",
+    buyPrice: 30000,
+    isAmulet: true,
+    amuletEffect: "moonlight",
+  },
+  amulet_tempest: {
+    id: "amulet_tempest",
+    name: "Tempest Amulet",
+    description: "Summons rain (replaces other weather).",
+    stackable: true,
+    textureKey: "amulet_tempest",
+    buyPrice: 20000,
+    isAmulet: true,
+    amuletEffect: "tempest",
+  },
+  amulet_dusky: {
+    id: "amulet_dusky",
+    name: "Dusky Amulet",
+    description: "Heavy clouds (replaces other weather).",
+    stackable: true,
+    textureKey: "amulet_dusky",
+    buyPrice: 10000,
+    isAmulet: true,
+    amuletEffect: "dusky",
+  },
+  amulet_sunlit: {
+    id: "amulet_sunlit",
+    name: "Sunlit Amulet",
+    description: "Bright sun (replaces other weather). Day only.",
+    stackable: true,
+    textureKey: "amulet_sunlit",
+    buyPrice: 20000,
+    isAmulet: true,
+    amuletEffect: "sunlit",
+  },
+  amulet_thunder: {
+    id: "amulet_thunder",
+    name: "Thunder Amulet",
+    description: "Thunderstorm (replaces other weather).",
+    stackable: true,
+    textureKey: "amulet_thunder",
+    buyPrice: 200000,
+    isAmulet: true,
+    amuletEffect: "thunder",
+  },
   backpack_starter: {
     id: "backpack_starter",
     name: "Starter Pack",
@@ -671,7 +993,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     description: "A common red sockeye.",
     stackable: true,
     textureKey: "fish",
-    sellPrice: 19,
+    sellPrice: 159,
     rarity: "common",
     habitat: "ocean",
     spawnWeight: 8,
@@ -685,7 +1007,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     description: "An uncommon flatfish.",
     stackable: true,
     textureKey: "flatfish",
-    sellPrice: 40,
+    sellPrice: 180,
     rarity: "uncommon",
     habitat: "ocean",
     spawnWeight: 5,
@@ -699,7 +1021,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     description: "A rare tuna with a yellow stripe.",
     stackable: true,
     textureKey: "yellowfin_tuna",
-    sellPrice: 90,
+    sellPrice: 230,
     rarity: "rare",
     habitat: "ocean",
     spawnWeight: 3.2,
@@ -745,7 +1067,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       "A mythical ocean sunfish. Luck finds it — landing it is another story.",
     stackable: true,
     textureKey: "sunfish",
-    sellPrice: 1335,
+    sellPrice: 1475,
     rarity: "mythical",
     habitat: "ocean",
     spawnWeight: 0.18,
@@ -780,7 +1102,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     description: "A rare whiskered catfish. Medium-fast.",
     stackable: true,
     textureKey: "whisker_catfish",
-    sellPrice: 140,
+    sellPrice: 280,
     rarity: "rare",
     habitat: "pond",
     spawnWeight: 3.2,
@@ -794,7 +1116,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     description: "An uncommon pale perch. Slow and steady.",
     stackable: true,
     textureKey: "pale_minnow",
-    sellPrice: 60,
+    sellPrice: 200,
     rarity: "uncommon",
     habitat: "pond",
     spawnWeight: 5,
@@ -808,7 +1130,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     description: "A common floating mushroom patch. Ignores bait.",
     stackable: true,
     textureKey: "spotted_mushrooms",
-    sellPrice: 11,
+    sellPrice: 151,
     rarity: "common",
     habitat: "pond",
     spawnWeight: 8,
@@ -842,7 +1164,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       "A mythical swamp alligator. Blistering speed; −50% catch progress.",
     stackable: true,
     textureKey: "crocodile",
-    sellPrice: 5560,
+    sellPrice: 5700,
     rarity: "mythical",
     habitat: "pond",
     spawnWeight: 0.18,
@@ -864,7 +1186,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     description: "A common reef clownfish. Slow, prefers the deep coral.",
     stackable: true,
     textureKey: "clownfish",
-    sellPrice: 30,
+    sellPrice: 170,
     rarity: "common",
     habitat: "reef",
     spawnWeight: 8,
@@ -879,7 +1201,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     description: "An uncommon reef angelfish. Medium pace, mid-depth.",
     stackable: true,
     textureKey: "angelfish",
-    sellPrice: 100,
+    sellPrice: 240,
     rarity: "uncommon",
     habitat: "reef",
     spawnWeight: 5,
@@ -895,7 +1217,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       "A rare reef puffer. Fast and aggressive — can hug the shallows or go deep.",
     stackable: true,
     textureKey: "pufferfish",
-    sellPrice: 200,
+    sellPrice: 340,
     rarity: "rare",
     habitat: "reef",
     spawnWeight: 3.2,
@@ -950,7 +1272,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       "A mythical dolphin. Only during reef abundances — fast, fierce, −80% progress, long pauses.",
     stackable: true,
     textureKey: "dolphin",
-    sellPrice: 10000,
+    sellPrice: 10140,
     rarity: "mythical",
     habitat: "reef",
     abundanceOnly: true,
@@ -966,6 +1288,117 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     depthBand: { min: 16, max: 48 },
     displayWidth: 92,
     displayHeight: 28,
+  },
+  chilled_clownfish: {
+    id: "chilled_clownfish",
+    name: "Chilled Clownfish",
+    description:
+      "A common cave clownfish. Slow, but a touch quicker than its reef cousin.",
+    stackable: true,
+    textureKey: "chilled_clownfish",
+    sellPrice: 200,
+    rarity: "common",
+    habitat: "cave",
+    spawnWeight: 8,
+    minigameSpeed: 0.82,
+    depthBand: { min: 28, max: 170 },
+    displayWidth: 42,
+    displayHeight: 30,
+  },
+  crystal_frog: {
+    id: "crystal_frog",
+    name: "Crystal Frog",
+    description: "An uncommon cave frog — quick bursts like its swamp kin.",
+    stackable: true,
+    textureKey: "crystal_frog",
+    sellPrice: 260,
+    rarity: "uncommon",
+    habitat: "cave",
+    spawnWeight: 5,
+    minigameSpeed: 1.35,
+    minigamePauseChance: 0.48,
+    depthBand: { min: 36, max: 200 },
+    displayWidth: 44,
+    displayHeight: 24,
+  },
+  crystalfin_tuna: {
+    id: "crystalfin_tuna",
+    name: "Crystalfin Tuna",
+    description:
+      "A rare crystal-backed tuna. A bit faster than a pufferfish.",
+    stackable: true,
+    textureKey: "crystalfin_tuna",
+    sellPrice: 540,
+    rarity: "rare",
+    habitat: "cave",
+    spawnWeight: 3.2,
+    minigameSpeed: 1.52,
+    minigameJerky: true,
+    depthBand: { min: 48, max: 240 },
+    displayWidth: 72,
+    displayHeight: 37,
+  },
+  nautilus: {
+    id: "nautilus",
+    name: "Nautilus",
+    description: "An epic shelled hunter of the mountain lakes. Fast.",
+    stackable: true,
+    textureKey: "nautilus",
+    sellPrice: 1000,
+    rarity: "epic",
+    habitat: "cave",
+    spawnWeight: 1,
+    minigameSpeed: 1.75,
+    minigameJerky: true,
+    depthBand: { min: 60, max: 260 },
+    displayWidth: 56,
+    displayHeight: 40,
+  },
+  serpent_eel: {
+    id: "serpent_eel",
+    name: "Serpent Eel",
+    description:
+      "A legendary cave serpent. Far faster than a surgeon fish.",
+    stackable: true,
+    textureKey: "serpent_eel",
+    sellPrice: 6500,
+    rarity: "legendary",
+    habitat: "cave",
+    spawnWeight: 1,
+    minigameSpeed: 2.05,
+    minigameJerky: true,
+    minigameChaos: 0.65,
+    catchProgress: -25,
+    depthBand: { min: 50, max: 280 },
+    displayWidth: 110,
+    displayHeight: 22,
+  },
+  cave_whale: {
+    id: "cave_whale",
+    name: "Cave Whale",
+    description:
+      "A mythical mountain whale. Slow and massive — −90% catch progress. Only during cave abundances.",
+    stackable: true,
+    textureKey: "cave_whale",
+    sellPrice: 25140,
+    rarity: "mythical",
+    habitat: "cave",
+    abundanceOnly: true,
+    spawnWeight: 0,
+    minigameSpeed: 1.15,
+    minigameJerky: true,
+    minigameChaos: 0.35,
+    unstoppableJerky: true,
+    catchProgress: -90,
+    catchResilience: -55,
+    drainMult: 1.7,
+    surfaceSpout: true,
+    // Native aspect in the world; smaller icon in the catch bar
+    depthBand: { min: 36, max: 58 },
+    displayWidth: 360,
+    displayHeight: 117,
+    minigameDisplayWidth: 70,
+    minigameDisplayHeight: 23,
   },
 };
 
@@ -1030,6 +1463,12 @@ export const BESTIARY_AREAS: BestiaryArea[] = [
     subtitle: "Murky waters in the jungle swamp",
     fishIds: fishIdsByHabitat("pond"),
   },
+  {
+    id: "cave",
+    name: "Frostpeak Cave",
+    subtitle: "Icy lakes under the mountain",
+    fishIds: fishIdsByHabitat("cave"),
+  },
 ];
 
 export const ROD_ITEM_IDS: ItemId[] = (
@@ -1039,6 +1478,25 @@ export const ROD_ITEM_IDS: ItemId[] = (
 export const BOBBER_ITEM_IDS: ItemId[] = (
   Object.keys(ITEMS) as ItemId[]
 ).filter((id) => ITEMS[id].isBobber);
+
+export const AMULET_ITEM_IDS: ItemId[] = (
+  Object.keys(ITEMS) as ItemId[]
+).filter((id) => ITEMS[id].isAmulet);
+
+export const HAT_ITEM_IDS: ItemId[] = (
+  Object.keys(ITEMS) as ItemId[]
+).filter((id) => ITEMS[id].isHat);
+
+/** Free hats every save starts with. */
+export const STARTER_HAT_IDS: ItemId[] = [
+  "hat_tophat",
+  "hat_banana",
+  "hat_cap",
+];
+
+export const AMULET_SHOP_IDS: ItemId[] = AMULET_ITEM_IDS.filter(
+  (id) => ITEMS[id].buyPrice != null
+);
 
 export const BOBBER_SHOP_IDS: ItemId[] = BOBBER_ITEM_IDS.filter(
   (id) => ITEMS[id].bobberShop && id !== "bobber_starter"
@@ -1085,10 +1543,13 @@ export const JUNGLE_SHOP_ROD_IDS: ItemId[] = ROD_ITEM_IDS.filter(
  * Pond:  base + 1.25% per +25% luck (half ocean scaling)
  * Reef:  epic 3% + 2.5%/25 luck · legendary 2% + 1%/25 luck
  *        (mythical reef fish are abundance-only)
+ * Cave:  epic 2.35% + 0.75%/25 luck · legendary 0.5% + 0.75%/25 luck
+ *        (mythical cave fish are abundance-only)
  *
  * Bases — Ocean: Epic 7.5%, Legendary 5%, Mythical 1%
  *          Pond:  Epic 4%,   Legendary 2.5%, Mythical 0.5%
- *          Reef:  Epic 3%,   Legendary 2%
+ *          Reef:  Epic 3%,   Legendary 0.5%
+ *          Cave:  Epic 2.35%, Legendary 0.5%
  */
 function absoluteRareShare(
   rarity: FishRarity,
@@ -1098,7 +1559,13 @@ function absoluteRareShare(
   const n = luckPercent / 25;
   if (habitat === "reef") {
     if (rarity === "epic") return Math.max(0, 0.03 + n * 0.025);
-    if (rarity === "legendary") return Math.max(0, 0.02 + n * 0.01);
+    // Same starting rate as pond mythical (alligator / crocodile)
+    if (rarity === "legendary") return Math.max(0, 0.005 + n * 0.01);
+    return null;
+  }
+  if (habitat === "cave") {
+    if (rarity === "epic") return Math.max(0, 0.0235 + n * 0.0075);
+    if (rarity === "legendary") return Math.max(0, 0.005 + n * 0.0075);
     return null;
   }
   const perTier = habitat === "ocean" ? 0.025 : 0.0125;
@@ -1128,7 +1595,9 @@ export function rollFishSpecies(
       !excluded.has(id)
   );
   if (fish.length === 0) {
-    return habitat === "reef" ? "clownfish" : "sockeye_salmon";
+    if (habitat === "reef") return "clownfish";
+    if (habitat === "cave") return "chilled_clownfish";
+    return "sockeye_salmon";
   }
 
   const weights = new Array(fish.length).fill(0);
@@ -1242,12 +1711,39 @@ export function rollFishSize(chanceMult = 1): FishSizeId {
   return "normal";
 }
 
-/** World mutations that can appear on swimming fish (not rod-only). */
+/** World mutations that can appear on swimming fish (not rod/event-only). */
 const ROD_ONLY_MUTATIONS = new Set<FishMutationId>([
   "bloom",
   "amber",
   "thunder",
+  "moonlight",
+  "lunar",
+  "tanned",
 ]);
+
+/** Full moon catch odds (mutually exclusive; lunar checked first). */
+export const FULL_MOON_LUNAR_CHANCE = 0.05;
+export const FULL_MOON_MOONLIGHT_CHANCE = 0.1;
+
+/** Sunny weather: Tanned spawn/catch chance. */
+export const SUNNY_TANNED_CHANCE = 0.1;
+
+/** Roll Moonlight / Lunar during Full Moon weather. */
+export function rollFullMoonMutation(
+  chanceMult = 1
+): FishMutationId | null {
+  const m = Math.max(0, chanceMult);
+  if (Math.random() < FULL_MOON_LUNAR_CHANCE * m) return "lunar";
+  if (Math.random() < FULL_MOON_MOONLIGHT_CHANCE * m) return "moonlight";
+  return null;
+}
+
+/** Roll Tanned during Sunny weather. */
+export function rollSunnyMutation(chanceMult = 1): FishMutationId | null {
+  const m = Math.max(0, chanceMult);
+  if (Math.random() < SUNNY_TANNED_CHANCE * m) return "tanned";
+  return null;
+}
 
 /** Chance earthly upgrades into Sprout when applied. */
 const EARTHLY_TO_SPROUT_CHANCE = 0.01;
@@ -1411,6 +1907,9 @@ export function formatRodExtras(def: ItemDef): string {
   const lines: string[] = [];
   if (def.grantsWorldMutations) {
     lines.push("World mutations on catch (normal rates)");
+  }
+  if (def.id === "augment_rod") {
+    lines.push("7.5% chance to upgrade a stat on catch");
   }
   if (def.rodMutation) {
     const m = MUTATIONS[def.rodMutation.mutation];

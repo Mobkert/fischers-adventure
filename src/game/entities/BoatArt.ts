@@ -4,7 +4,7 @@ const BW = 140;
 const BH = 56;
 const SH = 88; // sail canvas height (extends above hull)
 
-/** High-detail side-view sailboat + billowing sail frames. */
+/** High-detail side-view sailboat + billowing sail frames + motor boats. */
 export function generateBoatArt(scene: Phaser.Scene): void {
   const g = scene.make.graphics({ x: 0, y: 0 });
   g.setVisible(false);
@@ -25,6 +25,22 @@ export function generateBoatArt(scene: Phaser.Scene): void {
     drawSail(g, b, 0, 0);
     g.generateTexture(`sailboat_sail_${i}`, BW, SH);
   });
+
+  // Speedboat (same canvas as sailboat for consistent physics offsets)
+  g.clear();
+  drawSpeedboat(g);
+  g.generateTexture("speedboat", BW, BH);
+  g.clear();
+  drawSpeedboat(g);
+  g.generateTexture("speedboat_icon", BW, BH);
+
+  // Jet ski — smaller craft centered in same canvas
+  g.clear();
+  drawJetski(g);
+  g.generateTexture("jetski", BW, BH);
+  g.clear();
+  drawJetski(g);
+  g.generateTexture("jetski_icon", BW, BH);
 
   g.destroy();
 
@@ -246,4 +262,186 @@ function drawSailIcon(g: Phaser.GameObjects.Graphics): void {
   g.fillPath();
   g.fillStyle(0xc0392b);
   g.fillTriangle(mastX + 1, 2, mastX + 8, 4, mastX + 1, 6);
+}
+
+/** Medium sport speedboat — sleek hull, windshield, twin outboards. */
+function drawSpeedboat(g: Phaser.GameObjects.Graphics): void {
+  // Reflection
+  g.fillStyle(0x000000, 0.2);
+  g.fillEllipse(BW / 2, BH - 4, 100, 8);
+
+  // Lower hull
+  g.fillStyle(0x1a2840);
+  g.beginPath();
+  g.moveTo(12, 34);
+  g.lineTo(28, 22);
+  g.lineTo(118, 22);
+  g.lineTo(132, 30);
+  g.lineTo(128, 42);
+  g.lineTo(20, 42);
+  g.closePath();
+  g.fillPath();
+
+  // Upper hull / sheer
+  g.fillStyle(0x2e5080);
+  g.beginPath();
+  g.moveTo(24, 32);
+  g.lineTo(32, 24);
+  g.lineTo(112, 24);
+  g.lineTo(124, 31);
+  g.lineTo(118, 38);
+  g.lineTo(28, 38);
+  g.closePath();
+  g.fillPath();
+
+  // White stripe
+  g.fillStyle(0xf0f4f8, 0.95);
+  g.fillRect(30, 30, 88, 3);
+  g.fillStyle(0xe85d4a, 0.9);
+  g.fillRect(30, 33, 88, 2);
+
+  // Deck
+  g.fillStyle(0xd8dde4);
+  g.fillRect(40, 24, 58, 6);
+  g.fillStyle(0xb0b8c4);
+  g.fillRect(42, 25, 54, 2);
+
+  // Windshield
+  g.fillStyle(0x7ec8ff, 0.55);
+  g.beginPath();
+  g.moveTo(52, 24);
+  g.lineTo(58, 14);
+  g.lineTo(78, 14);
+  g.lineTo(84, 24);
+  g.closePath();
+  g.fillPath();
+  g.lineStyle(1.5, 0xe8f4ff, 0.8);
+  g.strokePath();
+  g.lineStyle(2, 0x4a5568);
+  g.lineBetween(52, 24, 58, 14);
+  g.lineBetween(84, 24, 78, 14);
+
+  // Seats
+  g.fillStyle(0x2a2a30);
+  g.fillRoundedRect(56, 28, 14, 5, 1);
+  g.fillRoundedRect(74, 28, 14, 5, 1);
+  g.fillStyle(0x4a4a55);
+  g.fillRect(57, 28, 12, 2);
+
+  // Bow point detail
+  g.fillStyle(0xf0f4f8);
+  g.fillTriangle(8, 34, 26, 24, 26, 40);
+  g.fillStyle(0xc8d0d8);
+  g.fillTriangle(12, 34, 26, 28, 26, 38);
+
+  // Cleats / rails
+  g.lineStyle(1.5, 0xc0c8d0);
+  g.lineBetween(34, 22, 110, 22);
+  g.fillStyle(0xa0a8b0);
+  g.fillCircle(38, 22, 2);
+  g.fillCircle(108, 22, 2);
+
+  // Twin outboard engines at stern
+  g.fillStyle(0x1a1a20);
+  g.fillRoundedRect(118, 26, 14, 16, 2);
+  g.fillRoundedRect(124, 26, 14, 16, 2);
+  g.fillStyle(0x3a3a48);
+  g.fillRect(120, 28, 10, 4);
+  g.fillRect(126, 28, 10, 4);
+  g.fillStyle(0x2a4a6e);
+  g.fillCircle(125, 38, 3);
+  g.fillCircle(131, 38, 3);
+  g.fillStyle(0x5a8ab0);
+  g.fillCircle(125, 38, 1.5);
+  g.fillCircle(131, 38, 1.5);
+
+  // Name plate glint
+  g.fillStyle(0xffe066, 0.35);
+  g.fillRect(48, 36, 20, 2);
+}
+
+/** Compact high-detail jet ski. */
+function drawJetski(g: Phaser.GameObjects.Graphics): void {
+  const ox = 28;
+  const oy = 8;
+
+  // Reflection
+  g.fillStyle(0x000000, 0.18);
+  g.fillEllipse(ox + 42, oy + 42, 70, 7);
+
+  // Lower hull
+  g.fillStyle(0x0e1a28);
+  g.beginPath();
+  g.moveTo(ox + 4, oy + 30);
+  g.lineTo(ox + 18, oy + 20);
+  g.lineTo(ox + 72, oy + 20);
+  g.lineTo(ox + 84, oy + 28);
+  g.lineTo(ox + 78, oy + 38);
+  g.lineTo(ox + 12, oy + 38);
+  g.closePath();
+  g.fillPath();
+
+  // Body shell
+  g.fillStyle(0xe02040);
+  g.beginPath();
+  g.moveTo(ox + 14, oy + 28);
+  g.lineTo(ox + 22, oy + 18);
+  g.lineTo(ox + 58, oy + 16);
+  g.lineTo(ox + 70, oy + 22);
+  g.lineTo(ox + 68, oy + 32);
+  g.lineTo(ox + 18, oy + 32);
+  g.closePath();
+  g.fillPath();
+
+  // Side scoop
+  g.fillStyle(0xa01830);
+  g.beginPath();
+  g.moveTo(ox + 20, oy + 30);
+  g.lineTo(ox + 28, oy + 24);
+  g.lineTo(ox + 62, oy + 24);
+  g.lineTo(ox + 66, oy + 30);
+  g.closePath();
+  g.fillPath();
+
+  // White accent stripe
+  g.fillStyle(0xffffff, 0.92);
+  g.fillRect(ox + 24, oy + 26, 40, 2.5);
+  g.fillStyle(0xffe066, 0.85);
+  g.fillRect(ox + 24, oy + 28, 40, 1.5);
+
+  // Handlebars
+  g.lineStyle(3, 0x2a2a30);
+  g.lineBetween(ox + 40, oy + 18, ox + 40, oy + 8);
+  g.lineStyle(2.5, 0x4a4a55);
+  g.lineBetween(ox + 28, oy + 10, ox + 52, oy + 10);
+  g.fillStyle(0x1a1a20);
+  g.fillCircle(ox + 28, oy + 10, 3);
+  g.fillCircle(ox + 52, oy + 10, 3);
+  g.fillStyle(0x3a3a48);
+  g.fillCircle(ox + 28, oy + 10, 1.5);
+  g.fillCircle(ox + 52, oy + 10, 1.5);
+
+  // Seat
+  g.fillStyle(0x1a1a22);
+  g.fillRoundedRect(ox + 34, oy + 20, 28, 8, 3);
+  g.fillStyle(0x3a3a44);
+  g.fillRoundedRect(ox + 36, oy + 20, 24, 3, 1);
+
+  // Nose
+  g.fillStyle(0xffffff);
+  g.fillTriangle(ox + 2, oy + 30, ox + 18, oy + 20, ox + 18, oy + 36);
+  g.fillStyle(0xe02040);
+  g.fillTriangle(ox + 6, oy + 30, ox + 18, oy + 24, ox + 18, oy + 34);
+
+  // Intake / jet nozzle at stern
+  g.fillStyle(0x2a2a30);
+  g.fillRoundedRect(ox + 72, oy + 26, 12, 10, 2);
+  g.fillStyle(0x4a90c0);
+  g.fillCircle(ox + 80, oy + 34, 3.5);
+  g.fillStyle(0x7ec8ff, 0.7);
+  g.fillCircle(ox + 80, oy + 34, 1.8);
+
+  // Dashboard glint
+  g.fillStyle(0x7ec8ff, 0.4);
+  g.fillRect(ox + 38, oy + 14, 8, 3);
 }

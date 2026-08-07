@@ -1,9 +1,19 @@
 import Phaser from "phaser";
 import { RodStats } from "../data/items";
+import { DayNightCycle, lerpColor } from "./DayNightCycle";
 
-export type WeatherId = "clear" | "rain" | "sunny" | "cloudy" | "thunder";
+export type WeatherId =
+  | "clear"
+  | "rain"
+  | "sunny"
+  | "cloudy"
+  | "thunder"
+  | "fullmoon"
+  | "fog";
 
 export const WEATHER_DURATION_MS = 5 * 60 * 1000;
+/** Chance a night becomes Full Moon (skipped if previous night was). */
+const FULL_MOON_NIGHT_CHANCE = 0.1;
 /** How often a lightning strike may roll during thunder. */
 const LIGHTNING_CHECK_MS = 25_000;
 const LIGHTNING_CHANCE = 0.15;
@@ -19,9 +29,13 @@ export interface WeatherDef {
   luckMult: number;
   /** Flat % added to luck/res/control/progress (not depth). */
   statBonusPercent: number;
-  /** Icon glyph shown above coins. */
+  /** Icon glyph shown above coins (when no iconTexture). */
   icon: string;
   iconColor: string;
+  /** Optional texture key for image weather icons. */
+  iconTexture?: string;
+  /** Hover tooltip: name + buff/nerf lines. */
+  tooltip: string;
 }
 
 export const WEATHER: Record<WeatherId, WeatherDef> = {
@@ -32,14 +46,16 @@ export const WEATHER: Record<WeatherId, WeatherDef> = {
     statBonusPercent: 0,
     icon: "◌",
     iconColor: "#c8d0d8",
+    tooltip: "Clear\nNo weather effects",
   },
   rain: {
     id: "rain",
     name: "Rain",
-    luckMult: 1,
+    luckMult: 1.15,
     statBonusPercent: 0,
     icon: "☂",
     iconColor: "#7ec8ff",
+    tooltip: "Rain\n+15% luck\nRare+ fish swim higher",
   },
   sunny: {
     id: "sunny",
@@ -48,6 +64,7 @@ export const WEATHER: Record<WeatherId, WeatherDef> = {
     statBonusPercent: 0,
     icon: "☀",
     iconColor: "#ffcc44",
+    tooltip: "Sunny\n+50% luck",
   },
   cloudy: {
     id: "cloudy",
@@ -56,6 +73,7 @@ export const WEATHER: Record<WeatherId, WeatherDef> = {
     statBonusPercent: 0,
     icon: "☁",
     iconColor: "#b0b8c0",
+    tooltip: "Cloudy\n−15% luck",
   },
   thunder: {
     id: "thunder",
@@ -64,6 +82,28 @@ export const WEATHER: Record<WeatherId, WeatherDef> = {
     statBonusPercent: 0,
     icon: "⚡",
     iconColor: "#ffe066",
+    tooltip:
+      "Thunderstorm\n+300% luck\nWhirlpools grant Thunder catches\nZeus Rod: +15% stats",
+  },
+  fullmoon: {
+    id: "fullmoon",
+    name: "Full Moon",
+    luckMult: 2,
+    statBonusPercent: 0,
+    icon: "○",
+    iconColor: "#e8eef8",
+    iconTexture: "full_moon_icon",
+    tooltip:
+      "Full Moon\n+100% luck\n10% Moonlight (2×)\n5% Lunar (4×)",
+  },
+  fog: {
+    id: "fog",
+    name: "Fog",
+    luckMult: 0.9,
+    statBonusPercent: 0,
+    icon: "〰",
+    iconColor: "#b8c0c8",
+    tooltip: "Fog\n−10% luck\nThick mist blankets the shore",
   },
 };
 
@@ -101,19 +141,25 @@ export class WeatherSystem {
   /** Sky / sun / rays / weather clouds */
   private skyGfx?: Phaser.GameObjects.Graphics;
   private sunRoot?: Phaser.GameObjects.Container;
+  private moonRoot?: Phaser.GameObjects.Container;
   private sunRays?: Phaser.GameObjects.Graphics;
   private atmosOverlay?: Phaser.GameObjects.Rectangle;
   private weatherClouds: Phaser.GameObjects.Image[] = [];
   private skyWorldLeft = 0;
   private skyWorldWidth = 2000;
   private skyHeight = 400;
-  private sunX = 160;
-  private sunY = 90;
   private rayAngle = 0;
   private lastAtmosId: WeatherId | null = null;
+  private dayNight?: DayNightCycle;
+  /** Edge-detect night for Full Moon rolls. */
+  private wasNight = false;
+  /** After a Full Moon night, the next night cannot roll one. */
+  private blockFullMoonNextNight = false;
 
   onWeatherChange?: (id: WeatherId, name: string) => void;
   onLightningAnnounce?: (message: string) => void;
+  /** When true, rain/thunder FX stay off (Frostpeak Cave). */
+  private rainBlocked = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -135,6 +181,7 @@ export class WeatherSystem {
   bindSky(opts: {
     sky: Phaser.GameObjects.Graphics;
     sun: Phaser.GameObjects.Container;
+    moon?: Phaser.GameObjects.Container;
     sunX: number;
     sunY: number;
     worldLeft: number;
@@ -143,8 +190,7 @@ export class WeatherSystem {
   }): void {
     this.skyGfx = opts.sky;
     this.sunRoot = opts.sun;
-    this.sunX = opts.sunX;
-    this.sunY = opts.sunY;
+    this.moonRoot = opts.moon;
     this.skyWorldLeft = opts.worldLeft;
     this.skyWorldWidth = opts.worldWidth;
     this.skyHeight = opts.skyHeight;
@@ -153,17 +199,61 @@ export class WeatherSystem {
     this.syncAtmosphere(true);
   }
 
-  /** Force a weather for testing / events. Special weathers still require Clear next. */
+  bindDayNight(cycle: DayNightCycle): void {
+    this.dayNight = cycle;
+    this.wasNight = this.isNightTime();
+    this.syncAtmosphere(true);
+  }
+
+  /**
+   * Force a weather — fully replaces whatever is active
+   * (rain, thunder, sunny rays, full moon, clouds, fog, etc.).
+   */
   forceWeather(id: WeatherId): void {
-    this.clearWhirlpool();
-    this.weather = id;
-    this.mustBeClearNext = id !== "clear";
-    this.clearStreak = id === "clear" ? this.clearStreak + 1 : 0;
+    this.clearAllWeatherFx();
+    let next = id;
+    if (next === "sunny" && this.isPastDaytime()) {
+      next = "clear";
+    }
+    if (next === "fullmoon" && !this.isNightTime()) {
+      next = "clear";
+    }
+    this.weather = next;
+    this.mustBeClearNext = next !== "clear" && next !== "fullmoon";
+    this.clearStreak = next === "clear" ? this.clearStreak + 1 : 0;
     this.weatherEndsAt = this.scene.time.now + WEATHER_DURATION_MS;
     this.lastLightningCheck = this.scene.time.now;
-    this.onWeatherChange?.(id, WEATHER[id].name);
+    this.onWeatherChange?.(next, WEATHER[next].name);
     this.syncRainFx();
     this.syncAtmosphere(true);
+  }
+
+  /** Tear down every weather VFX so a new state never stacks on the old one. */
+  private clearAllWeatherFx(): void {
+    this.clearWhirlpool();
+    this.stopRain();
+    if (this.sunRays) {
+      this.sunRays.clear();
+      this.sunRays.setVisible(false);
+    }
+    if (this.sunRoot) {
+      this.sunRoot.setScale(1);
+      this.sunRoot.setAlpha(1);
+    }
+    if (this.moonRoot) {
+      this.moonRoot.setScale(1);
+      const cut = this.moonRoot.list[2] as
+        | Phaser.GameObjects.GameObject
+        | undefined;
+      if (cut && "setVisible" in cut) {
+        (cut as Phaser.GameObjects.Arc).setVisible(true);
+      }
+    }
+    for (const c of this.weatherClouds) {
+      c.setVisible(false);
+    }
+    // Force syncAtmosphere to rebuild sky / clouds / overlay
+    this.lastAtmosId = null;
   }
 
   isRainy(): boolean {
@@ -175,12 +265,11 @@ export class WeatherSystem {
   }
 
   /**
-   * Zeus Rod only: +7% in Rain, +15% in Thunderstorm
+   * Zeus Rod only: +15% in Thunderstorm
    * (luck / resilience / control / progress / Thunder mut chance; not depth).
    */
   getZeusBonusPercent(equippedRodId?: string | null): number {
     if (equippedRodId !== "zeus_rod") return 0;
-    if (this.weather === "rain") return 7;
     if (this.weather === "thunder") return 15;
     return 0;
   }
@@ -244,8 +333,23 @@ export class WeatherSystem {
 
   update(delta: number): void {
     const now = this.scene.time.now;
-    if (now >= this.weatherEndsAt) {
+    this.updateFullMoonNightCycle();
+
+    // Full Moon lasts all night — don't roll it away on the timer
+    if (this.weather === "fullmoon") {
+      this.weatherEndsAt = now + WEATHER_DURATION_MS;
+    } else if (now >= this.weatherEndsAt) {
       this.rollNextWeather();
+    }
+
+    // Sunny ends the instant day leaves full daylight (sunset / night)
+    if (this.weather === "sunny" && this.isPastDaytime()) {
+      this.clearSunnyForNight();
+    }
+
+    // Full Moon ends when day returns
+    if (this.weather === "fullmoon" && !this.isNightTime()) {
+      this.clearFullMoonForDay();
     }
 
     if (this.weather === "thunder") {
@@ -260,14 +364,76 @@ export class WeatherSystem {
     this.updateWhirlpoolVisual(now);
     this.syncRainFx();
     this.syncAtmosphere(false);
-    if (this.weather === "sunny" && this.sunRays) {
+    if (this.weather === "sunny" && this.sunRays?.visible) {
       this.rayAngle += delta * 0.00012;
       this.drawSunRays();
     }
   }
 
+  /**
+   * Each night: 10% Full Moon, unless the previous night was Full Moon.
+   */
+  private updateFullMoonNightCycle(): void {
+    const night = this.isNightTime();
+    if (!this.wasNight && night) {
+      if (this.blockFullMoonNextNight) {
+        this.blockFullMoonNextNight = false;
+      } else if (
+        this.weather !== "fullmoon" &&
+        Math.random() < FULL_MOON_NIGHT_CHANCE
+      ) {
+        this.startFullMoon();
+      }
+    }
+    this.wasNight = night;
+  }
+
+  private startFullMoon(): void {
+    this.clearAllWeatherFx();
+    this.weather = "fullmoon";
+    this.mustBeClearNext = false;
+    this.clearStreak = 0;
+    this.weatherEndsAt = this.scene.time.now + WEATHER_DURATION_MS;
+    this.onWeatherChange?.("fullmoon", WEATHER.fullmoon.name);
+    this.syncRainFx();
+    this.syncAtmosphere(true);
+  }
+
+  private clearFullMoonForDay(): void {
+    this.blockFullMoonNextNight = true;
+    this.clearAllWeatherFx();
+    this.weather = "clear";
+    this.mustBeClearNext = false;
+    this.clearStreak += 1;
+    this.weatherEndsAt = this.scene.time.now + WEATHER_DURATION_MS;
+    this.onWeatherChange?.("clear", WEATHER.clear.name);
+    this.syncAtmosphere(true);
+  }
+
+  /** True once sunset has started or it is night (no clock → day). */
+  private isPastDaytime(): boolean {
+    return (this.dayNight?.getNightFactor() ?? 0) > 0;
+  }
+
+  /** True when the day/night clock is in night (or no clock → day). */
+  private isNightTime(): boolean {
+    return (this.dayNight?.getNightFactor() ?? 0) >= 0.5;
+  }
+
+  private clearSunnyForNight(): void {
+    this.clearAllWeatherFx();
+    this.weather = "clear";
+    this.mustBeClearNext = false;
+    this.clearStreak += 1;
+    this.weatherEndsAt = this.scene.time.now + WEATHER_DURATION_MS;
+    this.sunRays?.clear();
+    this.sunRays?.setVisible(false);
+    this.onWeatherChange?.("clear", WEATHER.clear.name);
+    this.syncAtmosphere(true);
+  }
+
   private rollNextWeather(): void {
-    this.clearWhirlpool();
+    this.clearAllWeatherFx();
 
     let next: WeatherId = "clear";
     if (this.mustBeClearNext) {
@@ -287,6 +453,11 @@ export class WeatherSystem {
       else if (r < 0.15 + 0.03 + 0.01) next = "cloudy";
       else if (r < 0.15 + 0.03 + 0.01 + 0.005) next = "thunder";
       else next = "clear";
+    }
+
+    // No sunny weather once day is over
+    if (next === "sunny" && this.isPastDaytime()) {
+      next = "clear";
     }
 
     this.mustBeClearNext = next !== "clear";
@@ -477,8 +648,22 @@ export class WeatherSystem {
   }
 
   private ensureSunRays(): void {
-    if (this.sunRays) return;
-    this.sunRays = this.scene.add.graphics().setDepth(-1.5);
+    if (this.sunRays) {
+      // Keep rays parented to the camera-following sun
+      if (this.sunRoot && this.sunRays.parentContainer !== this.sunRoot) {
+        this.sunRoot.addAt(this.sunRays, 0);
+        this.sunRays.setPosition(0, 0);
+      }
+      return;
+    }
+    this.sunRays = this.scene.make.graphics({ x: 0, y: 0 });
+    if (this.sunRoot) {
+      this.sunRoot.addAt(this.sunRays, 0);
+    } else {
+      this.scene.add.existing(this.sunRays);
+      this.sunRays.setDepth(-1.5);
+      this.sunRays.setScrollFactor(0.12, 0.08);
+    }
     this.sunRays.setVisible(false);
   }
 
@@ -512,16 +697,17 @@ export class WeatherSystem {
     switch (id) {
       case "sunny":
         return {
-          top: 0xf0c040,
-          bottom: 0xffe9a0,
-          overlay: 0xffcc44,
-          overlayA: 0.1,
+          // Bright midday blue — sun must contrast, not wash into gold
+          top: 0x3a9ee8,
+          bottom: 0xb8e8ff,
+          overlay: 0xfff8e0,
+          overlayA: 0.04,
           sunVisible: true,
           sunBright: true,
           rays: true,
-          cloudCount: 3,
-          cloudTint: 0xfff0d0,
-          cloudAlpha: 0.55,
+          cloudCount: 2,
+          cloudTint: 0xffffff,
+          cloudAlpha: 0.45,
         };
       case "rain":
         return {
@@ -562,6 +748,32 @@ export class WeatherSystem {
           cloudTint: 0x2a2e38,
           cloudAlpha: 0.92,
         };
+      case "fullmoon":
+        return {
+          top: 0x0c1838,
+          bottom: 0x1a2a50,
+          overlay: 0xc8d8ff,
+          overlayA: 0.06,
+          sunVisible: false,
+          sunBright: false,
+          rays: false,
+          cloudCount: 2,
+          cloudTint: 0xd0d8e8,
+          cloudAlpha: 0.35,
+        };
+      case "fog":
+        return {
+          top: 0x8a949c,
+          bottom: 0xc8d0d6,
+          overlay: 0xd8dde2,
+          overlayA: 0.28,
+          sunVisible: false,
+          sunBright: false,
+          rays: false,
+          cloudCount: 10,
+          cloudTint: 0xd8dce0,
+          cloudAlpha: 0.7,
+        };
       case "clear":
       default:
         return {
@@ -581,18 +793,33 @@ export class WeatherSystem {
 
   private syncAtmosphere(force: boolean): void {
     if (!this.skyGfx) return;
-    if (!force && this.lastAtmosId === this.weather) return;
-    this.lastAtmosId = this.weather;
+    const weatherChanged = force || this.lastAtmosId !== this.weather;
+    if (weatherChanged) {
+      this.lastAtmosId = this.weather;
+    }
 
     const look = this.atmosLook(this.weather);
+    const night = this.dayNight?.getNightFactor() ?? 0;
+    const warmth = this.dayNight?.getSunsetWarmth() ?? 0;
+
+    const nightTop = 0x0a1228;
+    const nightBot = 0x1a2848;
+    const sunsetTop = 0xd45828;
+    const sunsetBot = 0xffa060;
+
+    let top = look.top;
+    let bottom = look.bottom;
+    if (warmth > 0.001) {
+      top = lerpColor(top, sunsetTop, warmth * 0.9);
+      bottom = lerpColor(bottom, sunsetBot, warmth * 0.85);
+    }
+    if (night > 0.001) {
+      top = lerpColor(top, nightTop, night);
+      bottom = lerpColor(bottom, nightBot, night);
+    }
+
     this.skyGfx.clear();
-    this.skyGfx.fillGradientStyle(
-      look.top,
-      look.top,
-      look.bottom,
-      look.bottom,
-      1
-    );
+    this.skyGfx.fillGradientStyle(top, top, bottom, bottom, 1);
     this.skyGfx.fillRect(
       this.skyWorldLeft,
       0,
@@ -600,45 +827,115 @@ export class WeatherSystem {
       this.skyHeight
     );
 
-    if (this.sunRoot) {
+    // Celestial bodies from day/night clock (cloud-like parallax)
+    if (this.dayNight) {
+      const cam = this.scene.cameras.main;
+      const cel = this.dayNight.getCelestialPos(
+        cam.scrollX,
+        cam.scrollY,
+        cam.width,
+        this.skyHeight,
+        0.12,
+        0.08
+      );
+
+      // Rain/clouds/thunder hide the day sun; sunny only adds rays to it
+      const weatherHidesSun =
+        this.weather === "rain" ||
+        this.weather === "cloudy" ||
+        this.weather === "thunder" ||
+        this.weather === "fullmoon" ||
+        this.weather === "fog";
+      if (this.sunRoot) {
+        const show = cel.sunVisible && !weatherHidesSun;
+        this.sunRoot.setScrollFactor(0.12, 0.08);
+        this.sunRoot.setVisible(show);
+        this.sunRoot.setPosition(cel.sunX, cel.sunY);
+        this.sunRoot.setAlpha(cel.sunAlpha);
+        // Punch the disc when sunny so it reads against blue sky
+        this.sunRoot.setScale(
+          this.weather === "sunny" && show ? 1.28 : 1
+        );
+        if (this.weather === "sunny" && show) {
+          this.sunRoot.setAlpha(1);
+        } else if (warmth > 0.2 && show) {
+          this.sunRoot.setAlpha(cel.sunAlpha * (0.85 + warmth * 0.15));
+        }
+      }
+      if (this.moonRoot) {
+        const full = this.weather === "fullmoon";
+        this.moonRoot.setScrollFactor(0.12, 0.08);
+        this.moonRoot.setVisible(cel.moonVisible || full);
+        this.moonRoot.setPosition(cel.moonX, cel.moonY);
+        this.moonRoot.setAlpha(full ? 1 : cel.moonAlpha);
+        this.moonRoot.setScale(full ? 1.35 : 1);
+        // Child index 2 is the dark crescent cut — hide it for a true full moon
+        const cut = this.moonRoot.list[2] as Phaser.GameObjects.Arc | undefined;
+        if (cut?.setVisible) cut.setVisible(!full);
+      }
+    } else if (this.sunRoot) {
       this.sunRoot.setVisible(look.sunVisible);
       this.sunRoot.setAlpha(look.sunBright ? 1 : 0.85);
-      if (look.sunBright) {
-        this.sunRoot.setScale(1.12);
-      } else {
-        this.sunRoot.setScale(1);
-      }
+      this.sunRoot.setScale(look.sunBright ? 1.12 : 1);
+      this.moonRoot?.setVisible(false);
     }
 
     this.ensureSunRays();
     if (this.sunRays) {
-      this.sunRays.setVisible(look.rays);
-      if (look.rays) this.drawSunRays();
+      const showRays =
+        this.weather === "sunny" &&
+        (this.sunRoot?.visible ?? false) &&
+        !this.isPastDaytime();
+      this.sunRays.setVisible(showRays);
+      if (showRays) this.drawSunRays();
       else this.sunRays.clear();
     }
 
     this.ensureAtmosOverlay();
     if (this.atmosOverlay) {
-      this.atmosOverlay.setFillStyle(look.overlay, look.overlayA);
-      this.atmosOverlay.setVisible(look.overlayA > 0.001);
+      const nightA = night * 0.36;
+      // Prefer darker of weather vs night overlay (full moon keeps soft silver wash)
+      if (this.weather === "fullmoon") {
+        this.atmosOverlay.setFillStyle(0xb8c8f0, 0.08);
+        this.atmosOverlay.setVisible(true);
+      } else if (nightA >= look.overlayA && night > 0.05) {
+        this.atmosOverlay.setFillStyle(0x081018, nightA);
+        this.atmosOverlay.setVisible(nightA > 0.001);
+      } else {
+        this.atmosOverlay.setFillStyle(look.overlay, look.overlayA);
+        this.atmosOverlay.setVisible(look.overlayA > 0.001);
+      }
+      // During sunset, soft warm wash on top of clear weather
+      if (
+        this.weather !== "fullmoon" &&
+        warmth > 0.15 &&
+        look.overlayA < 0.08 &&
+        night < 0.7
+      ) {
+        this.atmosOverlay.setFillStyle(0xff8844, warmth * 0.12);
+        this.atmosOverlay.setVisible(true);
+      }
     }
 
-    this.syncWeatherClouds(look.cloudCount, look.cloudTint, look.cloudAlpha);
+    if (weatherChanged) {
+      this.syncWeatherClouds(look.cloudCount, look.cloudTint, look.cloudAlpha);
+    }
   }
 
   private drawSunRays(): void {
     if (!this.sunRays) return;
     const g = this.sunRays;
     g.clear();
-    const cx = this.sunX;
-    const cy = this.sunY;
-    const rays = 10;
-    const len = 280;
+    // Local to the camera-following sun container
+    const cx = 0;
+    const cy = 0;
+    const rays = 12;
+    const len = 170;
     for (let i = 0; i < rays; i++) {
       const a = this.rayAngle + (i / rays) * Math.PI * 2;
-      const a0 = a - 0.07;
-      const a1 = a + 0.07;
-      g.fillStyle(0xffe066, 0.16 + (i % 2) * 0.05);
+      const a0 = a - 0.05;
+      const a1 = a + 0.05;
+      g.fillStyle(0xfff2a8, 0.26 + (i % 2) * 0.07);
       g.beginPath();
       g.moveTo(cx, cy);
       g.lineTo(cx + Math.cos(a0) * len, cy + Math.sin(a0) * len);
@@ -646,9 +943,11 @@ export class WeatherSystem {
       g.closePath();
       g.fillPath();
     }
-    // Soft glow disc behind sun
-    g.fillStyle(0xfff0a0, 0.12);
-    g.fillCircle(cx, cy, 70);
+    // Soft halo behind the disc
+    g.fillStyle(0xfff8d0, 0.2);
+    g.fillCircle(cx, cy, 58);
+    g.fillStyle(0xffffff, 0.16);
+    g.fillCircle(cx, cy, 40);
   }
 
   private syncWeatherClouds(
@@ -689,8 +988,14 @@ export class WeatherSystem {
     }
   }
 
+  /** Block rain visuals (e.g. under the mountain). Weather state still rolls. */
+  setRainBlocked(blocked: boolean): void {
+    this.rainBlocked = blocked;
+    this.syncRainFx();
+  }
+
   private syncRainFx(): void {
-    const raining = this.isRainy();
+    const raining = this.isRainy() && !this.rainBlocked;
     if (raining && !this.rainEmitter) {
       this.startRain();
     } else if (!raining && this.rainEmitter) {

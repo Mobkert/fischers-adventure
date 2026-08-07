@@ -44,6 +44,9 @@ export class CatchMinigame {
   private readonly baseFillRate = 0.12;
   private drainRate = 0.16;
   private readonly baseDrainRate = 0.16;
+  /** Crystal Rod: roll burst every 0.5s. */
+  private crystalBurst = false;
+  private crystalBurstTimer = 0;
   /** White zone starts at this share of the grey bar; control % adds on top. */
   private readonly baseWhiteShare = 0.2;
   /** Acceleration when holding (right) or releasing (left gravity). */
@@ -108,12 +111,13 @@ export class CatchMinigame {
       .setOrigin(0, 0.5);
 
     this.hint = scene.add
-      .text(0, 54, "Hold SPACE / LMB → white bar moves right", {
+      .text(0, 54, "", {
         fontFamily: "Arial",
-        fontSize: "12px",
+        fontSize: "13px",
         color: "#bbbbbb",
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setVisible(false);
 
     this.root.add([
       panel,
@@ -166,6 +170,8 @@ export class CatchMinigame {
       tintFill?: boolean;
       /** Glow aura color for mutations. */
       glowColor?: number | null;
+      /** Crystal Rod burst ability. */
+      crystalBurst?: boolean;
       /** Second hooked fish (twin-hook bobber). */
       second?: {
         textureKey?: string;
@@ -192,6 +198,8 @@ export class CatchMinigame {
     this.pauseDuration = options?.pauseDuration ?? null;
     this.facesLeft = !!options?.facesLeft;
     this.glowColor = options?.glowColor ?? null;
+    this.crystalBurst = !!options?.crystalBurst;
+    this.crystalBurstTimer = 0;
     this.dualCatch = !!options?.second;
     this.facesLeft2 = !!options?.second?.facesLeft;
     this.glowColor2 = options?.second?.glowColor ?? null;
@@ -214,6 +222,7 @@ export class CatchMinigame {
     // Progress speed boosts fill rate
     this.fillRate = this.baseFillRate * (1 + progressSpeed / 100);
     this.drainRate = this.baseDrainRate * (options?.drainMult ?? 1);
+    this.setProgressHint(progressSpeed);
 
     // Resilience 50% → fish moves at 50% speed; 0% = normal
     const resFactor = Math.max(0.05, 1 - resilience / 100);
@@ -309,6 +318,7 @@ export class CatchMinigame {
 
     this.updateWhiteBarPhysics(dt, pointerDown || this.holdKey.isDown);
     this.updateFish(dt);
+    this.updateCrystalBurst(dt);
 
     const halfWhite = this.whiteWidth / 2;
     const overlapping =
@@ -330,6 +340,69 @@ export class CatchMinigame {
 
     if (this.progress <= 0) {
       this.finish(false);
+    }
+  }
+
+  private updateCrystalBurst(dt: number): void {
+    if (!this.crystalBurst || !this.ready) return;
+    this.crystalBurstTimer += dt;
+    if (this.crystalBurstTimer < 0.5) return;
+    this.crystalBurstTimer = 0;
+    if (Math.random() >= 0.15) return;
+
+    this.fishPauseTimer = Math.max(this.fishPauseTimer, 0.85);
+    this.fishTargetVel = 0;
+    this.fishVel = 0;
+    this.fishDecisionTimer = Math.max(this.fishDecisionTimer, 0.9);
+    this.progress = Math.min(1, this.progress + 0.1);
+    this.playCrystalBurstFx();
+  }
+
+  private playCrystalBurstFx(): void {
+    const scene = this.root.scene;
+    const bx = this.root.x + this.whiteX;
+    const by = this.root.y;
+    const ring = scene.add
+      .circle(bx, by, 8, 0xffffff, 0.9)
+      .setDepth(200)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const flash = scene.add
+      .circle(bx, by, 6, 0xffffff, 1)
+      .setDepth(201)
+      .setScrollFactor(0);
+    scene.tweens.add({
+      targets: ring,
+      scale: 4.5,
+      alpha: 0,
+      duration: 420,
+      ease: "Cubic.easeOut",
+      onComplete: () => ring.destroy(),
+    });
+    scene.tweens.add({
+      targets: flash,
+      scale: 2.2,
+      alpha: 0,
+      duration: 220,
+      ease: "Quad.easeOut",
+      onComplete: () => flash.destroy(),
+    });
+    for (let i = 0; i < 8; i++) {
+      const ang = (i / 8) * Math.PI * 2;
+      const spark = scene.add
+        .circle(bx, by, 3, 0xffffff, 0.95)
+        .setDepth(202)
+        .setScrollFactor(0);
+      scene.tweens.add({
+        targets: spark,
+        x: bx + Math.cos(ang) * 48,
+        y: by + Math.sin(ang) * 28,
+        alpha: 0,
+        scale: 0.2,
+        duration: 380,
+        ease: "Cubic.easeOut",
+        onComplete: () => spark.destroy(),
+      });
     }
   }
 
@@ -578,6 +651,17 @@ export class CatchMinigame {
       this.fishGlow2.setAlpha(pulse);
     }
     this.progressFill.width = this.barWidth * this.progress;
+  }
+
+  private setProgressHint(progressSpeed: number): void {
+    const rounded = Math.round(progressSpeed);
+    if (rounded > 0) {
+      this.hint.setText(`Progress  +${rounded}%`).setColor("#7dce7a").setVisible(true);
+    } else if (rounded < 0) {
+      this.hint.setText(`Progress  ${rounded}%`).setColor("#ff8866").setVisible(true);
+    } else {
+      this.hint.setText("").setVisible(false);
+    }
   }
 
   private finish(success: boolean): void {

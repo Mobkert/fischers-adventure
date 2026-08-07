@@ -12,6 +12,7 @@ export class FishMerchant {
 
   readonly x: number;
   readonly y: number;
+  readonly displayName: string;
 
   constructor(
     scene: Phaser.Scene,
@@ -22,6 +23,7 @@ export class FishMerchant {
     this.scene = scene;
     this.x = x;
     this.y = groundY;
+    this.displayName = displayName;
 
     this.sprite = scene.add.sprite(x, this.y, "npc_merchant");
     this.sprite.setDepth(11);

@@ -3,7 +3,9 @@ import {
   getActiveSlotIndex,
   listSaveSlots,
   loadActiveSave,
+  saveActiveSave,
 } from "../save/SaveBank";
+import { ITEMS, ItemId } from "../data/items";
 
 export class MenuScene extends Phaser.Scene {
   private starting = false;
@@ -58,7 +60,12 @@ export class MenuScene extends Phaser.Scene {
       this.startGame();
     });
 
-    this.makeButton(width / 2, height * 0.58, "Saves", 0x2a5a88, () => {
+    this.makeButton(width / 2, height * 0.56, "Accessories", 0x6a4a88, () => {
+      if (this.starting) return;
+      this.showAccessoriesPanel();
+    });
+
+    this.makeButton(width / 2, height * 0.66, "Saves", 0x2a5a88, () => {
       if (this.starting) return;
       this.scene.start("SavesScene");
     });
@@ -73,7 +80,7 @@ export class MenuScene extends Phaser.Scene {
     this.add
       .text(
         width / 2,
-        height * 0.7,
+        height * 0.78,
         `Active: Slot ${active + 1}  ·  ${detail}`,
         {
           fontFamily: "Arial",
@@ -122,7 +129,7 @@ export class MenuScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xc4a86a);
 
     const title = this.add
-      .text(0, -panelH / 2 + 28, "Coral Reef Update", {
+      .text(0, -panelH / 2 + 28, "Collector's Update", {
         fontFamily: "Georgia, serif",
         fontSize: "24px",
         color: "#f0e6d2",
@@ -154,18 +161,30 @@ export class MenuScene extends Phaser.Scene {
 
     const bodyText =
       "WHAT'S NEW\n\n" +
-      "• Coral Reef west of Starter Island — shallow\n" +
-      "  waters, tall coral, and new reef fish\n" +
+      "• Collector's Island — harbor town west of the\n" +
+      "  coral reef, with hills, beaches, and docks\n" +
+      "• Fish Collector — name your sell price; they may\n" +
+      "  accept, reject, or counter\n" +
+      "• Curio Trader — restocks every 3 minutes with\n" +
+      "  curios; rare Earthly Yellowfin (~10%), Augment\n" +
+      "  Rod (~30%), discounted craft bobbers (~8%, fish\n" +
+      "  still required — no Mutation Bobber)\n" +
+      "• Augment Rod — grey star tip; 7.5% chance after\n" +
+      "  a catch to upgrade a stat (capped)\n" +
+      "• Bargain stands — haggle fish and curios on the\n" +
+      "  island; talk near a trader and press F\n" +
+      "• New island music and map marker for Collector's\n" +
+      "  Harbor\n" +
+      "• Sail west past the reef to reach the island\n\n" +
+      "ALSO IN THIS BUILD\n\n" +
+      "• Coral Reef — shallow waters, tall coral, reef fish\n" +
       "• Coral Rod — Luck +60% · Res +15% · Control +15%\n" +
-      "  Progress +20% · Depth 3m · world mutations on catch\n" +
-      "• Dolphin abundance — mythical dolphins leap\n" +
-      "  at the reef for a short time\n" +
-      "• Weather looks — sunny rays, storm clouds,\n" +
-      "  grey skies for rain and clouds\n" +
-      "• Dockside tip — talk to the guide on the left\n" +
-      "  dock about the reef\n\n" +
+      "  Progress +20% · Depth 3m · world mutations\n" +
+      "• Dolphin abundance at the reef\n" +
+      "• Day / night cycle + weather looks\n\n" +
       "CHANGES\n\n" +
-      "• Zeus Rod — luck 85%, progress 30%";
+      "• Zeus Rod — luck 85%, progress 30%\n" +
+      "• Wildflower Rod — 15% Bloom, control 25%, progress 10%";
 
     const body = this.add
       .text(0, 0, bodyText, {
@@ -258,6 +277,215 @@ export class MenuScene extends Phaser.Scene {
     ]);
   }
 
+  private showAccessoriesPanel(): void {
+    const { width, height } = this.scale;
+    const root = this.add.container(width / 2, height / 2).setDepth(60);
+    const panelW = 480;
+    const panelH = 520;
+    const viewH = 340;
+    const viewTop = -150;
+    const rowH = 72;
+
+    const dim = this.add
+      .rectangle(0, 0, width, height, 0x000000, 0.55)
+      .setInteractive();
+    const panel = this.add
+      .rectangle(0, 0, panelW, panelH, 0x1a1c22, 0.97)
+      .setStrokeStyle(2, 0xc4a86a);
+    const title = this.add
+      .text(0, -230, "Accessories", {
+        fontFamily: "Georgia, serif",
+        fontSize: "28px",
+        color: "#f0e6d2",
+      })
+      .setOrigin(0.5);
+    const subtitle = this.add
+      .text(0, -195, "Hats for your angler · Equip from here or in-game bag", {
+        fontFamily: "Arial",
+        fontSize: "13px",
+        color: "#aaaaaa",
+      })
+      .setOrigin(0.5);
+
+    const listRoot = this.add.container(0, viewTop);
+    const listContent = this.add.container(0, 0);
+    listRoot.add(listContent);
+    // Geometry masks use camera/world space — not container-local coords
+    const maskShape = this.make.graphics({ x: 0, y: 0 });
+    maskShape.fillStyle(0xffffff);
+    maskShape.fillRect(
+      width / 2 - panelW / 2 + 20,
+      height / 2 + viewTop,
+      panelW - 40,
+      viewH
+    );
+    listRoot.setMask(maskShape.createGeometryMask());
+    maskShape.setVisible(false);
+
+    let save = loadActiveSave();
+    let scrollY = 0;
+    let contentH = 0;
+
+    const rebuild = () => {
+      listContent.removeAll(true);
+      save = loadActiveSave();
+      let y = 0;
+      const addRow = (
+        label: string,
+        tex: string | null,
+        equipped: boolean,
+        onEquip: () => void
+      ) => {
+        const card = this.add
+          .rectangle(0, y, 400, rowH, equipped ? 0x3a3420 : 0x2a2f3a, 0.95)
+          .setStrokeStyle(2, equipped ? 0xffe066 : 0x6a7355)
+          .setOrigin(0.5, 0);
+        listContent.add(card);
+        if (tex && this.textures.exists(tex)) {
+          const img = this.add.image(-150, y + rowH / 2, tex);
+          const src = img.texture.getSourceImage() as {
+            width?: number;
+            height?: number;
+          };
+          const tw = Math.max(1, src.width ?? 40);
+          const th = Math.max(1, src.height ?? 40);
+          const maxSide = 44;
+          if (tw >= th) {
+            img.setDisplaySize(maxSide, Math.round(maxSide * (th / tw)));
+          } else {
+            img.setDisplaySize(Math.round(maxSide * (tw / th)), maxSide);
+          }
+          listContent.add(img);
+        }
+        listContent.add(
+          this.add
+            .text(-112, y + rowH / 2, label, {
+              fontFamily: "Georgia, serif",
+              fontSize: "17px",
+              color: equipped ? "#ffe066" : "#ffffff",
+            })
+            .setOrigin(0, 0.5)
+        );
+        if (equipped) {
+          listContent.add(
+            this.add
+              .text(140, y + rowH / 2, "Equipped", {
+                fontFamily: "Arial",
+                fontSize: "14px",
+                color: "#ffe066",
+              })
+              .setOrigin(0.5)
+          );
+        } else {
+          const btn = this.add
+            .rectangle(140, y + rowH / 2, 100, 34, 0x3d6b4f)
+            .setStrokeStyle(1, 0x7dce7a)
+            .setInteractive({ useHandCursor: true });
+          const bl = this.add
+            .text(140, y + rowH / 2, "Equip", {
+              fontFamily: "Arial",
+              fontSize: "15px",
+              color: "#ffffff",
+            })
+            .setOrigin(0.5);
+          btn.on("pointerdown", onEquip);
+          listContent.add([btn, bl]);
+        }
+        y += rowH + 10;
+      };
+
+      addRow("No hat", null, save.equippedHatId === null, () => {
+        save.equippedHatId = null;
+        saveActiveSave(save);
+        rebuild();
+      });
+      for (const hatId of save.ownedHats) {
+        const def = ITEMS[hatId as ItemId];
+        if (!def?.isHat) continue;
+        const id = hatId as ItemId;
+        addRow(def.name, def.textureKey, save.equippedHatId === id, () => {
+          save.equippedHatId = id;
+          saveActiveSave(save);
+          rebuild();
+        });
+      }
+      contentH = Math.max(0, y - 10);
+      scrollY = 0;
+      listContent.setY(0);
+    };
+    rebuild();
+
+    const maxScroll = () => Math.max(0, contentH - viewH);
+    const scrollTrack = this.add
+      .rectangle(panelW / 2 - 22, viewTop + viewH / 2, 6, viewH, 0x2a2f3a, 0.9)
+      .setOrigin(0.5);
+    const scrollThumb = this.add
+      .rectangle(panelW / 2 - 22, viewTop, 6, 40, 0xc4a86a, 0.9)
+      .setOrigin(0.5, 0);
+
+    const applyScroll = () => {
+      scrollY = Phaser.Math.Clamp(scrollY, 0, maxScroll());
+      listContent.setY(-scrollY);
+      const max = maxScroll();
+      const show = max > 0;
+      scrollTrack.setVisible(show);
+      scrollThumb.setVisible(show);
+      if (!show) return;
+      const thumbH = Math.max(28, (viewH / contentH) * viewH);
+      scrollThumb.setY(viewTop + (scrollY / max) * (viewH - thumbH));
+      scrollThumb.setSize(6, thumbH);
+    };
+
+    const wheelHandler = (
+      pointer: Phaser.Input.Pointer,
+      _gos: unknown,
+      _dx: number,
+      dy: number
+    ) => {
+      if (
+        Math.abs(pointer.x - width / 2) > panelW / 2 ||
+        Math.abs(pointer.y - height / 2) > panelH / 2
+      ) {
+        return;
+      }
+      scrollY += dy * 0.5;
+      applyScroll();
+    };
+    this.input.on("wheel", wheelHandler);
+
+    const closeBg = this.add
+      .rectangle(0, panelH / 2 - 36, 140, 40, 0x2a6b4a)
+      .setStrokeStyle(1, 0xf0e6d2)
+      .setInteractive({ useHandCursor: true });
+    const closeLabel = this.add
+      .text(0, panelH / 2 - 36, "OK", {
+        fontFamily: "Arial",
+        fontSize: "18px",
+        color: "#ffffff",
+      })
+      .setOrigin(0.5);
+    const close = () => {
+      this.input.off("wheel", wheelHandler);
+      maskShape.destroy();
+      root.destroy(true);
+    };
+    closeBg.on("pointerdown", close);
+    dim.on("pointerdown", close);
+
+    root.add([
+      dim,
+      panel,
+      title,
+      subtitle,
+      listRoot,
+      scrollTrack,
+      scrollThumb,
+      closeBg,
+      closeLabel,
+    ]);
+    applyScroll();
+  }
+
   private startGame(): void {
     if (this.starting) return;
     this.starting = true;
@@ -271,6 +499,10 @@ export class MenuScene extends Phaser.Scene {
     // Tear down anything that could sit on top of / race with the game
     this.scene.stop("UIScene");
     this.scene.stop("ShopScene");
+    this.scene.stop("BobberShopScene");
+    this.scene.stop("BackpackShopScene");
+    this.scene.stop("CloudShopScene");
+    this.scene.stop("AmuletCaveScene");
     this.scene.stop("SavesScene");
     this.scene.start("GameScene");
   }

@@ -52,9 +52,19 @@ export class TalkNpc {
       this.decline();
       return true;
     }
+    // Silent NPC (dialogue not ready yet)
+    if (!this.lines.trim()) {
+      return true;
+    }
     this.talking = true;
     this.showBubble(this.lines);
     return true;
+  }
+
+  /** Speak custom lines (quest NPCs). */
+  speak(text: string): void {
+    this.talking = true;
+    this.showBubble(text);
   }
 
   decline(): void {

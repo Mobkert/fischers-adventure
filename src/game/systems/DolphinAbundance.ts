@@ -20,6 +20,7 @@ export class DolphinAbundance {
   private waterSurfaceY: number;
   private getLuck: () => number;
   private getIsRainy: () => boolean;
+  private getIsSunny: () => boolean;
   private fishList: Fish[];
   private onAnnounce?: (message: string) => void;
 
@@ -38,7 +39,8 @@ export class DolphinAbundance {
     fishList: Fish[],
     getLuck: () => number,
     getIsRainy: () => boolean,
-    onAnnounce?: (message: string) => void
+    onAnnounce?: (message: string) => void,
+    getIsSunny: () => boolean = () => false
   ) {
     this.scene = scene;
     this.reefLeft = reefLeft;
@@ -47,6 +49,7 @@ export class DolphinAbundance {
     this.fishList = fishList;
     this.getLuck = getLuck;
     this.getIsRainy = getIsRainy;
+    this.getIsSunny = getIsSunny;
     this.onAnnounce = onAnnounce;
   }
 
@@ -121,7 +124,8 @@ export class DolphinAbundance {
         "dolphin" as ItemId,
         () => [],
         this.getIsRainy,
-        { lockSpecies: true, noDespawn: true }
+        { lockSpecies: true, noDespawn: true },
+        this.getIsSunny
       );
       this.dolphins.push(fish);
       this.fishList.push(fish);

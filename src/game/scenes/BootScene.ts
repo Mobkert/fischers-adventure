@@ -6,6 +6,7 @@ import {
 import { generatePlayerArt } from "../entities/PlayerArt";
 import { generateBoatArt } from "../entities/BoatArt";
 import { generateMerchantTexture } from "../entities/FishMerchant";
+import { generateHatTextures } from "./hatTextures";
 
 /** Detailed fishing-rod icons (handle bottom-left → tip top-right). */
 function generateRodTextures(scene: Phaser.Scene): void {
@@ -255,6 +256,320 @@ function generateRodTextures(scene: Phaser.Scene): void {
   g.fillCircle(54, 11, 1.8);
   g.generateTexture("rod_coral", S, S);
 
+  // —— Augment rod: grey blank, cool grey star tip ——
+  g.clear();
+  g.fillStyle(0x000000, 0.18);
+  g.fillEllipse(22, 56, 28, 8);
+  g.lineStyle(5, 0x4a5058);
+  g.lineBetween(12, 52, 50, 12);
+  g.lineStyle(3, 0x8a929c);
+  g.lineBetween(14, 50, 48, 14);
+  g.lineStyle(1.5, 0xc0c8d0, 0.8);
+  g.lineBetween(18, 46, 46, 16);
+  g.lineStyle(2, 0x6a727c);
+  g.lineBetween(20, 44, 24, 40);
+  g.lineBetween(28, 36, 32, 32);
+  g.lineBetween(36, 28, 40, 24);
+  g.fillStyle(0x3a3e44);
+  g.fillRoundedRect(8, 44, 14, 12, 3);
+  g.fillStyle(0x6a7078);
+  g.fillRect(8, 54, 14, 3);
+  g.fillStyle(0x9aa2aa);
+  g.fillRect(18, 40, 5, 6);
+  g.lineStyle(2, 0xb8c0c8);
+  g.strokeCircle(50, 12, 3.5);
+  g.fillStyle(0xe8eef2);
+  g.fillCircle(50, 12, 1.2);
+  // cool grey star at tip
+  const sx = 56;
+  const sy = 7;
+  g.fillStyle(0xa8b0b8);
+  g.fillCircle(sx, sy, 5);
+  g.fillStyle(0xd0d8e0);
+  // 5-point star via overlapping diamonds
+  g.fillTriangle(sx, sy - 6, sx + 2.2, sy - 1, sx - 2.2, sy - 1);
+  g.fillTriangle(sx, sy + 6, sx + 2.2, sy + 1, sx - 2.2, sy + 1);
+  g.fillTriangle(sx - 6, sy, sx - 1, sy - 2.2, sx - 1, sy + 2.2);
+  g.fillTriangle(sx + 6, sy, sx + 1, sy - 2.2, sx + 1, sy + 2.2);
+  g.fillStyle(0xf0f4f8);
+  g.fillCircle(sx, sy, 1.8);
+  g.generateTexture("rod_augment", S, S);
+
+  // —— Crystal rod: icy blank, rainbow gem tip ——
+  g.clear();
+  g.fillStyle(0x000000, 0.18);
+  g.fillEllipse(22, 56, 28, 8);
+  g.lineStyle(5, 0x3a6078);
+  g.lineBetween(12, 52, 50, 12);
+  g.lineStyle(3, 0x7ec8e8);
+  g.lineBetween(14, 50, 48, 14);
+  g.lineStyle(1.5, 0xd0f0ff, 0.85);
+  g.lineBetween(18, 46, 46, 16);
+  g.lineStyle(2, 0xff88cc);
+  g.lineBetween(20, 44, 24, 40);
+  g.lineStyle(2, 0x88ffaa);
+  g.lineBetween(28, 36, 32, 32);
+  g.lineStyle(2, 0x88aaff);
+  g.lineBetween(36, 28, 40, 24);
+  g.fillStyle(0xc4a574);
+  g.fillRoundedRect(8, 44, 14, 12, 3);
+  g.fillStyle(0x7ec8e8);
+  g.fillRect(8, 54, 14, 3);
+  g.fillStyle(0xa0d8f0);
+  g.fillRect(18, 40, 5, 6);
+  g.lineStyle(2, 0xe0f8ff);
+  g.strokeCircle(50, 12, 3.5);
+  g.fillStyle(0xffffff);
+  g.fillCircle(50, 12, 1.2);
+  g.fillStyle(0xff6688);
+  g.fillTriangle(56, 2, 52, 10, 60, 10);
+  g.fillStyle(0xffe0ee);
+  g.fillCircle(56, 6, 1.4);
+  g.generateTexture("rod_crystal", S, S);
+
+  g.destroy();
+}
+
+function generateAmuletTextures(scene: Phaser.Scene): void {
+  type Spec = {
+    key: string;
+    gem: number;
+    gemDark: number;
+    metal: number;
+    metalDark: number;
+    glow: number;
+    accent: number;
+    style: "celestial" | "moon" | "tempest" | "dusky" | "sun" | "thunder";
+  };
+  const specs: Spec[] = [
+    {
+      key: "amulet_celestial",
+      gem: 0xffe8a0,
+      gemDark: 0xd4a020,
+      metal: 0xe0c070,
+      metalDark: 0x8a6a28,
+      glow: 0xfff6d0,
+      accent: 0xfff8e8,
+      style: "celestial",
+    },
+    {
+      key: "amulet_moonlight",
+      gem: 0xc8d8ff,
+      gemDark: 0x6a88c8,
+      metal: 0xd0d8e8,
+      metalDark: 0x6a7080,
+      glow: 0xe8f0ff,
+      accent: 0xffffff,
+      style: "moon",
+    },
+    {
+      key: "amulet_tempest",
+      gem: 0x5eb0ff,
+      gemDark: 0x2868b0,
+      metal: 0x8a9aaa,
+      metalDark: 0x3a4858,
+      glow: 0xa8d8ff,
+      accent: 0xe0f0ff,
+      style: "tempest",
+    },
+    {
+      key: "amulet_dusky",
+      gem: 0xa8aeb8,
+      gemDark: 0x505860,
+      metal: 0x7a7068,
+      metalDark: 0x3a342e,
+      glow: 0xd0d4d8,
+      accent: 0xe8e8e8,
+      style: "dusky",
+    },
+    {
+      key: "amulet_sunlit",
+      gem: 0xffd24a,
+      gemDark: 0xe08010,
+      metal: 0xf0c040,
+      metalDark: 0xa07018,
+      glow: 0xffe890,
+      accent: 0xfff8d0,
+      style: "sun",
+    },
+    {
+      key: "amulet_thunder",
+      gem: 0xffe066,
+      gemDark: 0xc8a020,
+      metal: 0x6a7888,
+      metalDark: 0x2a3038,
+      glow: 0xfff0a0,
+      accent: 0xffffff,
+      style: "thunder",
+    },
+  ];
+
+  const g = scene.make.graphics({ x: 0, y: 0 });
+  g.setVisible(false);
+  const S = 64;
+  const cx = 32;
+  const cy = 38;
+
+  for (const s of specs) {
+    g.clear();
+
+    // Outer soft glow
+    g.fillStyle(s.glow, 0.18);
+    g.fillCircle(cx, cy, 26);
+    g.fillStyle(s.glow, 0.28);
+    g.fillCircle(cx, cy, 20);
+
+    // Braided leather cord
+    g.lineStyle(4, 0x2a1a10);
+    g.beginPath();
+    g.moveTo(cx - 1, 2);
+    g.lineTo(cx - 3, 12);
+    g.lineTo(cx, 18);
+    g.lineTo(cx + 2, 24);
+    g.strokePath();
+    g.lineStyle(2, 0x5c3a21);
+    g.beginPath();
+    g.moveTo(cx + 1, 2);
+    g.lineTo(cx - 1, 12);
+    g.lineTo(cx + 2, 18);
+    g.lineTo(cx + 3, 24);
+    g.strokePath();
+    g.lineStyle(1, 0x8b6914, 0.7);
+    g.lineBetween(cx, 4, cx - 2, 14);
+    g.lineBetween(cx, 14, cx + 1, 22);
+
+    // Bail / jump ring
+    g.lineStyle(3, s.metalDark);
+    g.strokeCircle(cx, 26, 4);
+    g.lineStyle(1.5, s.metal);
+    g.strokeCircle(cx, 26, 4);
+
+    // Ornate metal bezel (octagon-ish via overlapping)
+    g.fillStyle(s.metalDark);
+    g.fillCircle(cx, cy, 16);
+    g.fillStyle(s.metal);
+    g.fillCircle(cx, cy, 14);
+    g.fillStyle(s.metalDark, 0.55);
+    g.fillCircle(cx + 1, cy + 2, 12);
+
+    // Filigree prongs
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+      const px = cx + Math.cos(a) * 14;
+      const py = cy + Math.sin(a) * 14;
+      g.fillStyle(s.metal);
+      g.fillCircle(px, py, 2.2);
+      g.fillStyle(s.accent, 0.5);
+      g.fillCircle(px - 0.5, py - 0.5, 0.9);
+    }
+
+    // Inner gem cup
+    g.fillStyle(0x1a1210, 0.5);
+    g.fillCircle(cx, cy + 1, 10);
+    g.fillStyle(s.gemDark);
+    g.fillCircle(cx, cy, 9.5);
+    g.fillStyle(s.gem);
+    g.fillCircle(cx - 0.5, cy - 0.5, 8);
+
+    // Style-specific gem face details
+    if (s.style === "celestial") {
+      // Sun disc + tiny crescent
+      g.fillStyle(s.accent, 0.85);
+      g.fillCircle(cx - 2, cy - 1, 4);
+      g.fillStyle(s.gemDark, 0.9);
+      g.fillCircle(cx + 3, cy + 1, 3.5);
+      g.fillStyle(s.gem);
+      g.fillCircle(cx + 4.5, cy, 3);
+      // Rays
+      g.lineStyle(1.2, s.accent, 0.7);
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        g.lineBetween(
+          cx + Math.cos(a) * 3,
+          cy + Math.sin(a) * 3,
+          cx + Math.cos(a) * 7,
+          cy + Math.sin(a) * 7
+        );
+      }
+    } else if (s.style === "moon") {
+      g.fillStyle(s.accent, 0.9);
+      g.fillCircle(cx - 1, cy - 1, 5.5);
+      g.fillStyle(s.gemDark, 0.95);
+      g.fillCircle(cx + 2, cy - 2, 4.5);
+      // Craters
+      g.fillStyle(s.gemDark, 0.45);
+      g.fillCircle(cx - 3, cy + 1, 1.2);
+      g.fillCircle(cx - 1, cy + 3, 0.8);
+    } else if (s.style === "tempest") {
+      // Wave arcs
+      g.lineStyle(1.8, s.accent, 0.85);
+      g.beginPath();
+      g.moveTo(cx - 6, cy + 2);
+      g.lineTo(cx - 2, cy - 1);
+      g.lineTo(cx + 2, cy + 2);
+      g.lineTo(cx + 6, cy - 1);
+      g.strokePath();
+      g.lineStyle(1.4, s.accent, 0.55);
+      g.beginPath();
+      g.moveTo(cx - 5, cy + 4);
+      g.lineTo(cx - 1, cy + 1);
+      g.lineTo(cx + 3, cy + 4);
+      g.strokePath();
+      // Rain dots
+      g.fillStyle(s.accent, 0.7);
+      g.fillCircle(cx - 3, cy - 4, 0.8);
+      g.fillCircle(cx + 1, cy - 5, 0.7);
+      g.fillCircle(cx + 4, cy - 3, 0.8);
+    } else if (s.style === "dusky") {
+      // Fog swirls
+      g.lineStyle(2, s.accent, 0.4);
+      g.strokeCircle(cx - 2, cy, 4);
+      g.strokeCircle(cx + 2, cy + 1, 3.5);
+      g.fillStyle(s.accent, 0.25);
+      g.fillEllipse(cx, cy - 2, 10, 4);
+      g.fillEllipse(cx + 1, cy + 3, 8, 3);
+    } else if (s.style === "sun") {
+      g.fillStyle(s.accent, 0.95);
+      g.fillCircle(cx, cy - 0.5, 4);
+      g.lineStyle(1.6, s.accent, 0.85);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        g.lineBetween(
+          cx + Math.cos(a) * 5,
+          cy + Math.sin(a) * 5,
+          cx + Math.cos(a) * 8,
+          cy + Math.sin(a) * 8
+        );
+      }
+    } else if (s.style === "thunder") {
+      // Lightning bolt
+      g.fillStyle(s.accent, 0.95);
+      g.beginPath();
+      g.moveTo(cx + 1, cy - 7);
+      g.lineTo(cx - 3, cy - 1);
+      g.lineTo(cx + 1, cy - 1);
+      g.lineTo(cx - 2, cy + 7);
+      g.lineTo(cx + 4, cy);
+      g.lineTo(cx, cy);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(s.gem, 0.5);
+      g.fillTriangle(cx, cy - 5, cx - 1, cy - 1, cx + 2, cy - 1);
+    }
+
+    // Specular highlight
+    g.fillStyle(0xffffff, 0.55);
+    g.fillCircle(cx - 3, cy - 3, 2.2);
+    g.fillStyle(0xffffff, 0.25);
+    g.fillEllipse(cx + 2, cy + 3, 5, 2);
+
+    // Tiny chain glints on cord
+    g.fillStyle(s.metal, 0.8);
+    g.fillCircle(cx - 1, 8, 1);
+    g.fillCircle(cx, 16, 1);
+
+    g.generateTexture(s.key, S, S);
+  }
   g.destroy();
 }
 
@@ -277,6 +592,26 @@ function makeTextures(scene: Phaser.Scene): void {
 
   generateRodTextures(scene);
 
+  // Vault quest gems
+  const gemDefs: { key: string; color: number; highlight: number }[] = [
+    { key: "gem_red", color: 0xff4466, highlight: 0xffaabb },
+    { key: "gem_green", color: 0x44ffaa, highlight: 0xb8ffe0 },
+    { key: "gem_blue", color: 0x4488ff, highlight: 0xaaccff },
+    { key: "gem_yellow", color: 0xffdd44, highlight: 0xfff0a0 },
+    { key: "gem_purple", color: 0xdd88ff, highlight: 0xf0ccff },
+  ];
+  for (const gem of gemDefs) {
+    g.clear();
+    g.fillStyle(0x000000, 0.2);
+    g.fillEllipse(16, 28, 18, 5);
+    g.fillStyle(gem.color);
+    g.fillTriangle(16, 4, 6, 18, 26, 18);
+    g.fillTriangle(16, 30, 6, 18, 26, 18);
+    g.fillStyle(gem.highlight);
+    g.fillTriangle(16, 8, 11, 16, 18, 16);
+    g.generateTexture(gem.key, 32, 32);
+  }
+
   // Equipment bag
   g.clear();
   g.fillStyle(0x000000, 0.2);
@@ -290,6 +625,8 @@ function makeTextures(scene: Phaser.Scene): void {
   g.fillStyle(0x3a2a1a);
   g.fillRect(14, 16, 4, 5);
   g.generateTexture("equipment_bag", 32, 32);
+
+  generateHatTextures(scene);
 
   // Bestiary book
   g.clear();
@@ -320,6 +657,8 @@ function makeTextures(scene: Phaser.Scene): void {
   g.fillStyle(0x3a2a1a);
   g.fillCircle(16, 17, 2);
   g.generateTexture("backpack_icon", 32, 32);
+
+  generateAmuletTextures(scene);
 
   // Water tile
   g.clear();
@@ -369,17 +708,26 @@ export class BootScene extends Phaser.Scene {
     this.load.image("nurse_shark", "images/nurse_shark.png");
     this.load.image("surgeon_fish", "images/surgeon_fish.png");
     this.load.image("dolphin", "images/dolphin.png");
+    this.load.image("chilled_clownfish", "images/chilled_clownfish.png");
+    this.load.image("crystal_frog", "images/crystal_frog.png");
+    this.load.image("crystalfin_tuna", "images/crystalfin_tuna.png");
+    this.load.image("nautilus", "images/nautilus.png");
+    this.load.image("serpent_eel", "images/serpent_eel.png");
+    this.load.image("cave_whale", "images/cave_whale.png");
+    this.load.image("crystal_rod_skin", "images/crystal_rod_skin.png");
     this.load.image("bobber_red", "images/bobber_red.png");
     this.load.image("bobber_red_double", "images/bobber_red_double.png");
     this.load.image("bobber_yellow", "images/bobber_yellow.png");
     this.load.image("bobber_grey", "images/bobber_grey.png");
     this.load.image("lure_green_fish", "images/lure_green_fish.png");
     this.load.image("lure_clover", "images/lure_clover.png");
+    this.load.image("full_moon_icon", "images/full_moon_icon.png");
     // Free procedural ambient loops (~32s each)
     this.load.audio("music_island", "audio/music_island.wav");
     this.load.audio("music_ocean", "audio/music_ocean.wav");
     this.load.audio("music_jungle", "audio/music_jungle.wav");
     this.load.audio("music_reef", "audio/music_reef.wav");
+    this.load.audio("music_collectors", "audio/music_collectors.wav");
     this.load.audio("sfx_ding", "audio/sfx_ding.wav");
     this.load.audio("sfx_ding_triple", "audio/sfx_ding_triple.wav");
   }

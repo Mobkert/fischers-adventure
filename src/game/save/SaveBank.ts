@@ -9,7 +9,21 @@ import {
   MUTATIONS,
   FISH_SIZES,
   ROD_ITEM_IDS,
+  HAT_ITEM_IDS,
+  STARTER_HAT_IDS,
+  AugmentUpgrades,
+  ZERO_AUGMENT_UPGRADES,
+  clampAugmentUpgrades,
 } from "../data/items";
+import type { WeatherId } from "../systems/WeatherSystem";
+import { WEATHER } from "../systems/WeatherSystem";
+import { BoatId, BOATS } from "../data/boats";
+import {
+  normalizeFrostpeakEpicRods,
+  normalizeFrostpeakStage,
+} from "../systems/FrostpeakQuest";
+import { normalizeVaultGemsPlaced } from "../systems/VaultGemQuest";
+import { normalizeActiveFishQuest } from "../systems/FishQuest";
 
 const SAVES_STORAGE_KEY = "fischers_adventure_saves_v1";
 export const SAVE_SLOT_COUNT = 5;
@@ -21,6 +35,8 @@ export interface SaveData {
   equippedRodId: ItemId;
   ownedBobbers: ItemId[];
   equippedBobberId: ItemId;
+  /** Amulet stacks — not sellable. */
+  ownedAmulets: Partial<Record<ItemId, number>>;
   /** Highest backpack owned — cannot downgrade. */
   backpackId: ItemId;
   hotbar: InventorySlot[];
@@ -33,6 +49,40 @@ export interface SaveData {
   bestiaryFound: ItemId[];
   /** Discovered fish whose unlock reward was already claimed. */
   bestiaryClaimed: ItemId[];
+  /** Augment Rod permanent upgrade counts. */
+  augmentUpgrades: AugmentUpgrades;
+  /** Boats owned forever once purchased. */
+  ownedBoats: import("../data/boats").BoatId[];
+  /** In-game clock: minutes since midnight (0–1439). */
+  gameMinutes: number;
+  /** Active weather id. */
+  weatherId: WeatherId;
+  /** Frostpeak Hermit quest: 0 not started … 4 cave open. */
+  frostpeakQuestStage: import("../systems/FrostpeakQuest").FrostpeakQuestStage;
+  /** Rods that have landed an epic during Frostpeak quest 2. */
+  frostpeakEpicRods: ItemId[];
+  /** Cave boards removed after quest complete. */
+  frostpeakCaveOpen: boolean;
+  /** Accepted the Vault Keeper's lost-gems quest. */
+  vaultGemQuestAccepted: boolean;
+  /** Gem Vault gems currently seated on pedestals. */
+  vaultGemsPlaced: import("../systems/VaultGemQuest").VaultGemId[];
+  /** Lifetime coins earned selling to Frostpeak Cave merchants. */
+  caveMerchantEarned: number;
+  /** Finished the Crystal Gallery memory challenge (ready to claim / claimed). */
+  crystalGalleryChallengeDone: boolean;
+  /** Owns the Crystal Rod gallery skin. */
+  crystalRodSkinOwned: boolean;
+  /** Using the gallery skin on the Crystal Rod. */
+  crystalRodSkinActive: boolean;
+  /** Cosmetic hats unlocked. */
+  ownedHats: ItemId[];
+  /** Equipped hat, or null for none. */
+  equippedHatId: ItemId | null;
+  /** Turned in a nautilus to the Entrance shell seeker. */
+  nautilusQuestDone: boolean;
+  /** One active island fish quest at a time. */
+  activeFishQuest: import("../systems/FishQuest").ActiveFishQuest | null;
   updatedAt: number;
 }
 
@@ -118,6 +168,7 @@ export function defaultSave(): SaveData {
     equippedRodId: "starter_rod",
     ownedBobbers: ["bobber_starter"],
     equippedBobberId: "bobber_starter",
+    ownedAmulets: {},
     backpackId: "backpack_starter",
     hotbar,
     bag: Array.from({ length: MAX_INVENTORY_SIZE }, emptySlot),
@@ -127,8 +178,47 @@ export function defaultSave(): SaveData {
     tutorialDone: false,
     bestiaryFound: [],
     bestiaryClaimed: [],
+    augmentUpgrades: { ...ZERO_AUGMENT_UPGRADES },
+    ownedBoats: ["sailboat"],
+    gameMinutes: 13 * 60, // 1:00 PM
+    weatherId: "clear",
+    frostpeakQuestStage: 0,
+    frostpeakEpicRods: [],
+    frostpeakCaveOpen: false,
+    vaultGemQuestAccepted: false,
+    vaultGemsPlaced: [],
+    caveMerchantEarned: 0,
+    crystalGalleryChallengeDone: false,
+    crystalRodSkinOwned: false,
+    crystalRodSkinActive: false,
+    ownedHats: [...STARTER_HAT_IDS],
+    equippedHatId: null,
+    nautilusQuestDone: false,
+    activeFishQuest: null,
     updatedAt: Date.now(),
   };
+}
+
+function normalizeWeatherId(raw: unknown): WeatherId {
+  if (typeof raw === "string" && raw in WEATHER) return raw as WeatherId;
+  return "clear";
+}
+
+function normalizeGameMinutes(raw: unknown): number {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n)) return 13 * 60;
+  return ((n % (24 * 60)) + 24 * 60) % (24 * 60);
+}
+
+function normalizeOwnedBoats(raw: unknown): BoatId[] {
+  const out: BoatId[] = [];
+  if (Array.isArray(raw)) {
+    for (const id of raw) {
+      if (typeof id === "string" && id in BOATS) out.push(id as BoatId);
+    }
+  }
+  if (!out.includes("sailboat")) out.unshift("sailboat");
+  return [...new Set(out)];
 }
 
 function normalizeRodId(id: unknown): ItemId | null {
@@ -139,6 +229,37 @@ function normalizeRodId(id: unknown): ItemId | null {
 function normalizeBobberId(id: unknown): ItemId | null {
   if (typeof id !== "string" || !(id in ITEMS)) return null;
   return ITEMS[id as ItemId].isBobber ? (id as ItemId) : null;
+}
+
+function normalizeHatId(id: unknown): ItemId | null {
+  if (typeof id !== "string" || !(id in ITEMS)) return null;
+  return ITEMS[id as ItemId].isHat ? (id as ItemId) : null;
+}
+
+function normalizeOwnedHats(raw: unknown): ItemId[] {
+  const out: ItemId[] = [...STARTER_HAT_IDS];
+  if (Array.isArray(raw)) {
+    for (const id of raw) {
+      const hat = normalizeHatId(id);
+      if (hat) out.push(hat);
+    }
+  }
+  return [...new Set(out)].filter((id) => HAT_ITEM_IDS.includes(id));
+}
+
+function normalizeOwnedAmulets(
+  raw: unknown
+): Partial<Record<ItemId, number>> {
+  const out: Partial<Record<ItemId, number>> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!(key in ITEMS)) continue;
+    const id = key as ItemId;
+    if (!ITEMS[id].isAmulet) continue;
+    const n = Math.floor(Number(value) || 0);
+    if (n > 0) out[id] = n;
+  }
+  return out;
 }
 
 function normalizeBackpackId(id: unknown): ItemId | null {
@@ -181,6 +302,8 @@ export function cloneSave(raw: unknown): SaveData {
     equippedBobber = uniqueBobbers[0];
   }
 
+  const ownedAmulets = normalizeOwnedAmulets(s.ownedAmulets);
+
   let backpackId =
     normalizeBackpackId(s.backpackId) ?? "backpack_starter";
   if (!ITEMS[backpackId]?.isBackpack) backpackId = "backpack_starter";
@@ -204,6 +327,26 @@ export function cloneSave(raw: unknown): SaveData {
   }
   bestiaryFound = [...new Set(bestiaryFound)];
 
+  let ownedHats = normalizeOwnedHats(s.ownedHats);
+  if (uniqueRods.includes("coral_rod") && !ownedHats.includes("hat_gem")) {
+    ownedHats.push("hat_gem");
+  }
+  if (
+    bestiaryFound.includes("yellowfin_tuna") &&
+    !ownedHats.includes("hat_yellowfin")
+  ) {
+    ownedHats.push("hat_yellowfin");
+  }
+  if (Boolean(s.nautilusQuestDone) && !ownedHats.includes("hat_shell")) {
+    ownedHats.push("hat_shell");
+  }
+  ownedHats = [...new Set(ownedHats)];
+  const equippedHatRaw = normalizeHatId(s.equippedHatId);
+  const equippedHatId =
+    equippedHatRaw && ownedHats.includes(equippedHatRaw)
+      ? equippedHatRaw
+      : null;
+
   return {
     v: 1,
     coins: Math.max(0, Math.floor(Number(s.coins) || 0)),
@@ -211,6 +354,7 @@ export function cloneSave(raw: unknown): SaveData {
     equippedRodId: equipped,
     ownedBobbers: uniqueBobbers,
     equippedBobberId: equippedBobber,
+    ownedAmulets,
     backpackId,
     hotbar,
     bag,
@@ -227,6 +371,23 @@ export function cloneSave(raw: unknown): SaveData {
     tutorialDone: Boolean(s.tutorialDone),
     bestiaryFound,
     bestiaryClaimed,
+    augmentUpgrades: clampAugmentUpgrades(s.augmentUpgrades),
+    ownedBoats: normalizeOwnedBoats(s.ownedBoats),
+    gameMinutes: normalizeGameMinutes(s.gameMinutes),
+    weatherId: normalizeWeatherId(s.weatherId),
+    frostpeakQuestStage: normalizeFrostpeakStage(s.frostpeakQuestStage),
+    frostpeakEpicRods: normalizeFrostpeakEpicRods(s.frostpeakEpicRods),
+    frostpeakCaveOpen: Boolean(s.frostpeakCaveOpen),
+    vaultGemQuestAccepted: Boolean(s.vaultGemQuestAccepted),
+    vaultGemsPlaced: normalizeVaultGemsPlaced(s.vaultGemsPlaced),
+    caveMerchantEarned: Math.max(0, Math.floor(Number(s.caveMerchantEarned) || 0)),
+    crystalGalleryChallengeDone: Boolean(s.crystalGalleryChallengeDone),
+    crystalRodSkinOwned: Boolean(s.crystalRodSkinOwned),
+    crystalRodSkinActive: Boolean(s.crystalRodSkinActive),
+    ownedHats,
+    equippedHatId,
+    nautilusQuestDone: Boolean(s.nautilusQuestDone),
+    activeFishQuest: normalizeActiveFishQuest(s.activeFishQuest),
     updatedAt: Number(s.updatedAt) || Date.now(),
   };
 }

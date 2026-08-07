@@ -4,10 +4,34 @@ export const PLAYER_FRAME_W = 64;
 export const PLAYER_FRAME_H = 64;
 
 /**
+ * Top-center of the head hair strip in frame pixels (idle, lean 0, bob 0).
+ * Matches drawPlayerFrame: ox=22, hx=ox-6, hair at hy-1.
+ */
+export const HEAD_TOP_LOCAL = { x: 23, y: 10 };
+
+/**
  * Rod tip pixel in the fishing-wait frames (top-left origin of the frame).
  * Used so the cast line attaches exactly to the drawn tip.
  */
 export const ROD_TIP_LOCAL = { x: 58, y: 18 };
+
+/**
+ * Tip positions for each `player_fish_*_N` frame (must match `fish` poses).
+ * Windup swings the tip left/up behind the back, then whips forward.
+ */
+export const FISH_FRAME_TIPS: ReadonlyArray<{ x: number; y: number }> = [
+  { x: 50, y: 12 }, // ready — tip still ahead
+  { x: 38, y: 2 }, // lift
+  { x: 22, y: 0 }, // over the shoulder
+  { x: 4, y: 8 }, // peak — fully behind the back
+  { x: 34, y: 0 }, // mid-swing forward
+  { x: 60, y: 14 }, // snap / release
+  { x: ROD_TIP_LOCAL.x, y: ROD_TIP_LOCAL.y }, // wait
+  { x: ROD_TIP_LOCAL.x, y: ROD_TIP_LOCAL.y }, // wait bob
+];
+
+/** Cast-anim frame index when the bobber should leave the tip. */
+export const CAST_RELEASE_FRAME = 5;
 
 const FW = PLAYER_FRAME_W;
 const FH = PLAYER_FRAME_H;
@@ -19,7 +43,11 @@ export type RodDrawStyle =
   | "amber"
   | "wildflower"
   | "zeus"
-  | "coral";
+  | "coral"
+  | "augment"
+  | "crystal"
+  /** Same poses/tips as other rods, but no baked rod art (skin overlay only). */
+  | "hidden";
 
 export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "lucky_rod") return "lucky";
@@ -28,6 +56,8 @@ export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "wildflower_rod") return "wildflower";
   if (itemId === "zeus_rod") return "zeus";
   if (itemId === "coral_rod") return "coral";
+  if (itemId === "augment_rod") return "augment";
+  if (itemId === "crystal_rod") return "crystal";
   return "starter";
 }
 
@@ -49,6 +79,8 @@ export type PlayerPose = {
   /** Tip position in frame pixels (overrides defaults). */
   tipX?: number;
   tipY?: number;
+  /** Draw rod behind the body (windup behind the back). */
+  rodBehind?: boolean;
 };
 
 /** Higher-detail side-view cubic character frames + animations. */
@@ -79,37 +111,99 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
   ];
 
   const fish: PlayerPose[] = [
-    // windup — tip pulled back
+    // 0 ready — tip still ahead, starting the lift
     {
       bob: 0,
       legBack: -1,
       legFront: 1,
       legBackY: 0,
       legFrontY: 0,
-      armX: -2,
-      armY: -1,
+      armX: 2,
+      armY: -2,
+      armLen: 1,
+      bodyLean: 0,
+      rod: true,
+      tipX: FISH_FRAME_TIPS[0].x,
+      tipY: FISH_FRAME_TIPS[0].y,
+    },
+    // 1 lift — tip rising
+    {
+      bob: 0,
+      legBack: -1,
+      legFront: 1,
+      legBackY: 0,
+      legFrontY: 0,
+      armX: -1,
+      armY: -3,
       armLen: 1,
       bodyLean: -1,
       rod: true,
-      tipX: 40,
-      tipY: 10,
+      tipX: FISH_FRAME_TIPS[1].x,
+      tipY: FISH_FRAME_TIPS[1].y,
     },
-    // cast forward — tip out
+    // 2 over the shoulder — tipping back
     {
       bob: 0,
       legBack: -2,
       legFront: 2,
       legBackY: 0,
       legFrontY: 0,
-      armX: 4,
+      armX: -4,
       armY: -4,
       armLen: 2,
-      bodyLean: 1,
+      bodyLean: -1,
       rod: true,
-      tipX: 60,
-      tipY: 14,
+      rodBehind: true,
+      tipX: FISH_FRAME_TIPS[2].x,
+      tipY: FISH_FRAME_TIPS[2].y,
     },
-    // hold / waiting — tip matches ROD_TIP_LOCAL
+    // 3 peak — rod fully behind the back
+    {
+      bob: 0,
+      legBack: -2,
+      legFront: 3,
+      legBackY: 0,
+      legFrontY: 0,
+      armX: -7,
+      armY: -2,
+      armLen: 2,
+      bodyLean: -2,
+      rod: true,
+      rodBehind: true,
+      tipX: FISH_FRAME_TIPS[3].x,
+      tipY: FISH_FRAME_TIPS[3].y,
+    },
+    // 4 mid-swing — coming over the top
+    {
+      bob: 0,
+      legBack: -2,
+      legFront: 2,
+      legBackY: 0,
+      legFrontY: 0,
+      armX: 0,
+      armY: -5,
+      armLen: 2,
+      bodyLean: 0,
+      rod: true,
+      tipX: FISH_FRAME_TIPS[4].x,
+      tipY: FISH_FRAME_TIPS[4].y,
+    },
+    // 5 snap forward — bobber releases
+    {
+      bob: 0,
+      legBack: -2,
+      legFront: 2,
+      legBackY: 0,
+      legFrontY: 0,
+      armX: 6,
+      armY: -4,
+      armLen: 2,
+      bodyLean: 2,
+      rod: true,
+      tipX: FISH_FRAME_TIPS[5].x,
+      tipY: FISH_FRAME_TIPS[5].y,
+    },
+    // 6–7 hold / waiting
     {
       bob: 0,
       legBack: -1,
@@ -121,8 +215,8 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
       armLen: 2,
       bodyLean: 0,
       rod: true,
-      tipX: ROD_TIP_LOCAL.x,
-      tipY: ROD_TIP_LOCAL.y,
+      tipX: FISH_FRAME_TIPS[6].x,
+      tipY: FISH_FRAME_TIPS[6].y,
     },
     {
       bob: 0,
@@ -135,8 +229,8 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
       armLen: 2,
       bodyLean: 0,
       rod: true,
-      tipX: ROD_TIP_LOCAL.x,
-      tipY: ROD_TIP_LOCAL.y,
+      tipX: FISH_FRAME_TIPS[7].x,
+      tipY: FISH_FRAME_TIPS[7].y,
     },
   ];
 
@@ -165,6 +259,9 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
     "wildflower",
     "zeus",
     "coral",
+    "augment",
+    "crystal",
+    "hidden",
   ];
   const withCarry = (pose: PlayerPose): PlayerPose => ({
     ...pose,
@@ -266,6 +363,20 @@ function drawPlayerFrame(g: Phaser.GameObjects.Graphics, pose: PlayerPose): void
   g.fillStyle(0x000000, 0.12);
   g.fillEllipse(ox, 60, 18, 5);
 
+  const carrying = pose.rod && pose.rodPose === "carry";
+  const tipX = pose.tipX ?? ROD_TIP_LOCAL.x;
+  const tipY = pose.tipY ?? ROD_TIP_LOCAL.y;
+
+  // Early arm estimate so a behind-back rod can be drawn under the body
+  const ax = ox + 5 + pose.armX;
+  const ay = oy + 20 + pose.armY;
+  const handX = ax + 3;
+  const handY = ay + 13;
+
+  if (pose.rod && pose.rodBehind && !carrying) {
+    drawHeldRod(g, handX, handY, tipX, tipY, pose.rodStyle ?? "starter");
+  }
+
   // Legs — flat blocks
   g.fillStyle(0x3a3f4a);
   g.fillRect(ox - 7 + pose.legBack, oy + 34 + pose.legBackY, 7, 17);
@@ -284,28 +395,15 @@ function drawPlayerFrame(g: Phaser.GameObjects.Graphics, pose: PlayerPose): void
   g.fillRect(ox - 8, oy + 18, 4, 17);
 
   // Arm
-  const ax = ox + 5 + pose.armX;
-  const ay = oy + 20 + pose.armY;
   g.fillStyle(0x4b5563);
   g.fillRect(ax, ay, 6, 4);
   g.fillStyle(0xc4a484);
   g.fillRect(ax, ay + 4, 6, 10 + pose.armLen * 0.25);
   g.fillRect(ax, ay + 12 + pose.armLen * 0.25, 5, 4);
 
-  const handX = ax + 3;
-  const handY = ay + 13;
-  const carrying = pose.rod && pose.rodPose === "carry";
-
-  // Cast rod sits behind the head; carry rod is drawn after (foreground)
-  if (pose.rod && !carrying) {
-    drawHeldRod(
-      g,
-      handX,
-      handY,
-      pose.tipX ?? ROD_TIP_LOCAL.x,
-      pose.tipY ?? ROD_TIP_LOCAL.y,
-      pose.rodStyle ?? "starter"
-    );
+  // Cast rod in front of torso when not tucked behind the back
+  if (pose.rod && !carrying && !pose.rodBehind) {
+    drawHeldRod(g, handX, handY, tipX, tipY, pose.rodStyle ?? "starter");
   }
 
   // Head — plain cube
@@ -324,9 +422,16 @@ function drawPlayerFrame(g: Phaser.GameObjects.Graphics, pose: PlayerPose): void
 
   // Shoulder-carry rod in front of the body / neck
   if (carrying) {
-    const tipX = pose.tipX ?? ox - 4;
-    const tipY = pose.tipY ?? oy - 6;
-    drawHeldRod(g, handX, handY, tipX, tipY, pose.rodStyle ?? "starter");
+    const carryTipX = pose.tipX ?? ox - 4;
+    const carryTipY = pose.tipY ?? oy - 6;
+    drawHeldRod(
+      g,
+      handX,
+      handY,
+      carryTipX,
+      carryTipY,
+      pose.rodStyle ?? "starter"
+    );
   }
 }
 
@@ -338,6 +443,8 @@ function drawHeldRod(
   tipY: number,
   style: RodDrawStyle
 ): void {
+  if (style === "hidden") return;
+
   if (style === "firm") {
     g.lineStyle(6, 0x1a1a22, 1);
     g.lineBetween(handX, handY, tipX, tipY);
@@ -530,6 +637,75 @@ function drawHeldRod(
     return;
   }
 
+  if (style === "augment") {
+    g.lineStyle(5, 0x4a5058, 1);
+    g.lineBetween(handX, handY, tipX, tipY);
+    g.lineStyle(3, 0x8a929c, 1);
+    g.lineBetween(handX, handY, tipX, tipY);
+    g.lineStyle(1.5, 0xc0c8d0, 0.75);
+    g.lineBetween(handX, handY - 1, tipX, tipY - 1);
+    const mx = (handX + tipX) / 2;
+    const my = (handY + tipY) / 2;
+    g.lineStyle(2, 0x6a727c, 1);
+    g.lineBetween(handX + 3, handY - 3, handX + 7, handY - 6);
+    g.lineBetween(mx - 2, my + 1, mx + 2, my - 2);
+    g.fillStyle(0x3a3e44);
+    g.fillRect(handX - 3, handY - 2, 8, 8);
+    g.fillStyle(0x6a7078);
+    g.fillRect(handX - 3, handY + 5, 8, 3);
+    g.fillStyle(0x9aa2aa);
+    g.fillCircle(handX + 1, handY + 6, 3.5);
+    g.fillStyle(0xd0d8e0);
+    g.fillCircle(handX + 1, handY + 6, 1.5);
+    g.lineStyle(2, 0xb8c0c8);
+    g.strokeCircle(tipX, tipY, 2.8);
+    // cool grey star at tip
+    const sx = tipX + 4;
+    const sy = tipY - 3;
+    g.fillStyle(0xa8b0b8);
+    g.fillCircle(sx, sy, 4);
+    g.fillStyle(0xd8e0e8);
+    g.fillTriangle(sx, sy - 5, sx + 1.8, sy - 0.5, sx - 1.8, sy - 0.5);
+    g.fillTriangle(sx, sy + 5, sx + 1.8, sy + 0.5, sx - 1.8, sy + 0.5);
+    g.fillTriangle(sx - 5, sy, sx - 0.5, sy - 1.8, sx - 0.5, sy + 1.8);
+    g.fillTriangle(sx + 5, sy, sx + 0.5, sy - 1.8, sx + 0.5, sy + 1.8);
+    g.fillStyle(0xf0f4f8);
+    g.fillCircle(sx, sy, 1.4);
+    return;
+  }
+
+  if (style === "crystal") {
+    g.lineStyle(5, 0x3a6078, 1);
+    g.lineBetween(handX, handY, tipX, tipY);
+    g.lineStyle(3, 0x7ec8e8, 1);
+    g.lineBetween(handX, handY, tipX, tipY);
+    g.lineStyle(1.5, 0xd0f0ff, 0.8);
+    g.lineBetween(handX, handY - 1, tipX, tipY - 1);
+    const mx = (handX + tipX) / 2;
+    const my = (handY + tipY) / 2;
+    g.lineStyle(2, 0xff88cc, 1);
+    g.lineBetween(handX + 3, handY - 3, handX + 7, handY - 6);
+    g.lineStyle(2, 0x88ffaa, 1);
+    g.lineBetween(mx - 2, my + 1, mx + 2, my - 2);
+    g.lineStyle(2, 0x88aaff, 1);
+    g.lineBetween(mx + 3, my - 3, mx + 7, my - 6);
+    g.fillStyle(0xc4a574);
+    g.fillRect(handX - 3, handY - 2, 8, 8);
+    g.fillStyle(0x7ec8e8);
+    g.fillRect(handX - 3, handY + 5, 8, 3);
+    g.fillStyle(0xa0d8f0);
+    g.fillCircle(handX + 1, handY + 6, 3.5);
+    g.fillStyle(0xe0f8ff);
+    g.fillCircle(handX + 1, handY + 6, 1.5);
+    g.lineStyle(2, 0xe0f8ff);
+    g.strokeCircle(tipX, tipY, 2.8);
+    g.fillStyle(0xff6688);
+    g.fillTriangle(tipX + 4, tipY - 7, tipX + 1, tipY - 1, tipX + 7, tipY - 1);
+    g.fillStyle(0xffe0ee);
+    g.fillCircle(tipX + 4, tipY - 4, 1.2);
+    return;
+  }
+
   // starter — wood blank
   g.lineStyle(5, 0x3e2a1a, 1);
   g.lineBetween(handX, handY, tipX, tipY);
@@ -589,6 +765,9 @@ function createPlayerAnimations(scene: Phaser.Scene): void {
     "wildflower",
     "zeus",
     "coral",
+    "augment",
+    "crystal",
+    "hidden",
   ];
   for (const style of rodStyles) {
     const idleKey = `player-idle-rod-${style}`;
@@ -629,53 +808,55 @@ function createPlayerAnimations(scene: Phaser.Scene): void {
   for (const style of rodStyles) {
     const castKey = `player-fish-cast-${style}`;
     const waitKey = `player-fish-wait-${style}`;
-    if (!anims.exists(castKey)) {
-      anims.create({
-        key: castKey,
-        frames: [
-          { key: `player_fish_${style}_0` },
-          { key: `player_fish_${style}_1` },
-        ],
-        frameRate: 8,
-        repeat: 0,
-      });
-    }
-    if (!anims.exists(waitKey)) {
-      anims.create({
-        key: waitKey,
-        frames: [
-          { key: `player_fish_${style}_2` },
-          { key: `player_fish_${style}_3` },
-        ],
-        frameRate: 3,
-        repeat: -1,
-      });
-    }
-  }
-
-  // Legacy aliases → starter
-  if (!anims.exists("player-fish-cast")) {
+    if (anims.exists(castKey)) anims.remove(castKey);
+    if (anims.exists(waitKey)) anims.remove(waitKey);
     anims.create({
-      key: "player-fish-cast",
+      key: castKey,
       frames: [
-        { key: "player_fish_starter_0" },
-        { key: "player_fish_starter_1" },
+        { key: `player_fish_${style}_0`, duration: 110 },
+        { key: `player_fish_${style}_1`, duration: 130 },
+        { key: `player_fish_${style}_2`, duration: 150 },
+        { key: `player_fish_${style}_3`, duration: 320 }, // hold behind the back
+        { key: `player_fish_${style}_4`, duration: 90 },
+        { key: `player_fish_${style}_5`, duration: 160 }, // release
       ],
-      frameRate: 8,
       repeat: 0,
     });
-  }
-  if (!anims.exists("player-fish-wait")) {
     anims.create({
-      key: "player-fish-wait",
+      key: waitKey,
       frames: [
-        { key: "player_fish_starter_2" },
-        { key: "player_fish_starter_3" },
+        { key: `player_fish_${style}_6` },
+        { key: `player_fish_${style}_7` },
       ],
       frameRate: 3,
       repeat: -1,
     });
   }
+
+  // Legacy aliases → starter
+  if (anims.exists("player-fish-cast")) anims.remove("player-fish-cast");
+  if (anims.exists("player-fish-wait")) anims.remove("player-fish-wait");
+  anims.create({
+    key: "player-fish-cast",
+    frames: [
+      { key: "player_fish_starter_0", duration: 110 },
+      { key: "player_fish_starter_1", duration: 130 },
+      { key: "player_fish_starter_2", duration: 150 },
+      { key: "player_fish_starter_3", duration: 320 },
+      { key: "player_fish_starter_4", duration: 90 },
+      { key: "player_fish_starter_5", duration: 160 },
+    ],
+    repeat: 0,
+  });
+  anims.create({
+    key: "player-fish-wait",
+    frames: [
+      { key: "player_fish_starter_6" },
+      { key: "player_fish_starter_7" },
+    ],
+    frameRate: 3,
+    repeat: -1,
+  });
 
   if (!anims.exists("player-row")) {
     anims.create({

@@ -3,6 +3,8 @@
  * Island: chill piano + soft guitar plucks
  * Ocean: sparse piano only
  * Jungle: rainforest-ish percussion + melody
+ * Reef: tropical lounge pads + muted plucks
+ * Collectors: chill fingerstyle guitar harbor loop
  */
 import fs from "fs";
 import path from "path";
@@ -475,9 +477,124 @@ function makeReef() {
   return samples;
 }
 
+/**
+ * Collector's Harbor — chill fingerstyle guitar (~32s).
+ * Soft nylon arpeggios, sparse bass, warm pad — relaxed town vibe.
+ */
+function makeCollectors() {
+  const samples = new Float32Array(N);
+  const bpm = 68;
+  const beat = 60 / bpm;
+  // Warm maj7 / add9 — harbor evening feel
+  const progression = [
+    [52, 55, 59, 62], // E-ish soft
+    [48, 52, 55, 59], // Cmaj7 low
+    [50, 53, 57, 60], // Dm9-ish
+    [47, 50, 54, 57], // Bsus-ish
+  ];
+  const events = [];
+
+  for (let bar = 0; bar < 11; bar++) {
+    const chord = progression[bar % 4];
+    const t0 = bar * 4 * beat;
+    if (t0 >= DURATION - 0.5) break;
+
+    // Soft thumb bass
+    events.push({ t: t0, type: "bass", midi: chord[0] - 12, vel: 0.18 });
+    events.push({
+      t: t0 + beat * 2,
+      type: "bass",
+      midi: chord[0] - 12,
+      vel: 0.1,
+    });
+
+    // Fingerstyle arpeggio (travis-ish, not busy)
+    const arp = [
+      chord[0],
+      chord[2],
+      chord[1],
+      chord[3],
+      chord[2],
+      chord[1],
+      chord[3],
+      chord[2],
+    ];
+    arp.forEach((m, i) => {
+      // Leave holes every other bar on some notes
+      if (bar % 2 === 1 && i === 3) return;
+      if (bar % 3 === 2 && i === 6) return;
+      events.push({
+        t: t0 + beat * (i * 0.5),
+        type: "guitar",
+        midi: m + 12,
+        vel: 0.14 + (i === 0 ? 0.04 : 0),
+      });
+    });
+
+    // Occasional double-stop harmony
+    if (bar % 4 === 0 || bar % 4 === 2) {
+      events.push({
+        t: t0 + beat * 3.5,
+        type: "guitar",
+        midi: chord[2] + 12,
+        vel: 0.1,
+      });
+      events.push({
+        t: t0 + beat * 3.55,
+        type: "guitar",
+        midi: chord[3] + 12,
+        vel: 0.07,
+      });
+    }
+  }
+
+  let lp = 0;
+  for (let i = 0; i < N; i++) {
+    const time = i / SR;
+    let v = 0;
+
+    // Warm low pad
+    const drift = Math.sin(time * 0.08) * 1.2;
+    const padAmp = 0.012 * (0.8 + 0.2 * Math.sin(time * 0.15));
+    v += Math.sin(2 * Math.PI * (98 + drift) * time) * padAmp;
+    v += Math.sin(2 * Math.PI * (123 + drift * 0.5) * time) * padAmp * 0.45;
+    v += Math.sin(2 * Math.PI * freq(52) * time) * 0.008;
+
+    for (const e of events) {
+      const age = time - e.t;
+      if (age < 0 || age > 4.5) continue;
+      const f = freq(e.midi);
+      if (e.type === "bass") {
+        const env = Math.min(1, age * 35) * Math.exp(-2.4 * age) * e.vel;
+        v += Math.sin(2 * Math.PI * f * age) * env;
+        v += Math.sin(2 * Math.PI * f * 2 * age) * env * 0.12;
+      } else {
+        v += guitar(age, f, e.vel);
+      }
+    }
+
+    // Soft room hush
+    const hush =
+      noise() *
+      0.008 *
+      (0.45 + 0.55 * Math.sin(2 * Math.PI * 0.04 * time));
+    lp = lp * 0.93 + (v + hush) * 0.07;
+    samples[i] = v * 0.75 + lp * 0.35;
+  }
+
+  const fade = Math.floor(SR * 0.55);
+  for (let i = 0; i < fade; i++) {
+    const w = i / fade;
+    samples[i] *= w;
+    samples[N - 1 - i] *= w;
+  }
+  return samples;
+}
+
 fs.mkdirSync(OUT, { recursive: true });
 writeWav(path.join(OUT, "music_island.wav"), makeIsland());
 writeWav(path.join(OUT, "music_ocean.wav"), makeOcean());
 writeWav(path.join(OUT, "music_jungle.wav"), makeJungle());
 writeWav(path.join(OUT, "music_reef.wav"), makeReef());
+writeWav(path.join(OUT, "music_collectors.wav"), makeCollectors());
 console.log("done");

@@ -4,7 +4,6 @@ import {
   ItemId,
   formatRodStats,
   formatBobberStats,
-  ZERO_ROD_STATS,
   MUTATIONS,
 } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
@@ -17,9 +16,12 @@ const ROW_H = 136;
 const BOBBER_ROW_H = 118;
 const ROW_GAP = 12;
 
-type BagTab = "rods" | "bobbers";
+const AMULET_ROW_H = 100;
+const HAT_ROW_H = 96;
 
-/** Vertical rod / bobber list opened from hotbar slot 2. */
+type BagTab = "rods" | "bobbers" | "amulets" | "hats";
+
+/** Vertical rod / bobber / amulet / hat list opened from hotbar slot 2. */
 export class EquipmentBag {
   private root: Phaser.GameObjects.Container;
   private listRoot: Phaser.GameObjects.Container;
@@ -30,8 +32,12 @@ export class EquipmentBag {
   private subtitle!: Phaser.GameObjects.Text;
   private tabRodsBg!: Phaser.GameObjects.Rectangle;
   private tabBobbersBg!: Phaser.GameObjects.Rectangle;
+  private tabAmuletsBg!: Phaser.GameObjects.Rectangle;
+  private tabHatsBg!: Phaser.GameObjects.Rectangle;
   private tabRodsLabel!: Phaser.GameObjects.Text;
   private tabBobbersLabel!: Phaser.GameObjects.Text;
+  private tabAmuletsLabel!: Phaser.GameObjects.Text;
+  private tabHatsLabel!: Phaser.GameObjects.Text;
   private inventory: InventorySystem;
   private scene: Phaser.Scene;
   private panelCx: number;
@@ -39,6 +45,8 @@ export class EquipmentBag {
   visible = false;
   private tab: BagTab = "rods";
   private onChanged?: (message: string) => void;
+  private onAmuletUsed?: (amuletId: ItemId) => void;
+  private onHatChanged?: () => void;
   private scrollY = 0;
   private contentH = 0;
   private wheelHandler: (
@@ -81,32 +89,56 @@ export class EquipmentBag {
       })
       .setOrigin(0.5);
 
-    // Tabs
+    // Tabs — four across
     this.tabRodsBg = scene.add
-      .rectangle(-80, -200, 140, 28, 0x3a3428, 0.95)
+      .rectangle(-162, -200, 96, 28, 0x3a3428, 0.95)
       .setStrokeStyle(2, 0xc4a86a)
       .setInteractive({ useHandCursor: true });
     this.tabRodsLabel = scene.add
-      .text(-80, -200, "Rods", {
+      .text(-162, -200, "Rods", {
         fontFamily: "Arial",
-        fontSize: "14px",
+        fontSize: "12px",
         color: "#f0e6d2",
       })
       .setOrigin(0.5);
     this.tabBobbersBg = scene.add
-      .rectangle(80, -200, 140, 28, 0x2a2f3a, 0.95)
+      .rectangle(-54, -200, 96, 28, 0x2a2f3a, 0.95)
       .setStrokeStyle(2, 0x666666)
       .setInteractive({ useHandCursor: true });
     this.tabBobbersLabel = scene.add
-      .text(80, -200, "Bobbers", {
+      .text(-54, -200, "Bobbers", {
         fontFamily: "Arial",
-        fontSize: "14px",
+        fontSize: "12px",
+        color: "#aaaaaa",
+      })
+      .setOrigin(0.5);
+    this.tabAmuletsBg = scene.add
+      .rectangle(54, -200, 96, 28, 0x2a2f3a, 0.95)
+      .setStrokeStyle(2, 0x666666)
+      .setInteractive({ useHandCursor: true });
+    this.tabAmuletsLabel = scene.add
+      .text(54, -200, "Amulets", {
+        fontFamily: "Arial",
+        fontSize: "12px",
+        color: "#aaaaaa",
+      })
+      .setOrigin(0.5);
+    this.tabHatsBg = scene.add
+      .rectangle(162, -200, 96, 28, 0x2a2f3a, 0.95)
+      .setStrokeStyle(2, 0x666666)
+      .setInteractive({ useHandCursor: true });
+    this.tabHatsLabel = scene.add
+      .text(162, -200, "Hats", {
+        fontFamily: "Arial",
+        fontSize: "12px",
         color: "#aaaaaa",
       })
       .setOrigin(0.5);
 
     this.tabRodsBg.on("pointerdown", () => this.setTab("rods"));
     this.tabBobbersBg.on("pointerdown", () => this.setTab("bobbers"));
+    this.tabAmuletsBg.on("pointerdown", () => this.setTab("amulets"));
+    this.tabHatsBg.on("pointerdown", () => this.setTab("hats"));
 
     this.listRoot = scene.add.container(0, LIST_TOP);
     this.listContent = scene.add.container(0, 0);
@@ -141,6 +173,10 @@ export class EquipmentBag {
       this.tabRodsLabel,
       this.tabBobbersBg,
       this.tabBobbersLabel,
+      this.tabAmuletsBg,
+      this.tabAmuletsLabel,
+      this.tabHatsBg,
+      this.tabHatsLabel,
       this.subtitle,
       this.listRoot,
       this.scrollTrack,
@@ -185,6 +221,14 @@ export class EquipmentBag {
     this.onChanged = cb;
   }
 
+  setOnAmuletUsed(cb: (amuletId: ItemId) => void): void {
+    this.onAmuletUsed = cb;
+  }
+
+  setOnHatChanged(cb: () => void): void {
+    this.onHatChanged = cb;
+  }
+
   toggle(): void {
     this.setOpen(!this.visible);
   }
@@ -204,22 +248,32 @@ export class EquipmentBag {
       child.destroy(true);
     }
 
-    const rodsActive = this.tab === "rods";
-    this.tabRodsBg.setStrokeStyle(2, rodsActive ? 0xc4a86a : 0x666666);
-    this.tabRodsBg.setFillStyle(rodsActive ? 0x3a3428 : 0x2a2f3a, 0.95);
-    this.tabRodsLabel.setColor(rodsActive ? "#f0e6d2" : "#aaaaaa");
-    this.tabBobbersBg.setStrokeStyle(2, !rodsActive ? 0xc4a86a : 0x666666);
-    this.tabBobbersBg.setFillStyle(!rodsActive ? 0x3a3428 : 0x2a2f3a, 0.95);
-    this.tabBobbersLabel.setColor(!rodsActive ? "#f0e6d2" : "#aaaaaa");
+    const styleTab = (
+      bg: Phaser.GameObjects.Rectangle,
+      label: Phaser.GameObjects.Text,
+      active: boolean
+    ) => {
+      bg.setStrokeStyle(2, active ? 0xc4a86a : 0x666666);
+      bg.setFillStyle(active ? 0x3a3428 : 0x2a2f3a, 0.95);
+      label.setColor(active ? "#f0e6d2" : "#aaaaaa");
+    };
+    styleTab(this.tabRodsBg, this.tabRodsLabel, this.tab === "rods");
+    styleTab(this.tabBobbersBg, this.tabBobbersLabel, this.tab === "bobbers");
+    styleTab(this.tabAmuletsBg, this.tabAmuletsLabel, this.tab === "amulets");
+    styleTab(this.tabHatsBg, this.tabHatsLabel, this.tab === "hats");
 
     this.subtitle.setText(
-      rodsActive
+      this.tab === "rods"
         ? "Your rods · Equip swaps hotbar slot 1"
-        : "Your bobbers · Equip for the next cast"
+        : this.tab === "bobbers"
+          ? "Your bobbers · Equip for the next cast"
+          : this.tab === "amulets"
+            ? "Amulets · Use to change weather or time"
+            : "Hats · Wear cosmetics on your head"
     );
 
     let y = 0;
-    if (rodsActive) {
+    if (this.tab === "rods") {
       const rods = this.inventory.getOwnedRods();
       if (rods.length === 0) {
         this.listContent.add(
@@ -239,7 +293,7 @@ export class EquipmentBag {
         this.listContent.add(this.makeRodRow(rodId, y, ROW_H));
         y += ROW_H + ROW_GAP;
       }
-    } else {
+    } else if (this.tab === "bobbers") {
       const bobbers = this.inventory.getOwnedBobbers();
       if (bobbers.length === 0) {
         this.listContent.add(
@@ -258,6 +312,36 @@ export class EquipmentBag {
       for (const bobberId of bobbers) {
         this.listContent.add(this.makeBobberRow(bobberId, y, BOBBER_ROW_H));
         y += BOBBER_ROW_H + ROW_GAP;
+      }
+    } else if (this.tab === "amulets") {
+      const amulets = this.inventory.getOwnedAmulets();
+      if (amulets.length === 0) {
+        this.listContent.add(
+          this.scene.add
+            .text(0, 80, "No amulets yet.\nClimb the rope past the swamp pond.", {
+              fontFamily: "Arial",
+              fontSize: "15px",
+              color: "#888888",
+              align: "center",
+            })
+            .setOrigin(0.5)
+        );
+        this.contentH = LIST_VIEW_H;
+        this.applyScroll();
+        return;
+      }
+      for (const { id, count } of amulets) {
+        this.listContent.add(this.makeAmuletRow(id, count, y, AMULET_ROW_H));
+        y += AMULET_ROW_H + ROW_GAP;
+      }
+    } else {
+      const hats = this.inventory.getOwnedHats();
+      // Unequip row
+      this.listContent.add(this.makeHatNoneRow(y, HAT_ROW_H));
+      y += HAT_ROW_H + ROW_GAP;
+      for (const hatId of hats) {
+        this.listContent.add(this.makeHatRow(hatId, y, HAT_ROW_H));
+        y += HAT_ROW_H + ROW_GAP;
       }
     }
 
@@ -307,7 +391,7 @@ export class EquipmentBag {
     rowH: number
   ): Phaser.GameObjects.Container {
     const def = ITEMS[rodId];
-    const stats = def.rodStats ?? ZERO_ROD_STATS;
+    const stats = this.inventory.getRodDisplayStats(rodId);
     const equipped = this.inventory.equippedRodId === rodId;
 
     const card = this.scene.add
@@ -315,9 +399,11 @@ export class EquipmentBag {
       .setStrokeStyle(2, equipped ? 0xffe066 : 0x6a7355)
       .setOrigin(0.5, 0);
 
+    const iconKey = this.inventory.getRodTextureKey(rodId);
+    const [iw, ih] = this.fitIcon(iconKey, 56);
     const icon = this.scene.add
-      .image(-150, y + rowH / 2, def.textureKey)
-      .setDisplaySize(56, 56);
+      .image(-150, y + rowH / 2, iconKey)
+      .setDisplaySize(iw, ih);
 
     const name = this.scene.add
       .text(-112, y + 12, def.name, {
@@ -335,25 +421,82 @@ export class EquipmentBag {
     const worldMutLine = def.grantsWorldMutations
       ? "\nWorld mutations on catch (normal rates)"
       : "";
+    const augmentLine =
+      rodId === "augment_rod"
+        ? "\n7.5% chance to upgrade a stat on catch"
+        : "";
+    const burstLine =
+      def.rodMinigamePower === "crystal_burst"
+        ? "\n15% crystal burst every 0.5s in catch"
+        : "";
     const statsText = this.scene.add
-      .text(-112, y + 42, statsLines + mutLine + worldMutLine, {
-        fontFamily: "Arial",
-        fontSize: "13px",
-        color: "#c8c8c8",
-        lineSpacing: 3,
-      })
+      .text(
+        -112,
+        y + 42,
+        statsLines + mutLine + worldMutLine + augmentLine + burstLine,
+        {
+          fontFamily: "Arial",
+          fontSize: "13px",
+          color: "#c8c8c8",
+          lineSpacing: 3,
+        }
+      )
       .setOrigin(0, 0);
 
     const row = this.scene.add.container(0, 0);
     row.add([card, icon, name, statsText]);
 
+    const hasSkinBtn = rodId === "crystal_rod";
+    const equipY = hasSkinBtn ? y + rowH / 2 + 18 : y + rowH / 2;
+
+    if (hasSkinBtn) {
+      const owned = this.inventory.crystalRodSkinOwned;
+      const active = this.inventory.crystalRodSkinActive;
+      const skinBtn = this.scene.add
+        .rectangle(
+          140,
+          y + rowH / 2 - 22,
+          100,
+          30,
+          owned ? (active ? 0x4a3a68 : 0x3a4a6b) : 0x2a2a32
+        )
+        .setStrokeStyle(1, owned ? 0xb8a0e0 : 0x555555);
+      const skinLabel = this.scene.add
+        .text(
+          140,
+          y + rowH / 2 - 22,
+          owned ? (active ? "Skin On" : "Skin") : "Skin ✕",
+          {
+            fontFamily: "Arial",
+            fontSize: "13px",
+            color: owned ? "#ffffff" : "#777777",
+          }
+        )
+        .setOrigin(0.5);
+      if (owned) {
+        skinBtn.setInteractive({ useHandCursor: true });
+        skinBtn.on("pointerover", () =>
+          skinBtn.setFillStyle(active ? 0x5a4a78 : 0x4a5a7b)
+        );
+        skinBtn.on("pointerout", () =>
+          skinBtn.setFillStyle(active ? 0x4a3a68 : 0x3a4a6b)
+        );
+        skinBtn.on("pointerdown", () => {
+          const result = this.inventory.toggleCrystalRodSkin();
+          this.refresh();
+          this.onChanged?.(result.message);
+        });
+      }
+      row.add([skinBtn, skinLabel]);
+    }
+
     if (!equipped) {
       const btn = this.scene.add
-        .rectangle(140, y + rowH / 2, 100, 36, 0x3d6b4f)
+        .rectangle(140, equipY, 100, 36, 0x3d6b4f)
         .setStrokeStyle(1, 0x7dce7a)
         .setInteractive({ useHandCursor: true });
       const label = this.scene.add
-        .text(140, y + rowH / 2, "Equip", {
+        .text(140, equipY, "Equip", {
           fontFamily: "Arial",
           fontSize: "15px",
           color: "#ffffff",
@@ -371,20 +514,24 @@ export class EquipmentBag {
       row.add([btn, label]);
     } else {
       const tag = this.scene.add
-        .text(140, y + rowH / 2 - 8, "Equipped", {
+        .text(140, equipY - (hasSkinBtn ? 0 : 8), "Equipped", {
           fontFamily: "Arial",
           fontSize: "14px",
           color: "#ffe066",
         })
         .setOrigin(0.5);
-      const note = this.scene.add
-        .text(140, y + rowH / 2 + 12, "on hotbar 1", {
-          fontFamily: "Arial",
-          fontSize: "11px",
-          color: "#aaa088",
-        })
-        .setOrigin(0.5);
-      row.add([tag, note]);
+      if (!hasSkinBtn) {
+        const note = this.scene.add
+          .text(140, equipY + 12, "on hotbar 1", {
+            fontFamily: "Arial",
+            fontSize: "11px",
+            color: "#aaa088",
+          })
+          .setOrigin(0.5);
+        row.add([tag, note]);
+      } else {
+        row.add(tag);
+      }
     }
 
     return row;
@@ -461,6 +608,186 @@ export class EquipmentBag {
       row.add(tag);
     }
 
+    return row;
+  }
+
+  private makeHatNoneRow(
+    y: number,
+    rowH: number
+  ): Phaser.GameObjects.Container {
+    const equipped = this.inventory.getEquippedHatId() === null;
+    const card = this.scene.add
+      .rectangle(0, y, 400, rowH, equipped ? 0x3a3420 : 0x2a2f3a, 0.95)
+      .setStrokeStyle(2, equipped ? 0xffe066 : 0x6a7355)
+      .setOrigin(0.5, 0);
+    const name = this.scene.add
+      .text(-150, y + rowH / 2, "No hat", {
+        fontFamily: "Georgia, serif",
+        fontSize: "18px",
+        color: equipped ? "#ffe066" : "#ffffff",
+      })
+      .setOrigin(0, 0.5);
+    const row = this.scene.add.container(0, 0);
+    row.add([card, name]);
+    if (!equipped) {
+      const btn = this.scene.add
+        .rectangle(140, y + rowH / 2, 100, 36, 0x3d6b4f)
+        .setStrokeStyle(1, 0x7dce7a)
+        .setInteractive({ useHandCursor: true });
+      const label = this.scene.add
+        .text(140, y + rowH / 2, "Unequip", {
+          fontFamily: "Arial",
+          fontSize: "15px",
+          color: "#ffffff",
+        })
+        .setOrigin(0.5);
+      btn.on("pointerover", () => btn.setFillStyle(0x4a8a62));
+      btn.on("pointerout", () => btn.setFillStyle(0x3d6b4f));
+      btn.on("pointerdown", () => {
+        if (this.inventory.equipHat(null)) {
+          this.refresh();
+          this.onHatChanged?.();
+          this.onChanged?.("Hat removed");
+        }
+      });
+      row.add([btn, label]);
+    } else {
+      row.add(
+        this.scene.add
+          .text(140, y + rowH / 2, "Equipped", {
+            fontFamily: "Arial",
+            fontSize: "14px",
+            color: "#ffe066",
+          })
+          .setOrigin(0.5)
+      );
+    }
+    return row;
+  }
+
+  private makeHatRow(
+    hatId: ItemId,
+    y: number,
+    rowH: number
+  ): Phaser.GameObjects.Container {
+    const def = ITEMS[hatId];
+    const equipped = this.inventory.getEquippedHatId() === hatId;
+    const card = this.scene.add
+      .rectangle(0, y, 400, rowH, equipped ? 0x3a3420 : 0x2a2f3a, 0.95)
+      .setStrokeStyle(2, equipped ? 0xffe066 : 0x6a7355)
+      .setOrigin(0.5, 0);
+    const [iw, ih] = this.fitIcon(def.textureKey, 48);
+    const icon = this.scene.add
+      .image(-150, y + rowH / 2, def.textureKey)
+      .setDisplaySize(iw, ih);
+    const name = this.scene.add
+      .text(-112, y + 18, def.name, {
+        fontFamily: "Georgia, serif",
+        fontSize: "18px",
+        color: equipped ? "#ffe066" : "#ffffff",
+      })
+      .setOrigin(0, 0);
+    const desc = this.scene.add
+      .text(-112, y + 46, def.description, {
+        fontFamily: "Arial",
+        fontSize: "12px",
+        color: "#c8c8c8",
+        wordWrap: { width: 220 },
+      })
+      .setOrigin(0, 0);
+    const row = this.scene.add.container(0, 0);
+    row.add([card, icon, name, desc]);
+    if (!equipped) {
+      const btn = this.scene.add
+        .rectangle(140, y + rowH / 2, 100, 36, 0x3d6b4f)
+        .setStrokeStyle(1, 0x7dce7a)
+        .setInteractive({ useHandCursor: true });
+      const label = this.scene.add
+        .text(140, y + rowH / 2, "Equip", {
+          fontFamily: "Arial",
+          fontSize: "15px",
+          color: "#ffffff",
+        })
+        .setOrigin(0.5);
+      btn.on("pointerover", () => btn.setFillStyle(0x4a8a62));
+      btn.on("pointerout", () => btn.setFillStyle(0x3d6b4f));
+      btn.on("pointerdown", () => {
+        if (this.inventory.equipHat(hatId)) {
+          this.refresh();
+          this.onHatChanged?.();
+          this.onChanged?.(`Equipped ${def.name}`);
+        }
+      });
+      row.add([btn, label]);
+    } else {
+      row.add(
+        this.scene.add
+          .text(140, y + rowH / 2, "Equipped", {
+            fontFamily: "Arial",
+            fontSize: "14px",
+            color: "#ffe066",
+          })
+          .setOrigin(0.5)
+      );
+    }
+    return row;
+  }
+
+  private makeAmuletRow(
+    amuletId: ItemId,
+    count: number,
+    y: number,
+    rowH: number
+  ): Phaser.GameObjects.Container {
+    const def = ITEMS[amuletId];
+
+    const card = this.scene.add
+      .rectangle(0, y, 400, rowH, 0x2a2f3a, 0.95)
+      .setStrokeStyle(2, 0x6a7355)
+      .setOrigin(0.5, 0);
+
+    const [iw, ih] = this.fitIcon(def.textureKey, 52);
+    const icon = this.scene.add
+      .image(-150, y + rowH / 2, def.textureKey)
+      .setDisplaySize(iw, ih);
+
+    const name = this.scene.add
+      .text(-112, y + 14, `${def.name}  ×${count}`, {
+        fontFamily: "Georgia, serif",
+        fontSize: "17px",
+        color: "#ffffff",
+      })
+      .setOrigin(0, 0);
+
+    const desc = this.scene.add
+      .text(-112, y + 42, def.description, {
+        fontFamily: "Arial",
+        fontSize: "12px",
+        color: "#c8c8c8",
+        wordWrap: { width: 210 },
+      })
+      .setOrigin(0, 0);
+
+    const btn = this.scene.add
+      .rectangle(140, y + rowH / 2, 100, 36, 0x4a3d6b)
+      .setStrokeStyle(1, 0xb48cff)
+      .setInteractive({ useHandCursor: true });
+    const label = this.scene.add
+      .text(140, y + rowH / 2, "Use", {
+        fontFamily: "Arial",
+        fontSize: "15px",
+        color: "#ffffff",
+      })
+      .setOrigin(0.5);
+
+    btn.on("pointerover", () => btn.setFillStyle(0x5c4a82));
+    btn.on("pointerout", () => btn.setFillStyle(0x4a3d6b));
+    btn.on("pointerdown", () => {
+      this.onAmuletUsed?.(amuletId);
+    });
+
+    const row = this.scene.add.container(0, 0);
+    row.add([card, icon, name, desc, btn, label]);
     return row;
   }
 }

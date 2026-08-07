@@ -10,6 +10,8 @@ import {
   rodMaxReachPx,
   DEPTH_PX_PER_METER,
   resolveCatchMutation,
+  rollFullMoonMutation,
+  rollSunnyMutation,
   FishMutationId,
   FishSizeId,
   luckApproachSpeedMult,
@@ -47,6 +49,7 @@ export class FishingSystem {
   private waterZones: WaterZone[];
   private waterSurfaceY: number;
   private weather: {
+    weather: string;
     modifyStats: (
       s: import("../data/items").RodStats,
       rodId?: string | null
@@ -59,6 +62,15 @@ export class FishingSystem {
   /** All fish currently racing the bobber — first to arrive wins. */
   private approachingFish: Fish[] = [];
   private castCooldown = 0;
+  /** Bobber glued to rod tip until the cast swing releases. */
+  private bobberOnTip = false;
+  private pendingCast?: {
+    castX: number;
+    surfaceY: number;
+    depthY: number;
+    zone: WaterZone;
+    lineDepth: number;
+  };
   /** When waiting started (ms) — timeout if nothing bites. */
   private waitingSince = 0;
   private secondWaitUntil = 0;
@@ -67,6 +79,8 @@ export class FishingSystem {
   onMinigameStart?: () => void;
   onFishingEnd?: (success: boolean) => void;
   onLineTooShort?: () => void;
+  /** Fired when a cast finds no fish in range (empty pool, etc.). */
+  onNoBite?: () => void;
   /** Camera should follow the bobber while the line is out. */
   onCastCameraFollow?: () => void;
   /** Restore camera to the player when fishing ends. */
@@ -101,6 +115,7 @@ export class FishingSystem {
   }
 
   setWeather(weather: {
+    weather: string;
     modifyStats: (
       s: import("../data/items").RodStats,
       rodId?: string | null
@@ -190,26 +205,53 @@ export class FishingSystem {
     this.state = "casting";
     this.secondFish = null;
     this.player.setLocked(true);
-    this.player.playFishCast(this.inventory.getEquippedRodId());
     this.player.setFacing(castX >= this.player.sprite.x ? "right" : "left");
 
-    const tip = this.player.getRodTip();
     const bobberTex =
       ITEMS[this.inventory.getEquippedBobberId()]?.textureKey ?? "bobber_red";
     this.bobber.setTexture(bobberTex);
-    this.bobber.castTo(tip.x, tip.y, castX, surfaceY, depthY);
+
+    this.pendingCast = { castX, surfaceY, depthY, zone, lineDepth };
+    this.bobberOnTip = true;
+
+    // Show bobber on the tip immediately and lock camera to it.
+    const tip = this.player.getRodTip();
+    this.bobber.stickTo(tip.x, tip.y, tip.x, tip.y);
     this.onCastCameraFollow?.();
 
+    this.player.playFishCast(this.inventory.getEquippedRodId(), () => {
+      this.releaseBobberCast();
+    });
+
+    return true;
+  }
+
+  /** Launch the bobber when the rod snaps forward. */
+  private releaseBobberCast(): void {
+    if (!this.pendingCast || !this.bobberOnTip) return;
+    const { castX, surfaceY, depthY, zone, lineDepth } = this.pendingCast;
+    this.pendingCast = undefined;
+    this.bobberOnTip = false;
+
+    const tip = this.player.getRodTip();
+    const flightMs = this.bobber.castTo(
+      tip.x,
+      tip.y,
+      castX,
+      surfaceY,
+      depthY
+    );
+
     const waitMs =
-      480 + (lineDepth > 0 ? 280 + lineDepth * DEPTH_PX_PER_METER * 4 : 0);
+      flightMs +
+      30 +
+      (lineDepth > 0 ? 280 + lineDepth * DEPTH_PX_PER_METER * 4 : 0);
     this.scene.time.delayedCall(waitMs, () => {
       if (this.state !== "casting") return;
       this.state = "waiting";
       this.player.playFishWait();
       this.pickAndApproachFish(castX, depthY, zone);
     });
-
-    return true;
   }
 
   private pickAndApproachFish(
@@ -250,6 +292,7 @@ export class FishingSystem {
           f.sprite.x <= zone.right + 40
       );
       if (deepNearby) this.onLineTooShort?.();
+      this.onNoBite?.();
       this.cancelCast();
       return;
     }
@@ -270,7 +313,10 @@ export class FishingSystem {
       this.castCooldown -= delta;
     }
 
-    if (this.bobber.active) {
+    if (this.bobberOnTip) {
+      const tip = this.player.getRodTip();
+      this.bobber.stickTo(tip.x, tip.y, tip.x, tip.y);
+    } else if (this.bobber.active) {
       const tip = this.player.getRodTip();
       this.bobber.updateLine(tip.x, tip.y);
     }
@@ -481,11 +527,21 @@ export class FishingSystem {
     ) {
       return "thunder";
     }
+    // Dolphins: half chance for rod / mutation-bobber / full-moon rolls
+    const dolphinMult = fish.speciesId === "dolphin" ? 0.5 : 1;
+    // Full Moon: Lunar 5% / Moonlight 10% on unmutated fish
+    if (this.weather?.weather === "fullmoon" && !fish.mutation) {
+      const moonMut = rollFullMoonMutation(dolphinMult);
+      if (moonMut) return moonMut;
+    }
+    // Sunny: Tanned 10% on unmutated fish
+    if (this.weather?.weather === "sunny" && !fish.mutation) {
+      const sunMut = rollSunnyMutation(dolphinMult);
+      if (sunMut) return sunMut;
+    }
     const rodId = this.inventory.getEquippedRodId();
     const rodChanceBonus =
       this.weather?.getRodMutationChanceBonus?.(rodId) ?? 0;
-    // Dolphins: half chance for rod / mutation-bobber rolls
-    const dolphinMult = fish.speciesId === "dolphin" ? 0.5 : 1;
     return resolveCatchMutation(
       rodId,
       fish.mutation,
@@ -590,6 +646,8 @@ export class FishingSystem {
   }
 
   cancelCast(): void {
+    this.bobberOnTip = false;
+    this.pendingCast = undefined;
     this.player.hideExclamation();
     this.bobber.reelIn();
     this.player.setLocked(false);

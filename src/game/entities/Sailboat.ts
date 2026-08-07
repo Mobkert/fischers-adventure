@@ -1,5 +1,7 @@
 import Phaser from "phaser";
+import { BoatDef, BoatId, BOATS } from "../data/boats";
 import { Player } from "./Player";
+import { ensureSplashTextures } from "../fx/WaterSplash";
 
 /**
  * Hull art: center (70, 28), mast stump around (69, 20).
@@ -9,66 +11,82 @@ const MAST_FOOT = { x: -1, y: -10 };
 
 export class Sailboat {
   hull: Phaser.Physics.Arcade.Sprite;
-  private sail: Phaser.GameObjects.Sprite;
+  private sail?: Phaser.GameObjects.Sprite;
   private scene: Phaser.Scene;
   private waterLeft: number;
   private waterRight: number;
   private baseY: number;
+  private waterY: number;
+  readonly def: BoatDef;
   occupied = false;
   private player: Player | null = null;
   private facingLeft = false;
   private sailMode: "idle" | "run" | "none" = "none";
 
   private vel = 0;
-  private readonly maxSpeed = 140;
+  private maxSpeed: number;
   private readonly turnSmooth = 5;
+  private wakeEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
+  private wakeTimer = 0;
 
   constructor(
     scene: Phaser.Scene,
     x: number,
     waterY: number,
     waterLeft: number,
-    waterRight: number
+    waterRight: number,
+    boatId: BoatId = "sailboat"
   ) {
     this.scene = scene;
+    this.def = BOATS[boatId];
     this.waterLeft = waterLeft;
     this.waterRight = waterRight;
+    this.waterY = waterY;
     this.baseY = waterY + 8;
+    this.maxSpeed = this.def.maxSpeed;
 
-    this.hull = scene.physics.add.sprite(x, this.baseY, "sailboat");
+    this.hull = scene.physics.add.sprite(x, this.baseY, this.def.hullKey);
     this.hull.setDepth(8);
     this.hull.setOrigin(0.5, 0.5);
+    if (this.def.displayScale) this.hull.setScale(this.def.displayScale);
     const body = this.hull.body as Phaser.Physics.Arcade.Body;
     body.allowGravity = false;
-    // Standable deck when empty — must not be pushed under by the player.
     body.setImmovable(true);
-    body.setSize(110, 16);
-    body.setOffset(15, 26);
+    body.setSize(this.def.body.w, this.def.body.h);
+    body.setOffset(this.def.body.ox, this.def.body.oy);
     this.hull.setVelocity(0, 0);
 
-    // Origin at bottom-center = mast foot, planted on the deck stump
-    this.sail = scene.add
-      .sprite(x, this.baseY, "sailboat_sail_0")
-      .setOrigin(0.5, 1)
-      .setDepth(9);
+    if (this.def.hasSail) {
+      this.sail = scene.add
+        .sprite(x, this.baseY, "sailboat_sail_0")
+        .setOrigin(0.5, 1)
+        .setDepth(9);
+    }
 
-    this.hull.setAlpha(0);
-    this.sail.setAlpha(0);
+    const fadeTargets = this.sail ? [this.hull, this.sail] : [this.hull];
+    for (const t of fadeTargets) t.setAlpha(0);
     scene.tweens.add({
-      targets: [this.hull, this.sail],
+      targets: fadeTargets,
       alpha: 1,
       duration: 400,
       ease: "Sine.easeOut",
     });
 
+    if (this.def.wake) this.setupWake();
+
     this.syncVisuals();
-    this.playSail("idle");
+    if (this.sail) this.playSail("idle");
+  }
+
+  get boatId(): BoatId {
+    return this.def.id;
   }
 
   getSeatWorld(): { x: number; y: number } {
+    const ox = this.def.seatOffset.x;
     return {
-      x: this.hull.x + (this.facingLeft ? 4 : -4),
-      y: this.hull.y - 18,
+      x: this.hull.x + (this.facingLeft ? -ox : ox),
+      y: this.hull.y + this.def.seatOffset.y,
     };
   }
 
@@ -94,7 +112,8 @@ export class Sailboat {
     this.player = null;
     this.vel = 0;
     this.hull.setVelocity(0, 0);
-    this.playSail("idle");
+    this.wakeEmitter?.stop();
+    if (this.sail) this.playSail("idle");
     player.exitBoat();
     const body = player.sprite.body as Phaser.Physics.Arcade.Body;
     body.enable = true;
@@ -110,7 +129,6 @@ export class Sailboat {
     const heel = Phaser.Math.Clamp(this.vel / this.maxSpeed, -1, 1) * 2.5;
     const body = this.hull.body as Phaser.Physics.Arcade.Body;
 
-    // Lock to waterline every frame (collision must not sink the hull).
     this.hull.setVelocityY(0);
     body.allowGravity = false;
     this.hull.y = this.baseY + bob;
@@ -121,7 +139,8 @@ export class Sailboat {
       this.hull.setVelocity(0, 0);
       body.reset(this.hull.x, this.baseY + bob);
       this.syncVisuals();
-      this.playSail("idle");
+      this.wakeEmitter?.stop();
+      if (this.sail) this.playSail("idle");
       return;
     }
 
@@ -130,7 +149,8 @@ export class Sailboat {
       this.applyVelocity();
       this.syncVisuals();
       this.seatPlayer();
-      this.playSail(Math.abs(this.vel) > 20 ? "run" : "idle");
+      this.updateWake(delta);
+      if (this.sail) this.playSail(Math.abs(this.vel) > 20 ? "run" : "idle");
       return;
     }
 
@@ -154,14 +174,74 @@ export class Sailboat {
     this.applyVelocity();
     this.syncVisuals();
     this.seatPlayer();
+    this.updateWake(delta);
 
-    const moving = Math.abs(this.vel) > 12 && (left || right);
-    this.playSail(moving || Math.abs(this.vel) > 25 ? "run" : "idle");
+    if (this.sail) {
+      const moving = Math.abs(this.vel) > 12 && (left || right);
+      this.playSail(moving || Math.abs(this.vel) > 25 ? "run" : "idle");
+    }
+  }
+
+  private setupWake(): void {
+    ensureSplashTextures(this.scene);
+    const wake = this.def.wake!;
+    this.wakeEmitter = this.scene.add.particles(0, 0, "water_splash_drop", {
+      speedX: { min: -30, max: 30 },
+      speedY: { min: -90 * wake.power, max: -30 * wake.power },
+      lifespan: { min: 280, max: 520 },
+      quantity: 2,
+      frequency: wake.frequency,
+      scale: { start: 0.55 * wake.power, end: 0.1 },
+      alpha: { start: 0.75, end: 0 },
+      tint: [0xffffff, 0xb8e0ff, 0x7ec8ff],
+      emitting: false,
+    });
+    this.wakeEmitter.setDepth(7);
+  }
+
+  private updateWake(delta: number): void {
+    if (!this.wakeEmitter || !this.def.wake) return;
+    const moving = Math.abs(this.vel) > 35;
+    if (!moving) {
+      this.wakeEmitter.stop();
+      return;
+    }
+    if (!this.wakeEmitter.emitting) this.wakeEmitter.start();
+
+    const dir = this.facingLeft ? 1 : -1; // spray behind stern
+    const sternX = this.hull.x + dir * (this.def.halfWidth * 0.55);
+    this.wakeEmitter.setPosition(sternX, this.waterY + 2);
+
+    // Occasional surface sheet splash
+    this.wakeTimer += delta;
+    if (this.wakeTimer > 90) {
+      this.wakeTimer = 0;
+      const sheet = this.scene.add
+        .ellipse(
+          sternX,
+          this.waterY + 2,
+          18 * this.def.wake.power,
+          6,
+          0xd0ecff,
+          0.45
+        )
+        .setDepth(7)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      this.scene.tweens.add({
+        targets: sheet,
+        scaleX: 2.2,
+        scaleY: 1.4,
+        alpha: 0,
+        x: sternX + dir * 18,
+        duration: 280,
+        onComplete: () => sheet.destroy(),
+      });
+    }
   }
 
   private applyVelocity(): void {
-    const minX = this.waterLeft + 70;
-    const maxX = this.waterRight - 70;
+    const minX = this.waterLeft + this.def.halfWidth;
+    const maxX = this.waterRight - this.def.halfWidth;
     this.hull.setVelocityX(this.vel);
     if (this.hull.x < minX) {
       this.hull.x = minX;
@@ -173,13 +253,12 @@ export class Sailboat {
     }
   }
 
-  /** Plant sail mast foot on the hull mast stump every frame. */
   private syncVisuals(): void {
     this.hull.setFlipX(this.facingLeft);
+    if (!this.sail) return;
 
     const dir = this.facingLeft ? -1 : 1;
     const ang = Phaser.Math.DegToRad(this.hull.angle);
-    // Rotate mast offset with hull heel so it stays planted
     const lx = MAST_FOOT.x * dir;
     const ly = MAST_FOOT.y;
     const rx = lx * Math.cos(ang) - ly * Math.sin(ang);
@@ -191,6 +270,7 @@ export class Sailboat {
   }
 
   private playSail(mode: "idle" | "run"): void {
+    if (!this.sail) return;
     if (this.sailMode === mode) return;
     this.sailMode = mode;
     this.sail.play(mode === "run" ? "sail-run" : "sail-idle", true);
@@ -207,7 +287,8 @@ export class Sailboat {
   }
 
   destroy(): void {
+    this.wakeEmitter?.destroy();
     this.hull.destroy();
-    this.sail.destroy();
+    this.sail?.destroy();
   }
 }

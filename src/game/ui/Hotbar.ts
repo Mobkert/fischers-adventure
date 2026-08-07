@@ -56,11 +56,18 @@ export class Hotbar {
 
       if (slotData.itemId) {
         const def = ITEMS[slotData.itemId];
-        this.icons[i].setTexture(def.textureKey).setVisible(true);
+        const tex = def.isRod
+          ? this.inventory.getRodTextureKey(slotData.itemId)
+          : def.textureKey;
+        this.icons[i].setTexture(tex).setVisible(true);
         if (def.isEquipmentBag || def.isBestiary) {
           this.icons[i].setDisplaySize(34, 34);
         } else if (def.isRod) {
-          this.icons[i].setDisplaySize(40, 40);
+          if (tex === "crystal_rod_skin") {
+            this.icons[i].setDisplaySize(48, 30);
+          } else {
+            this.icons[i].setDisplaySize(40, 40);
+          }
         } else {
           this.icons[i].setDisplaySize(28, 28);
         }
