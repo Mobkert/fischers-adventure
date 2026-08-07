@@ -216,4 +216,13 @@ export class SettingsMenu {
   isOpen(): boolean {
     return this.visible;
   }
+
+  /** Enlarge the gear button for phone thumbs. */
+  setMobileChrome(on: boolean): void {
+    this.gearBtn.setScale(on ? 1.55 : 1);
+    this.gearBtn.setPosition(
+      this.gearBtn.scene.scale.width - (on ? 52 : 36),
+      on ? 52 : 36
+    );
+  }
 }

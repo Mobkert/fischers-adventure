@@ -53,9 +53,10 @@ export class Hotbar {
     this.onSlotSelect = cb;
   }
 
-  /** Raise hotbar and enable tap-to-select when mobile controls are on. */
+  /** Raise + enlarge hotbar and enable tap-to-select when mobile controls are on. */
   setMobileLayout(on: boolean): void {
-    this.container.setY(on ? this.scene.scale.height - 168 : this.baseY);
+    this.container.setScale(on ? 1.55 : 1);
+    this.container.setY(on ? this.scene.scale.height - 250 : this.baseY);
     for (let i = 0; i < this.slots.length; i++) {
       const slot = this.slots[i];
       slot.removeAllListeners();

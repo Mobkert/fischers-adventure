@@ -663,6 +663,14 @@ export class UIScene extends Phaser.Scene {
   private applyMobileMode(on: boolean): void {
     this.mobileControls.setEnabled(on);
     this.hotbar.setMobileLayout(on);
+    this.settings.setMobileChrome(on);
+    this.minigame.setMobileLayout(on);
+    this.coins.setMobileLayout(on);
+    this.questTracker.setMobileLayout(on);
+    this.promptText
+      .setFontSize(on ? "22px" : "15px")
+      .setY(this.scale.height - (on ? 280 : 100))
+      .setPadding(on ? { x: 14, y: 10 } : { x: 10, y: 6 });
   }
 
   /** True while a mobile control is held (blocks world tap-cast). */

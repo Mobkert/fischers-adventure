@@ -58,11 +58,13 @@ export class CatchMinigame {
   private readonly drag = 1.6;
   private holdKey!: Phaser.Input.Keyboard.Key;
   private onResult?: (success: boolean) => void;
+  private baseY: number;
 
   constructor(scene: Phaser.Scene) {
     // Sit in the hotbar's place at the bottom of the screen
     const cx = scene.scale.width / 2;
-    const cy = scene.scale.height - 78;
+    this.baseY = scene.scale.height - 78;
+    const cy = this.baseY;
 
     this.root = scene.add.container(cx, cy).setDepth(150).setVisible(false);
     this.root.setScrollFactor(0);
@@ -298,6 +300,12 @@ export class CatchMinigame {
 
   isActive(): boolean {
     return this.active;
+  }
+
+  /** Bigger catch bar for phone screens. */
+  setMobileLayout(on: boolean): void {
+    this.root.setScale(on ? 1.35 : 1);
+    this.root.setY(on ? this.root.scene.scale.height - 200 : this.baseY);
   }
 
   update(delta: number, pointerDown: boolean): void {

@@ -194,6 +194,19 @@ export class CoinDisplay {
     this.tooltip.setVisible(true);
   }
 
+  /** Enlarge coins / clock / weather for phone UI. */
+  setMobileLayout(on: boolean): void {
+    const s = on ? 1.45 : 1;
+    const bottom = this.scene.scale.height - (on ? 36 : 20);
+    const statusY = this.scene.scale.height - (on ? 78 : 52);
+    this.label.setScale(s).setY(bottom);
+    this.weatherIcon.setScale(s).setY(statusY);
+    this.weatherIconImg.setScale(s).setY(statusY);
+    this.timeLabel.setScale(s).setY(statusY - 2);
+    this.timeIcon.setScale(s).setY(statusY);
+    this.layoutStatusRow();
+  }
+
   private placeTooltip(p: Phaser.Input.Pointer): void {
     const pad = 12;
     const tw = this.tooltip.width;

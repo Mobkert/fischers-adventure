@@ -284,4 +284,13 @@ export class QuestTracker {
       y += bodies[i].y + bodies[i].height + 8 + gap;
     }
   }
+
+  /** Enlarge quest panels for phone readability. */
+  setMobileLayout(on: boolean): void {
+    const s = on ? 1.35 : 1;
+    this.hermitRoot.setScale(s);
+    this.vaultRoot.setScale(s);
+    this.fishRoot.setScale(s);
+    this.layout();
+  }
 }
