@@ -321,7 +321,6 @@ export class UIScene extends Phaser.Scene {
       onBoat: () => this.handleBoatKey(),
     });
     this.hotbar.setOnSlotSelect((i) => this.selectHotbarSlot(i));
-    this.applyMobileMode(isMobileModeEnabled());
     this.coins = new CoinDisplay(this, this.inventory);
     this.coins.setWeather(this.weather);
     this.coins.setDayNight(this.dayNight);
@@ -363,6 +362,9 @@ export class UIScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(100)
       .setVisible(false);
+
+    // Apply after HUD pieces exist — Mobile Mode touches coins/quests/prompt
+    this.applyMobileMode(isMobileModeEnabled());
 
     const keyboard = this.input.keyboard!;
     for (let i = 0; i < 5; i++) {
@@ -661,16 +663,18 @@ export class UIScene extends Phaser.Scene {
   }
 
   private applyMobileMode(on: boolean): void {
-    this.mobileControls.setEnabled(on);
-    this.hotbar.setMobileLayout(on);
-    this.settings.setMobileChrome(on);
-    this.minigame.setMobileLayout(on);
-    this.coins.setMobileLayout(on);
-    this.questTracker.setMobileLayout(on);
-    this.promptText
-      .setFontSize(on ? "22px" : "15px")
-      .setY(this.scale.height - (on ? 280 : 100))
-      .setPadding(on ? { x: 14, y: 10 } : { x: 10, y: 6 });
+    this.mobileControls?.setEnabled(on);
+    this.hotbar?.setMobileLayout(on);
+    this.settings?.setMobileChrome(on);
+    this.minigame?.setMobileLayout(on);
+    this.coins?.setMobileLayout(on);
+    this.questTracker?.setMobileLayout(on);
+    if (this.promptText) {
+      this.promptText
+        .setFontSize(on ? "22px" : "15px")
+        .setY(this.scale.height - (on ? 280 : 100))
+        .setPadding(on ? { x: 14, y: 10 } : { x: 10, y: 6 });
+    }
   }
 
   /** True while a mobile control is held (blocks world tap-cast). */

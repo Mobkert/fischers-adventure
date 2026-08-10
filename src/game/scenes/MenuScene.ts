@@ -256,15 +256,18 @@ export class MenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const close = () => {
-      this.input.off("wheel", wheelHandler);
-      maskShape.destroy();
-      root.destroy(true);
-    };
     closeBg.on("pointerover", () => closeBg.setFillStyle(0x3a8a5a));
     closeBg.on("pointerout", () => closeBg.setFillStyle(0x2a6b4a));
-    closeBg.on("pointerdown", close);
-    dim.on("pointerdown", close);
+    const closeUpdateLog = () => {
+      this.input.off("wheel", wheelHandler);
+      listRoot.clearMask(true);
+      maskShape.destroy();
+      this.time.delayedCall(0, () => {
+        if (root.active) root.destroy(true);
+      });
+    };
+    closeBg.on("pointerdown", closeUpdateLog);
+    dim.on("pointerdown", closeUpdateLog);
 
     root.add([
       dim,
@@ -468,8 +471,11 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5);
     const close = () => {
       this.input.off("wheel", wheelHandler);
+      listRoot.clearMask(true);
       maskShape.destroy();
-      root.destroy(true);
+      this.time.delayedCall(0, () => {
+        if (root.active) root.destroy(true);
+      });
     };
     closeBg.on("pointerdown", close);
     dim.on("pointerdown", close);
