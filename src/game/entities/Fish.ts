@@ -15,6 +15,7 @@ import {
   applyMutationTint,
 } from "../data/items";
 import { playWaterSplash } from "../fx/WaterSplash";
+import { playTranquilBubblePopFx } from "../fx/TranquilBubblePop";
 import { CAVE_FISH_MAX_DEPTH_PX } from "../world/FrostpeakCaveWorld";
 
 export type FishState = "idle" | "approaching" | "bitten" | "caught";
@@ -23,6 +24,10 @@ export class Fish {
   sprite: Phaser.Physics.Arcade.Sprite;
   /** Soft ADD-blend aura behind the fish for glowing mutations. */
   private glow?: Phaser.GameObjects.Image;
+  /** Tranquil Rod — glass bubble enveloping the hooked fish. */
+  private tranquilBubble?: Phaser.GameObjects.Arc;
+  private tranquilBubbleShine?: Phaser.GameObjects.Arc;
+  private tranquilBubbleActive = false;
   state: FishState = "idle";
   speciesId: ItemId;
   size: FishSizeId = "normal";
@@ -57,6 +62,8 @@ export class Fish {
   private lockSpecies = false;
   /** Skip natural despawn cycle. */
   private noDespawn = false;
+  /** Optional custom species roller (Ashencast ocean trout chance). */
+  private customRollSpecies?: () => ItemId;
   /** Arc-jump state for surface-jumping species. */
   private jumping = false;
   private jumpT = 0;
@@ -82,7 +89,7 @@ export class Fish {
     speciesId?: ItemId,
     getExcludeSpecies: (self: Fish) => ItemId[] = () => [],
     getIsRainy: () => boolean = () => false,
-    options?: { lockSpecies?: boolean; noDespawn?: boolean },
+    options?: { lockSpecies?: boolean; noDespawn?: boolean; rollSpecies?: () => ItemId },
     getIsSunny: () => boolean = () => false
   ) {
     this.getLuck = getLuck;
@@ -92,8 +99,10 @@ export class Fish {
     this.habitat = habitat;
     this.lockSpecies = !!options?.lockSpecies;
     this.noDespawn = !!options?.noDespawn;
+    this.customRollSpecies = options?.rollSpecies;
     this.speciesId =
       speciesId ??
+      this.customRollSpecies?.() ??
       rollFishSpecies(this.getLuck(), habitat, this.getExcludeSpecies(this));
     const rareBonusMult = this.speciesId === "dolphin" ? 0.5 : 1;
     this.size = rollFishSize(rareBonusMult);
@@ -326,8 +335,67 @@ export class Fish {
     this.sprite.y = Math.max(this.sprite.y, this.surfaceY + 14);
   }
 
+  /** Show or hide the Tranquil Rod catch bubble around this fish. */
+  setTranquilBubble(active: boolean): void {
+    if (active === this.tranquilBubbleActive) return;
+    this.tranquilBubbleActive = active;
+    if (!active) {
+      this.clearTranquilBubble();
+      return;
+    }
+    const scene = this.sprite.scene;
+    const r = this.tranquilBubbleRadius();
+    this.tranquilBubble = scene.add
+      .circle(this.sprite.x, this.sprite.y, r, 0x8fe9ff, 0.34)
+      .setStrokeStyle(3, 0xf7ffff, 0.95)
+      .setDepth(this.sprite.depth + 1);
+    this.tranquilBubbleShine = scene.add
+      .circle(this.sprite.x - r * 0.28, this.sprite.y - r * 0.32, r * 0.14, 0xffffff, 0.88)
+      .setDepth(this.sprite.depth + 2);
+  }
+
+  popTranquilBubble(): void {
+    if (!this.tranquilBubbleActive) return;
+    const scene = this.sprite.scene;
+    const r = this.tranquilBubbleRadius();
+    playTranquilBubblePopFx(scene, this.sprite.x, this.sprite.y, r, {
+      depth: this.sprite.depth + 3,
+      scrollFactor: 1,
+      intensity: 1,
+    });
+    this.setTranquilBubble(false);
+  }
+
+  private tranquilBubbleRadius(): number {
+    return Math.max(this.sprite.displayWidth, this.sprite.displayHeight) * 0.68 + 10;
+  }
+
+  private clearTranquilBubble(): void {
+    this.tranquilBubble?.destroy();
+    this.tranquilBubbleShine?.destroy();
+    this.tranquilBubble = undefined;
+    this.tranquilBubbleShine = undefined;
+    this.tranquilBubbleActive = false;
+  }
+
+  private syncTranquilBubble(now: number): void {
+    if (!this.tranquilBubbleActive || !this.tranquilBubble) return;
+    const r = this.tranquilBubbleRadius();
+    const pulse = 0.82 + Math.sin(now / 170) * 0.1;
+    this.tranquilBubble
+      .setPosition(this.sprite.x, this.sprite.y)
+      .setRadius(r)
+      .setScale(pulse)
+      .setVisible(this.sprite.visible);
+    this.tranquilBubbleShine
+      ?.setPosition(this.sprite.x - r * 0.28, this.sprite.y - r * 0.32)
+      .setRadius(Math.max(3, r * 0.14))
+      .setVisible(this.sprite.visible);
+  }
+
   markCaught(): void {
     this.state = "caught";
+    this.clearTranquilBubble();
     this.sprite.setVisible(false);
     this.glow?.setVisible(false);
     this.velX = 0;
@@ -335,19 +403,35 @@ export class Fish {
     this.sprite.setVelocity(0, 0);
   }
 
+  /** Apply / replace mutation visuals (e.g. thunderstorm lightning hit). */
+  setMutation(mutation: FishMutationId | null): void {
+    this.mutation = mutation;
+    const def = ITEMS[this.speciesId];
+    const s = sizeScale(this.size);
+    const w = (def.displayWidth ?? 48) * s;
+    const h = (def.displayHeight ?? 16) * s;
+    this.applyMutationVisual(w, h);
+  }
+
   resetIdle(x?: number, y?: number): void {
     this.despawning = false;
+    this.clearTranquilBubble();
     this.state = "idle";
     this.jumping = false;
     if (!this.lockSpecies) {
-      this.speciesId = rollFishSpecies(
-        this.getLuck(),
-        this.habitat,
-        this.getExcludeSpecies(this)
-      );
+      this.speciesId =
+        this.customRollSpecies?.() ??
+        rollFishSpecies(
+          this.getLuck(),
+          this.habitat,
+          this.getExcludeSpecies(this)
+        );
       const rareBonusMult = this.speciesId === "dolphin" ? 0.5 : 1;
       this.size = rollFishSize(rareBonusMult);
       this.mutation = this.rollSpawnMutation(rareBonusMult);
+    } else if (ITEMS[this.speciesId].persistOnFail) {
+      this.size = "normal";
+      this.mutation = null;
     }
     this.applySpeciesVisual();
     this.applySpeciesSwimStats();
@@ -422,6 +506,7 @@ export class Fish {
       this.clampUnderwater();
     }
     this.syncGlow(now);
+    this.syncTranquilBubble(now);
   }
 
   private beginDespawn(): void {
@@ -761,6 +846,7 @@ export class Fish {
   }
 
   destroy(): void {
+    this.clearTranquilBubble();
     this.clearGlow();
     this.sprite.destroy();
   }

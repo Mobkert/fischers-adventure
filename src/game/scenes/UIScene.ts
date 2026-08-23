@@ -13,7 +13,6 @@ import {
   MUTATIONS,
   FISH_SIZES,
   sizeScale,
-  FishRarity,
 } from "../data/items";
 import { BoatMenu } from "../ui/BoatMenu";
 import { CoinDisplay } from "../ui/CoinDisplay";
@@ -22,6 +21,8 @@ import { WildflowerBuyPanel } from "../ui/WildflowerBuyPanel";
 import { CoralRodOfferPanel } from "../ui/CoralRodOfferPanel";
 import { BargainPanel, BargainSession } from "../ui/BargainPanel";
 import { AugmentUpgradePanel } from "../ui/AugmentUpgradePanel";
+import { ForgeCraftPanel } from "../ui/ForgeCraftPanel";
+import { CodeGuyPanel } from "../ui/CodeGuyPanel";
 import { BargainKind } from "../systems/BargainLogic";
 import { SettingsMenu } from "../ui/SettingsMenu";
 import { MobileControls } from "../ui/MobileControls";
@@ -43,6 +44,7 @@ interface UISceneData {
   dayNight: DayNightCycle;
   player: Player;
   getPointerDown: () => boolean;
+  getPointerRightDown: () => boolean;
   tryMobileCast: () => void;
   canOpenBoatMenu: () => boolean;
   spawnBoat: (id: import("../data/boats").BoatId) => void;
@@ -84,23 +86,6 @@ interface UISceneData {
   persistSave: () => void;
 }
 
-function rarityTierPenalty(rarity: FishRarity): number {
-  switch (rarity) {
-    case "common":
-      return 5;
-    case "uncommon":
-      return 10;
-    case "rare":
-      return 18;
-    case "epic":
-      return 28;
-    case "legendary":
-      return 40;
-    case "mythical":
-      return 55;
-  }
-}
-
 export class UIScene extends Phaser.Scene {
   private inventory!: InventorySystem;
   private fishing!: FishingSystem;
@@ -108,6 +93,7 @@ export class UIScene extends Phaser.Scene {
   private dayNight!: DayNightCycle;
   private player!: Player;
   private getPointerDown!: () => boolean;
+  private getPointerRightDown!: () => boolean;
   private tryMobileCast!: () => void;
   private canOpenBoatMenu!: () => boolean;
   private spawnBoat!: (id: import("../data/boats").BoatId) => void;
@@ -155,6 +141,9 @@ export class UIScene extends Phaser.Scene {
   private wildflowerBuy!: WildflowerBuyPanel;
   private coralRodOffer!: CoralRodOfferPanel;
   private bargainPanel!: BargainPanel;
+  private forgePanel!: ForgeCraftPanel;
+  private codeGuyPanel!: CodeGuyPanel;
+  private codeGuyCloseHook?: () => void;
   private augmentUpgrade!: AugmentUpgradePanel;
   private settings!: SettingsMenu;
   private mobileControls!: MobileControls;
@@ -177,6 +166,7 @@ export class UIScene extends Phaser.Scene {
     this.dayNight = data.dayNight;
     this.player = data.player;
     this.getPointerDown = data.getPointerDown;
+    this.getPointerRightDown = data.getPointerRightDown;
     this.tryMobileCast = data.tryMobileCast;
     this.canOpenBoatMenu = data.canOpenBoatMenu;
     this.spawnBoat = data.spawnBoat;
@@ -297,6 +287,30 @@ export class UIScene extends Phaser.Scene {
       },
       () => this.onCoinsChanged()
     );
+    this.forgePanel = new ForgeCraftPanel(this, this.inventory);
+    this.forgePanel.setOnCrafted(() => {
+      this.hotbar.refresh();
+      this.equipmentBag.refresh();
+      this.inventoryPanel.refresh();
+      this.persistSave();
+      this.showToast("Forged the Tranquil Rod!", "#7CFC00");
+    });
+    this.codeGuyPanel = new CodeGuyPanel(this);
+    this.codeGuyPanel.setInventory(this.inventory);
+    this.codeGuyPanel.setCallbacks(
+      () => {
+        this.setPrompt(null);
+        this.codeGuyCloseHook?.();
+        this.codeGuyCloseHook = undefined;
+      },
+      () => {
+        this.onCoinsChanged();
+        this.equipmentBag.refresh();
+        this.inventoryPanel.refresh();
+        this.persistSave();
+      },
+      (msg, color) => this.showToast(msg, color)
+    );
     this.augmentUpgrade = new AugmentUpgradePanel(this);
     this.augmentUpgrade.setInventory(this.inventory);
     this.augmentUpgrade.setOnPicked(() => {
@@ -370,11 +384,13 @@ export class UIScene extends Phaser.Scene {
     for (let i = 0; i < 5; i++) {
       const key = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE + i);
       key.on("down", () => {
+        if (this.isTextEntryOpen()) return;
         this.selectHotbarSlot(i);
       });
     }
 
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E).on("down", () => {
+      if (this.isTextEntryOpen()) return;
       this.handleInventoryKey();
     });
 
@@ -382,6 +398,14 @@ export class UIScene extends Phaser.Scene {
       if (this.tutorial.visible) return;
       if (this.settings.isOpen()) {
         this.settings.setOpen(false);
+        return;
+      }
+      if (this.forgePanel.isOpen()) {
+        this.closeForge();
+        return;
+      }
+      if (this.codeGuyPanel.isOpen()) {
+        this.closeCodeGuy();
         return;
       }
       if (this.equipmentBag.visible) {
@@ -398,6 +422,7 @@ export class UIScene extends Phaser.Scene {
     });
 
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W).on("down", () => {
+      if (this.isTextEntryOpen()) return;
       if (this.tutorial.visible) return;
       if (this.isInFrostpeakCave?.()) return;
       if (this.minigame.isActive() || this.boatMenu.visible) return;
@@ -420,10 +445,12 @@ export class UIScene extends Phaser.Scene {
     });
 
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.B).on("down", () => {
+      if (this.isTextEntryOpen()) return;
       this.handleBoatKey();
     });
 
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F).on("down", () => {
+      if (this.isTextEntryOpen()) return;
       this.handleInteractKey();
     });
 
@@ -435,6 +462,7 @@ export class UIScene extends Phaser.Scene {
     });
 
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X).on("down", () => {
+      if (this.isTextEntryOpen()) return;
       if (this.tutorial.visible) return;
       if (this.augmentUpgrade.visible) return;
       if (this.minigame.isActive() || this.boatMenu.visible) return;
@@ -450,6 +478,10 @@ export class UIScene extends Phaser.Scene {
         this.closeWildflowerBuy();
         return;
       }
+      if (this.fishing.isBusy()) {
+        this.fishing.cancelCast();
+        return;
+      }
       this.declineMerchant();
     });
 
@@ -461,6 +493,10 @@ export class UIScene extends Phaser.Scene {
       }
       if (this.bargainPanel.visible) {
         this.bargainPanel.handleKey(event);
+        return;
+      }
+      if (this.codeGuyPanel.isOpen()) {
+        this.codeGuyPanel.handleKey(event);
         return;
       }
       if (this.coralRodOffer.visible) {
@@ -514,7 +550,8 @@ export class UIScene extends Phaser.Scene {
         : this.fishing.getSecondMutation();
       const worldMutDef2 = worldMut2 ? MUTATIONS[worldMut2] : null;
 
-      // Dual catch: combine intensity + heavy progress penalty
+      // Dual catch: combine both fish stats, but only use the fishs' own
+      // progress penalties and cap the result at -80%.
       let speedMult = def.minigameSpeed ?? 1;
       let progressSpeed = rod.progressSpeed + (def.catchProgress ?? 0);
       let chaos = def.minigameChaos ?? 1;
@@ -523,28 +560,24 @@ export class UIScene extends Phaser.Scene {
       let unstoppable = def.unstoppableJerky ?? false;
       if (dual && def2) {
         speedMult = Math.max(speedMult, def2.minigameSpeed ?? 1) * 1.25;
-        progressSpeed +=
-          (def2.catchProgress ?? 0) -
-          55 -
-          (rarityTierPenalty(rarity) +
-            rarityTierPenalty(def2.rarity ?? "common"));
+        progressSpeed += def2.catchProgress ?? 0;
         chaos = Math.max(chaos, def2.minigameChaos ?? 1) * 1.15;
         drainMult = Math.max(drainMult, def2.drainMult ?? 1) * 1.2;
         jerky = jerky || !!def2.minigameJerky;
         unstoppable = unstoppable || !!def2.unstoppableJerky;
       }
-      // Twin-hook stacks can't go below −80; solo mythicals (whale) can hit −90
+      // Twin-hook stacks can't go below -80; solo mythicals (whale) can hit -95.
       progressSpeed = Math.max(dual ? -80 : -95, progressSpeed);
 
       this.equipmentBag.setOpen(false);
       this.bestiaryPanel.setOpen(false);
       this.hotbar.setVisible(false);
       this.minigame.start(
-        (success) => {
+        (success, meta) => {
           this.hotbar.setVisible(true);
           this.hotbar.refresh();
           const wasNew = !this.inventory.isBestiaryFound(speciesId);
-          this.fishing.completeCatch(success);
+          this.fishing.completeCatch(success, meta);
           if (success) {
             const caught = this.fishing.lastCaughtFish;
             if (caught.length > 1) {
@@ -615,6 +648,20 @@ export class UIScene extends Phaser.Scene {
           crystalBurst:
             ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
             "crystal_burst",
+          zeusStrike:
+            ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+            "zeus_strike",
+          recoilKick:
+            ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+            "recoil_kick",
+          forgeStrike:
+            ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+            "forge_strike",
+          birthdayParty:
+            ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+            "birthday_party",
+          tranquilBubble: this.fishing.getTranquilBubbleProc(),
+          onTranquilBubblePop: () => this.fishing.popTargetTranquilBubble(),
           second:
             dual && def2
               ? {
@@ -687,11 +734,17 @@ export class UIScene extends Phaser.Scene {
   }
 
   selectHotbarSlot(i: number): void {
+    if (this.isTextEntryOpen()) return;
     if (this.tutorial.visible) return;
     if (this.minigame.isActive() || this.boatMenu.visible) return;
     if (this.coralRodOffer.visible || this.wildflowerBuy.visible) return;
+    if (this.codeGuyPanel.isOpen()) return;
     if (this.bargainPanel.visible) return;
     if (this.augmentUpgrade.visible) return;
+    if (this.fishing.isBusy()) {
+      if (i === 0) return;
+      this.fishing.cancelCast();
+    }
     this.inventory.selectHotbar(i);
     this.hotbar.refresh();
     // Slot 2 (index 1) = equipment bag · Slot 3 (index 2) = bestiary
@@ -710,6 +763,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private handleInventoryKey(): void {
+    if (this.isTextEntryOpen()) return;
     if (this.tutorial.visible) return;
     if (this.minigame.isActive() || this.boatMenu.visible) return;
     this.equipmentBag.setOpen(false);
@@ -718,6 +772,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private handleBoatKey(): void {
+    if (this.isTextEntryOpen()) return;
     if (this.tutorial.visible) return;
     if (this.minigame.isActive()) return;
     if (
@@ -742,8 +797,13 @@ export class UIScene extends Phaser.Scene {
     if (this.minigame.isActive() || this.boatMenu.visible) return;
     if (this.equipmentBag.visible || this.bestiaryPanel.visible) return;
     if (this.coralRodOffer.visible) return;
+    if (this.codeGuyPanel.isOpen()) return;
     if (this.augmentUpgrade.visible) return;
     if (this.bargainPanel.visible) return;
+    if (this.forgePanel.isOpen()) {
+      this.closeForge();
+      return;
+    }
     if (this.wildflowerBuy.visible) {
       this.tryBuyJungleRod();
       this.hotbar.refresh();
@@ -782,9 +842,45 @@ export class UIScene extends Phaser.Scene {
       this.wildflowerBuy.visible ||
       this.coralRodOffer.visible ||
       this.bargainPanel.visible ||
+      this.codeGuyPanel.isOpen() ||
+      this.forgePanel.isOpen() ||
       this.augmentUpgrade.visible ||
       this.settings.isOpen()
     );
+  }
+
+  /** Code Guy panel — block game hotkeys so letters go into the code field. */
+  private isTextEntryOpen(): boolean {
+    return this.codeGuyPanel.isOpen();
+  }
+
+  openForge(onClose?: () => void): void {
+    this.forgePanel.show(onClose);
+    this.setPrompt("ESC / F — Close forge");
+  }
+
+  closeForge(): void {
+    this.forgePanel.hide();
+  }
+
+  isForgeOpen(): boolean {
+    return this.forgePanel.isOpen();
+  }
+
+  openCodeGuy(onClose?: () => void): void {
+    this.codeGuyCloseHook = onClose;
+    this.codeGuyPanel.open();
+    this.setPrompt("Type code · Enter redeem · Esc leave");
+  }
+
+  closeCodeGuy(): void {
+    if (this.codeGuyPanel.isOpen()) {
+      this.codeGuyPanel.close();
+    }
+  }
+
+  isCodeGuyOpen(): boolean {
+    return this.codeGuyPanel.isOpen();
   }
 
   private maybeOpenAugmentUpgrade(): void {
@@ -950,7 +1046,14 @@ export class UIScene extends Phaser.Scene {
     this.bargainPanel.update();
 
     if (this.minigame.isActive()) {
-      this.minigame.update(delta, this.getPointerDown());
+      const p = this.input.activePointer;
+      this.minigame.update(
+        delta,
+        this.getPointerDown(),
+        this.getPointerRightDown(),
+        p.x,
+        p.y
+      );
     }
   }
 }

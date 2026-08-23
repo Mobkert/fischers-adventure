@@ -42,9 +42,14 @@ export class QuestTracker {
   private fishBg: Phaser.GameObjects.Graphics;
   private fishTitle: Phaser.GameObjects.Text;
   private fishBody: Phaser.GameObjects.Text;
+  private ashenRoot: Phaser.GameObjects.Container;
+  private ashenBg: Phaser.GameObjects.Graphics;
+  private ashenTitle: Phaser.GameObjects.Text;
+  private ashenBody: Phaser.GameObjects.Text;
   private lastHermitKey = "";
   private lastVaultKey = "";
   private lastFishKey = "";
+  private lastAshenKey = "";
 
   constructor(scene: Phaser.Scene, inventory: InventorySystem) {
     this.inventory = inventory;
@@ -121,6 +126,30 @@ export class QuestTracker {
     this.fishRoot.add([this.fishBg, this.fishTitle, this.fishBody]);
     this.fishRoot.setVisible(false);
 
+    this.ashenRoot = scene.add.container(14, 14).setScrollFactor(0).setDepth(105);
+    this.ashenBg = scene.add.graphics();
+    this.ashenTitle = scene.add
+      .text(10, 8, "", {
+        fontFamily: "Georgia, serif",
+        fontSize: "14px",
+        color: "#ffcc99",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0, 0);
+    this.ashenBody = scene.add
+      .text(10, 28, "", {
+        fontFamily: "Arial",
+        fontSize: "12px",
+        color: "#e8eef4",
+        stroke: "#000000",
+        strokeThickness: 2,
+        lineSpacing: 4,
+      })
+      .setOrigin(0, 0);
+    this.ashenRoot.add([this.ashenBg, this.ashenTitle, this.ashenBody]);
+    this.ashenRoot.setVisible(false);
+
     this.refresh();
   }
 
@@ -128,6 +157,7 @@ export class QuestTracker {
     this.refreshHermit();
     this.refreshVault();
     this.refreshFishQuest();
+    this.refreshAshencast();
     this.layout();
   }
 
@@ -255,6 +285,41 @@ export class QuestTracker {
     this.drawPanel(this.fishBg, this.fishTitle, this.fishBody, 0x7ec8e8);
   }
 
+  private refreshAshencast(): void {
+    const stage = this.inventory.ashencastQuestStage;
+    if (stage < 1 || stage > 2) {
+      this.ashenRoot.setVisible(false);
+      this.lastAshenKey = "";
+      return;
+    }
+    let title = "";
+    let body = "";
+    let key = `a${stage}`;
+    if (stage === 1) {
+      const n = this.inventory.countOwnedAnvilPieces();
+      title = `Forge — Anvil Pieces  (${n}/3)`;
+      body =
+        n >= 3
+          ? "All pieces ready — return to the Forge Keeper"
+          : "Find 3 anvil shards\nCurio · Ocean surface · Amulet cave";
+      key += `|${n}`;
+    } else {
+      const have = this.inventory.hasAshencastTrout() ? 1 : 0;
+      title = "Forge — Ashencast Trout";
+      body =
+        have === 1
+          ? "Trout ready — return to the Forge Keeper"
+          : "Catch an Ashencast Trout near the isle";
+      key += `|${have}`;
+    }
+    if (key === this.lastAshenKey && this.ashenRoot.visible) return;
+    this.lastAshenKey = key;
+    this.ashenTitle.setText(title);
+    this.ashenBody.setText(body);
+    this.ashenRoot.setVisible(true);
+    this.drawPanel(this.ashenBg, this.ashenTitle, this.ashenBody, 0xc45a3a);
+  }
+
   private drawPanel(
     bg: Phaser.GameObjects.Graphics,
     title: Phaser.GameObjects.Text,
@@ -275,8 +340,18 @@ export class QuestTracker {
   private layout(): void {
     const gap = 10;
     let y = 14;
-    const stack = [this.hermitRoot, this.vaultRoot, this.fishRoot] as const;
-    const bodies = [this.hermitBody, this.vaultBody, this.fishBody];
+    const stack = [
+      this.hermitRoot,
+      this.vaultRoot,
+      this.fishRoot,
+      this.ashenRoot,
+    ] as const;
+    const bodies = [
+      this.hermitBody,
+      this.vaultBody,
+      this.fishBody,
+      this.ashenBody,
+    ];
     for (let i = 0; i < stack.length; i++) {
       const root = stack[i];
       if (!root.visible) continue;
@@ -291,6 +366,7 @@ export class QuestTracker {
     this.hermitRoot.setScale(s);
     this.vaultRoot.setScale(s);
     this.fishRoot.setScale(s);
+    this.ashenRoot.setScale(s);
     this.layout();
   }
 }

@@ -1,4 +1,27 @@
 import Phaser from "phaser";
+import { playTranquilBubblePopFx } from "../fx/TranquilBubblePop";
+import { playLightningCrack, playWarningBeep } from "../audio/ZeusSfx";
+import { playRecoilShot, playRecoilWarning } from "../audio/RecoilSfx";
+import {
+  playForgeArmSfx,
+  playForgeHitSfx,
+  playForgeLaunchSfx,
+} from "../audio/ForgeRodSfx";
+import { playForgeWeaponHitFx } from "../fx/ForgeRodFx";
+
+export type CatchMinigameResultMeta = {
+  guaranteeThunder?: boolean;
+  guaranteeAshencast?: boolean;
+  guaranteeConfetti?: boolean;
+};
+
+type BirthdayBalloonKind = "blue" | "red" | "green";
+
+type BirthdayBalloon = {
+  kind: BirthdayBalloonKind;
+  root: Phaser.GameObjects.Container;
+  vy: number;
+};
 
 export class CatchMinigame {
   private root: Phaser.GameObjects.Container;
@@ -13,6 +36,11 @@ export class CatchMinigame {
   private glowColor2: number | null = null;
   private progressFill!: Phaser.GameObjects.Rectangle;
   private progressBg!: Phaser.GameObjects.Rectangle;
+  private bubbleMarker!: Phaser.GameObjects.Arc;
+  private fishBubble!: Phaser.GameObjects.Arc;
+  private fishBubbleShine!: Phaser.GameObjects.Arc;
+  private fishBubbleW = 42;
+  private fishBubbleH = 14;
   private hint!: Phaser.GameObjects.Text;
 
   private active = false;
@@ -47,6 +75,87 @@ export class CatchMinigame {
   /** Crystal Rod: roll burst every 0.5s. */
   private crystalBurst = false;
   private crystalBurstTimer = 0;
+  private readonly crystalBurstProgressGain = 0.05;
+  private readonly crystalBurstStunPause = 0.425;
+  private readonly crystalBurstStunDecision = 0.45;
+  /** Tranquil Rod: bubble on the fish; at 50% progress it pops and fill speeds up. */
+  private tranquilBubble = false;
+  private bubbleActive = false;
+  private tranquilRush = false;
+  private readonly bubbleBurstProgress = 0.5;
+  /** Fill rate after the bubble pops (~0.4s from 50% → 100% in the white zone). */
+  private readonly tranquilRushFillRate = 1.25;
+  /** Zeus Rod: periodic lightning zones on the catch bar. */
+  private zeusStrike = false;
+  private zeusRollTimer = 0;
+  /** Chance per second to telegraph; halves after each strike (25% → 12.5% → …). */
+  private zeusStrikeChance = 0.25;
+  private zeusPhase: "idle" | "warn" | "strike" = "idle";
+  private zeusZoneX = 0;
+  private readonly zeusZoneW = 96;
+  private zeusWarnBeepsLeft = 0;
+  private zeusWarnTimer = 0;
+  private zeusWarnVisible = false;
+  private electrified = false;
+  private guaranteeThunder = false;
+  private zeusZoneRect!: Phaser.GameObjects.Rectangle;
+  private zeusWarnIcon!: Phaser.GameObjects.Text;
+  private elecSparks: Phaser.GameObjects.Rectangle[] = [];
+  /** Recoil Rod: after 4 fish moves, warn then blast the bar across. */
+  private recoilKick = false;
+  private recoilFishMoves = 0;
+  private recoilPhase: "idle" | "warn" | "kick" = "idle";
+  private recoilWarnTimer = 0;
+  private recoilWarnRoot!: Phaser.GameObjects.Container;
+  private recoilWarnIcon!: Phaser.GameObjects.Text;
+  private readonly recoilProgressGain = 0.225;
+  /** Bar slides quickly to the far side instead of teleporting. */
+  private recoilKickActive = false;
+  private recoilKickTarget = 0;
+  private readonly recoilKickSpeed = 1350;
+  /** Forge Rod: swords/axes after 3 fish moves. */
+  private forgeStrike = false;
+  private forgeFishMoves = 0;
+  private forgeCooldownMoves = 0;
+  private forgePhase: "idle" | "arming" | "launching" = "idle";
+  private forgeArmingTimer = 0;
+  private forgeWeaponsPending = 0;
+  /** Forge Rod — +5 progress speed percentage points per sword (stacks). */
+  private baseProgressSpeed = 0;
+  private forgeSwordSpeedAdd = 0;
+  private readonly forgeSwordSpeedBonus = 5;
+  private readonly forgeAxeProgressGain = 0.1;
+  private readonly forgeEmberSwordChance = 0.025;
+  private forgeWeaponSprites: Phaser.GameObjects.Image[] = [];
+  /** Forge Rod — at least one orange ember weapon in the volley guarantees Ashencast. */
+  private forgeHadEmberWeapon = false;
+  /** Birthday Rod: party balloons, zone tick, instant confetti catch. */
+  private birthdayParty = false;
+  private birthdayBalloons: BirthdayBalloon[] = [];
+  private birthdayBalloonLayer!: Phaser.GameObjects.Container;
+  private birthdaySpawnTimer = 0;
+  private birthdayBarTickTimer = 0;
+  private birthdayZoneTickInterval = 0.5;
+  private readonly birthdayZoneTickIntervalStart = 0.5;
+  private readonly birthdayZoneTickIntervalMin = 0.1;
+  private readonly birthdayZoneTickIntervalStep = 0.1;
+  private whiteBarWidthTween?: Phaser.Tweens.Tween;
+  private readonly birthdayBalloonW = 48;
+  private readonly birthdayBalloonH = 58;
+  private readonly birthdayBalloonHitR = 38;
+  /** Red balloon +10% progress speed stacks (updates Progress hint). */
+  private birthdayBalloonSpeedAdd = 0;
+  /** +1% progress speed every 0.5s while fish stays in the white zone. */
+  private birthdayZoneSpeedAdd = 0;
+  /** Green balloon +10% white bar width stacks. */
+  private birthdayBarSizeMult = 1;
+  private birthdayControlShare = 0;
+  private guaranteeConfetti = false;
+  private birthdayInstaPending = false;
+  private birthdayNextSpawn = 1;
+  private prevRightDown = false;
+  private baseFishMaxSpeed = 155;
+  private baseFishAccel = 220;
   /** White zone starts at this share of the grey bar; control % adds on top. */
   private readonly baseWhiteShare = 0.2;
   /** Acceleration when holding (right) or releasing (left gravity). */
@@ -57,7 +166,8 @@ export class CatchMinigame {
   /** Soft damping so it doesn't feel endless. */
   private readonly drag = 1.6;
   private holdKey!: Phaser.Input.Keyboard.Key;
-  private onResult?: (success: boolean) => void;
+  private onResult?: (success: boolean, meta?: CatchMinigameResultMeta) => void;
+  private onTranquilBubblePop?: () => void;
   private baseY: number;
 
   constructor(scene: Phaser.Scene) {
@@ -111,6 +221,59 @@ export class CatchMinigame {
     this.progressFill = scene.add
       .rectangle(-this.barWidth / 2, 34, 0, 10, 0x4caf50)
       .setOrigin(0, 0.5);
+    this.bubbleMarker = scene.add
+      .circle(-this.barWidth / 2 + this.barWidth * this.bubbleBurstProgress, 34, 8, 0x8fe9ff, 0.95)
+      .setStrokeStyle(2, 0xf7ffff)
+      .setVisible(false);
+    this.fishBubble = scene.add
+      .circle(0, -8, 24, 0x8fe9ff, 0.34)
+      .setStrokeStyle(3, 0xf7ffff, 0.95)
+      .setVisible(false);
+    this.fishBubbleShine = scene.add
+      .circle(0, -8, 4, 0xffffff, 0.88)
+      .setVisible(false);
+
+    this.zeusZoneRect = scene.add
+      .rectangle(0, -8, this.zeusZoneW, this.barHeight + 4, 0xffe066, 0.28)
+      .setStrokeStyle(2, 0xffcc33, 0.9)
+      .setVisible(false);
+    this.zeusWarnIcon = scene.add
+      .text(0, -8, "⚠", {
+        fontFamily: "Arial",
+        fontSize: "28px",
+        color: "#ffe066",
+        stroke: "#000000",
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5)
+      .setVisible(false);
+
+    for (let i = 0; i < 6; i++) {
+      const spark = scene.add
+        .rectangle(0, -8, 3, 10, 0xa8e8ff, 0.85)
+        .setVisible(false)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      this.elecSparks.push(spark);
+    }
+
+    this.recoilWarnRoot = scene.add
+      .container(scene.scale.width / 2, scene.scale.height / 2 - 48)
+      .setDepth(260)
+      .setScrollFactor(0)
+      .setVisible(false);
+    const recoilRing = scene.add
+      .circle(0, 0, 42, 0xff5533, 0.22)
+      .setStrokeStyle(4, 0xff8866, 0.95);
+    this.recoilWarnIcon = scene.add
+      .text(0, 0, "⚠", {
+        fontFamily: "Arial",
+        fontSize: "56px",
+        color: "#ff6644",
+        stroke: "#000000",
+        strokeThickness: 5,
+      })
+      .setOrigin(0.5);
+    this.recoilWarnRoot.add([recoilRing, this.recoilWarnIcon]);
 
     this.hint = scene.add
       .text(0, 54, "", {
@@ -125,23 +288,35 @@ export class CatchMinigame {
       panel,
       title,
       this.greyBar,
+      this.zeusZoneRect,
       this.whiteBar,
+      ...this.elecSparks,
       this.fishGlow,
+      this.fishBubble,
+      this.fishBubbleShine,
       this.fishIcon,
       this.fishGlow2,
       this.fishIcon2,
+      this.zeusWarnIcon,
       this.progressBg,
       this.progressFill,
+      this.bubbleMarker,
       this.hint,
     ]);
 
     this.holdKey = scene.input.keyboard!.addKey(
       Phaser.Input.Keyboard.KeyCodes.SPACE
     );
+
+    this.birthdayBalloonLayer = scene.add
+      .container(0, 0)
+      .setDepth(180)
+      .setScrollFactor(0)
+      .setVisible(false);
   }
 
   start(
-    onResult: (success: boolean) => void,
+    onResult: (success: boolean, meta?: CatchMinigameResultMeta) => void,
     options?: {
       textureKey?: string;
       speedMult?: number;
@@ -174,6 +349,18 @@ export class CatchMinigame {
       glowColor?: number | null;
       /** Crystal Rod burst ability. */
       crystalBurst?: boolean;
+      /** Tranquil Rod bubble starts on the hooked fish. */
+      tranquilBubble?: boolean;
+      /** Zeus Rod lightning strike zones. */
+      zeusStrike?: boolean;
+      /** Recoil Rod shotgun kick after fish moves. */
+      recoilKick?: boolean;
+      /** Forge Rod sword/axe volley after fish moves. */
+      forgeStrike?: boolean;
+      /** Birthday Rod party abilities. */
+      birthdayParty?: boolean;
+      /** Fired when the tranquil bubble pops (sync in-world fish). */
+      onTranquilBubblePop?: () => void;
       /** Second hooked fish (twin-hook bobber). */
       second?: {
         textureKey?: string;
@@ -187,6 +374,7 @@ export class CatchMinigame {
     }
   ): void {
     this.onResult = onResult;
+    this.onTranquilBubblePop = options?.onTranquilBubblePop;
     this.active = true;
     this.ready = false;
     this.readyTimer = this.readyDuration;
@@ -203,28 +391,88 @@ export class CatchMinigame {
     this.crystalBurst = !!options?.crystalBurst;
     this.crystalBurstTimer = 0;
     this.dualCatch = !!options?.second;
+    this.tranquilBubble = !!options?.tranquilBubble;
+    this.bubbleActive = this.tranquilBubble;
+    this.tranquilRush = false;
+    this.zeusStrike = !!options?.zeusStrike;
+    this.zeusRollTimer = 0;
+    this.zeusStrikeChance = 0.25;
+    this.zeusPhase = "idle";
+    this.zeusWarnBeepsLeft = 0;
+    this.zeusWarnTimer = 0;
+    this.zeusWarnVisible = false;
+    this.electrified = false;
+    this.guaranteeThunder = false;
+    this.zeusZoneRect.setVisible(false).setAlpha(0.28);
+    this.zeusWarnIcon.setVisible(false).setAlpha(1).setScale(1);
+    for (const s of this.elecSparks) s.setVisible(false);
+    this.recoilKick = !!options?.recoilKick;
+    this.recoilFishMoves = 0;
+    this.recoilPhase = "idle";
+    this.recoilWarnTimer = 0;
+    this.recoilKickActive = false;
+    this.recoilKickTarget = 0;
+    this.recoilWarnRoot.setVisible(false).setAlpha(1).setScale(1);
+    this.recoilWarnIcon.setAlpha(1).setScale(1);
+    this.forgeStrike = !!options?.forgeStrike;
+    this.forgeFishMoves = 0;
+    this.forgeCooldownMoves = 0;
+    this.forgePhase = "idle";
+    this.forgeArmingTimer = 0;
+    this.forgeWeaponsPending = 0;
+    this.forgeSwordSpeedAdd = 0;
+    this.forgeHadEmberWeapon = false;
+    this.clearForgeWeapons();
+    this.birthdayParty = !!options?.birthdayParty;
+    this.birthdayBalloonSpeedAdd = 0;
+    this.birthdayZoneSpeedAdd = 0;
+    this.birthdayBarSizeMult = 1;
+    this.birthdayControlShare = 0;
+    this.birthdaySpawnTimer = 0;
+    this.birthdayBarTickTimer = 0;
+    this.birthdayZoneTickInterval = this.birthdayZoneTickIntervalStart;
+    this.birthdayNextSpawn = Phaser.Math.FloatBetween(0.85, 1.45);
+    this.guaranteeConfetti = false;
+    this.birthdayInstaPending =
+      this.birthdayParty && Math.random() < 0.15;
+    this.prevRightDown = false;
+    this.clearBirthdayBalloons();
+    this.birthdayBalloonLayer.setVisible(this.birthdayParty);
+    this.whiteBar.setFillStyle(0xffffff, 0.95);
+    this.whiteBar.setStrokeStyle(1, 0xcccccc);
     this.facesLeft2 = !!options?.second?.facesLeft;
     this.glowColor2 = options?.second?.glowColor ?? null;
 
     const control = options?.control ?? 0;
+    this.birthdayControlShare = control / 100;
     const resilience = options?.resilience ?? 0;
     const progressSpeed = options?.progressSpeed ?? 0;
+    this.baseProgressSpeed = progressSpeed;
+    this.forgeSwordSpeedAdd = 0;
     // Allow <1 chaos so mythical fish can sprint across the bar before turning
     this.jerkyChaos = Math.max(0.35, options?.chaos ?? 1);
 
     // Control = extra % of the grey bar (0 → 20% wide, +20 → 40% wide)
-    const whiteShare = Math.min(
-      0.85,
-      this.baseWhiteShare + control / 100
-    );
-    this.whiteWidth = this.barWidth * whiteShare;
-    this.whiteBar.setSize(this.whiteWidth, this.barHeight - 10);
-    this.whiteBar.updateDisplayOrigin();
+    this.applyWhiteBarWidth();
 
-    // Progress speed boosts fill rate
-    this.fillRate = this.baseFillRate * (1 + progressSpeed / 100);
+    // Progress speed boosts fill rate (forge swords add percentage points later)
+    this.applyProgressSpeedFillRate();
     this.drainRate = this.baseDrainRate * (options?.drainMult ?? 1);
-    this.setProgressHint(progressSpeed);
+    this.progressBg.setFillStyle(this.bubbleActive ? 0x163f62 : 0x333333);
+    this.progressBg.setStrokeStyle(1, this.bubbleActive ? 0x7ddfff : 0x222222);
+    this.progressFill.setFillStyle(this.bubbleActive ? 0x59bfff : 0x4caf50);
+    this.bubbleMarker
+      .setVisible(this.bubbleActive)
+      .setAlpha(1)
+      .setScale(1);
+    this.fishBubble
+      .setVisible(this.bubbleActive)
+      .setAlpha(1)
+      .setScale(1);
+    this.fishBubbleShine
+      .setVisible(this.bubbleActive)
+      .setAlpha(1)
+      .setScale(1);
 
     // Resilience 50% → fish moves at 50% speed; 0% = normal
     const resFactor = Math.max(0.05, 1 - resilience / 100);
@@ -238,9 +486,13 @@ export class CatchMinigame {
 
     this.fishAccel = 220 * this.speedMult;
     this.fishMaxSpeed = 155 * this.speedMult;
+    this.baseFishAccel = this.fishAccel;
+    this.baseFishMaxSpeed = this.fishMaxSpeed;
     const tex = options?.textureKey ?? "fish";
     const dw = options?.displayWidth ?? 42;
     const dh = options?.displayHeight ?? 14;
+    this.fishBubbleW = dw;
+    this.fishBubbleH = dh;
     this.fishIcon.setTexture(tex);
     this.fishIcon.setDisplaySize(dw, dh);
     this.fishIcon.clearTint();
@@ -308,7 +560,13 @@ export class CatchMinigame {
     this.root.setY(on ? this.root.scene.scale.height - 200 : this.baseY);
   }
 
-  update(delta: number, pointerDown: boolean): void {
+  update(
+    delta: number,
+    pointerDown: boolean,
+    pointerRightDown = false,
+    pointerX = 0,
+    pointerY = 0
+  ): void {
     if (!this.active) return;
 
     const dt = Math.min(delta / 1000, 0.05);
@@ -319,6 +577,10 @@ export class CatchMinigame {
       if (this.readyTimer <= 0) {
         this.ready = true;
         this.whiteVel = 0;
+        if (this.birthdayInstaPending) {
+          this.triggerBirthdayInstaCatch();
+          return;
+        }
       }
       this.syncVisuals();
       return;
@@ -327,16 +589,58 @@ export class CatchMinigame {
     this.updateWhiteBarPhysics(dt, pointerDown || this.holdKey.isDown);
     this.updateFish(dt);
     this.updateCrystalBurst(dt);
+    this.updateZeusStrike(dt);
+    this.updateRecoilKick(dt);
+    this.updateForgeStrike(dt);
+    this.updateBirthdayParty(
+      dt,
+      pointerRightDown && !this.prevRightDown,
+      pointerX,
+      pointerY
+    );
+    this.prevRightDown = pointerRightDown;
 
     const halfWhite = this.whiteWidth / 2;
     const overlapping =
       this.fishX >= this.whiteX - halfWhite &&
       this.fishX <= this.whiteX + halfWhite;
 
+    if (this.electrified && overlapping) {
+      this.guaranteeThunder = true;
+      this.applyElectrifiedSlow(true);
+    } else {
+      this.applyElectrifiedSlow(false);
+    }
+
     if (overlapping) {
-      this.progress = Math.min(1, this.progress + this.fillRate * dt);
+      const rate = this.tranquilRush ? this.tranquilRushFillRate : this.fillRate;
+      this.progress = Math.min(1, this.progress + rate * dt);
+      if (this.birthdayParty) {
+        this.birthdayBarTickTimer += dt;
+        if (this.birthdayBarTickTimer >= this.birthdayZoneTickInterval) {
+          this.birthdayBarTickTimer -= this.birthdayZoneTickInterval;
+          this.birthdayZoneSpeedAdd += 1;
+          this.birthdayZoneTickInterval = Math.max(
+            this.birthdayZoneTickIntervalMin,
+            this.birthdayZoneTickInterval - this.birthdayZoneTickIntervalStep
+          );
+          this.applyProgressSpeedFillRate();
+        }
+      }
     } else {
       this.progress = Math.max(0, this.progress - this.drainRate * dt);
+      if (this.birthdayParty) {
+        this.birthdayBarTickTimer = 0;
+        this.birthdayZoneTickInterval = this.birthdayZoneTickIntervalStart;
+        if (this.birthdayZoneSpeedAdd > 0) {
+          this.birthdayZoneSpeedAdd = 0;
+          this.applyProgressSpeedFillRate();
+        }
+      }
+    }
+
+    if (this.bubbleActive && this.progress >= this.bubbleBurstProgress) {
+      this.triggerTranquilBubblePop();
     }
 
     this.syncVisuals();
@@ -358,12 +662,489 @@ export class CatchMinigame {
     this.crystalBurstTimer = 0;
     if (Math.random() >= 0.15) return;
 
-    this.fishPauseTimer = Math.max(this.fishPauseTimer, 0.85);
+    this.fishPauseTimer = Math.max(
+      this.fishPauseTimer,
+      this.crystalBurstStunPause
+    );
     this.fishTargetVel = 0;
     this.fishVel = 0;
-    this.fishDecisionTimer = Math.max(this.fishDecisionTimer, 0.9);
-    this.progress = Math.min(1, this.progress + 0.1);
+    this.fishDecisionTimer = Math.max(
+      this.fishDecisionTimer,
+      this.crystalBurstStunDecision
+    );
+    this.progress = Math.min(1, this.progress + this.crystalBurstProgressGain);
     this.playCrystalBurstFx();
+  }
+
+  private updateRecoilKick(dt: number): void {
+    if (!this.recoilKick || !this.ready) return;
+    if (this.recoilPhase === "warn") {
+      this.recoilWarnTimer -= dt;
+      if (this.recoilWarnTimer <= 0) {
+        this.triggerRecoilKick();
+      }
+    }
+  }
+
+  private beginRecoilWarning(): void {
+    this.recoilPhase = "warn";
+    this.recoilWarnTimer = 0.55;
+    this.recoilWarnRoot.setVisible(true).setAlpha(1).setScale(1);
+    this.recoilWarnIcon.setAlpha(1).setScale(1.2);
+    playRecoilWarning(this.root.scene);
+    this.root.scene.tweens.killTweensOf(this.recoilWarnRoot);
+    this.root.scene.tweens.add({
+      targets: this.recoilWarnIcon,
+      scale: 1,
+      duration: 140,
+      ease: "Back.easeOut",
+    });
+    this.root.scene.tweens.add({
+      targets: this.recoilWarnRoot,
+      scale: { from: 0.85, to: 1.08 },
+      duration: 220,
+      yoyo: true,
+      repeat: 2,
+      ease: "Sine.easeInOut",
+    });
+  }
+
+  private triggerRecoilKick(): void {
+    this.recoilPhase = "kick";
+    this.recoilWarnRoot.setVisible(false);
+    this.root.scene.tweens.killTweensOf(this.recoilWarnRoot);
+    playRecoilShot(this.root.scene);
+
+    const whiteMin = -this.barWidth / 2 + this.whiteWidth / 2;
+    const whiteMax = this.barWidth / 2 - this.whiteWidth / 2;
+    const onLeft = this.whiteX <= 0;
+    const target = onLeft ? whiteMax : whiteMin;
+    this.recoilKickTarget = target;
+    this.recoilKickActive = true;
+    this.whiteVel = onLeft ? this.recoilKickSpeed : -this.recoilKickSpeed;
+
+    this.progress = Math.min(1, this.progress + this.recoilProgressGain);
+    this.whiteBar.setFillStyle(0xff8866, 0.98);
+    this.whiteBar.setStrokeStyle(2, 0xffcc44);
+    this.root.scene.tweens.add({
+      targets: this.whiteBar,
+      scaleX: 1.28,
+      scaleY: 0.82,
+      duration: 90,
+      yoyo: true,
+      ease: "Quad.easeOut",
+      onComplete: () => {
+        this.whiteBar.setScale(1, 1);
+        if (!this.electrified) {
+          this.whiteBar.setFillStyle(0xffffff, 0.95);
+          this.whiteBar.setStrokeStyle(1, 0xcccccc);
+        }
+      },
+    });
+
+    const scene = this.root.scene;
+    const cx = this.root.x + this.whiteX;
+    const cy = this.root.y;
+    const flash = scene.add
+      .rectangle(cx, cy, this.whiteWidth + 40, this.barHeight + 30, 0xffaa66, 0.75)
+      .setDepth(255)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    scene.tweens.add({
+      targets: flash,
+      alpha: 0,
+      scaleX: 1.6,
+      duration: 280,
+      onComplete: () => flash.destroy(),
+    });
+
+    this.recoilFishMoves = 0;
+  }
+
+  private clearRecoilTelegraph(): void {
+    this.recoilWarnRoot.setVisible(false);
+    this.root.scene.tweens.killTweensOf(this.recoilWarnRoot);
+    this.recoilPhase = "idle";
+    this.recoilWarnTimer = 0;
+    this.recoilKickActive = false;
+  }
+
+  private updateForgeStrike(dt: number): void {
+    if (!this.forgeStrike || !this.ready) return;
+    if (this.forgePhase !== "arming") return;
+    this.forgeArmingTimer -= dt;
+    if (this.forgeArmingTimer <= 0) {
+      this.launchForgeWeapons();
+    }
+  }
+
+  private beginForgeArming(): void {
+    this.forgePhase = "arming";
+    this.forgeArmingTimer = 1;
+    this.forgeFishMoves = 0;
+    this.spawnForgeWeapons();
+    playForgeArmSfx(this.root.scene);
+  }
+
+  private spawnForgeWeapons(): void {
+    this.clearForgeWeapons();
+    const scene = this.root.scene;
+    const total = Phaser.Math.Between(8, 12);
+    const swords = Phaser.Math.Between(0, total);
+    const axes = total - swords;
+    const kinds: ("sword" | "axe")[] = [
+      ...Array.from({ length: swords }, () => "sword" as const),
+      ...Array.from({ length: axes }, () => "axe" as const),
+    ];
+    Phaser.Utils.Array.Shuffle(kinds);
+
+    const target = this.forgeProgressCenter();
+    const count = kinds.length;
+    const radius = Math.max(58, this.barWidth * 0.48);
+    const angleStart = -Math.PI * 0.88;
+    const angleEnd = -Math.PI * 0.12;
+    let emberSwordChosen = false;
+
+    for (let i = 0; i < count; i++) {
+      const kind = kinds[i]!;
+      const tex = kind === "sword" ? "forge_sword" : "forge_axe";
+      const t = count === 1 ? 0.5 : i / (count - 1);
+      const arcAng = Phaser.Math.Linear(angleStart, angleEnd, t);
+      const wx = target.x + Math.cos(arcAng) * radius;
+      const wy = target.y + Math.sin(arcAng) * radius;
+      const aimDeg = Phaser.Math.RadToDeg(
+        Math.atan2(target.y - wy, target.x - wx)
+      );
+
+      const img = scene.add
+        .image(wx, wy, tex)
+        .setDisplaySize(kind === "sword" ? 22 : 26, kind === "sword" ? 32 : 34)
+        .setDepth(155)
+        .setScrollFactor(0)
+        .setAngle(aimDeg + 90)
+        .setData("kind", kind);
+      if (
+        kind === "sword" &&
+        !emberSwordChosen &&
+        Math.random() < this.forgeEmberSwordChance
+      ) {
+        img.setTint(0xff8833);
+        img.setData("ember", true);
+        emberSwordChosen = true;
+        this.forgeHadEmberWeapon = true;
+      }
+      scene.tweens.add({
+        targets: img,
+        y: wy - 3,
+        duration: 260,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+        delay: i * 35,
+      });
+      this.forgeWeaponSprites.push(img);
+    }
+  }
+
+  private launchForgeWeapons(): void {
+    if (this.forgeWeaponSprites.length === 0) {
+      this.finishForgeVolley();
+      return;
+    }
+    this.forgePhase = "launching";
+    this.forgeWeaponsPending = this.forgeWeaponSprites.length;
+    const scene = this.root.scene;
+    const sprites = [...this.forgeWeaponSprites];
+    this.forgeWeaponSprites = [];
+
+    const target = this.forgeProgressCenter();
+
+    sprites.forEach((sprite) => {
+      const kind = (sprite.getData("kind") as "sword" | "axe") ?? "sword";
+      scene.tweens.killTweensOf(sprite);
+      scene.time.delayedCall(Phaser.Math.Between(0, 420), () => {
+        if (!this.active) {
+          sprite.destroy();
+          return;
+        }
+        playForgeLaunchSfx(scene, kind);
+        const hitX = target.x + Phaser.Math.Between(-10, 10);
+        const hitY = target.y + Phaser.Math.Between(-4, 4);
+        const flyDeg = Phaser.Math.RadToDeg(
+          Math.atan2(hitY - sprite.y, hitX - sprite.x)
+        );
+        sprite.setAngle(flyDeg + 90);
+        scene.tweens.add({
+          targets: sprite,
+          x: hitX,
+          y: hitY,
+          duration: Phaser.Math.Between(220, 380),
+          ease: "Quad.easeIn",
+          onComplete: () => {
+            this.applyForgeWeaponHit(kind, hitX, hitY);
+            sprite.destroy();
+            this.forgeWeaponsPending -= 1;
+            if (this.forgeWeaponsPending <= 0) {
+              this.finishForgeVolley();
+            }
+          },
+        });
+      });
+    });
+  }
+
+  /** Center of the progress bar — arch of weapons faces inward here. */
+  private forgeProgressCenter(): { x: number; y: number } {
+    return { x: this.root.x, y: this.root.y + 34 };
+  }
+
+  private applyForgeWeaponHit(
+    kind: "sword" | "axe",
+    x: number,
+    y: number
+  ): void {
+    playForgeHitSfx(this.root.scene, kind);
+    playForgeWeaponHitFx(this.root.scene, x, y, kind);
+    if (kind === "sword") {
+      this.forgeSwordSpeedAdd += this.forgeSwordSpeedBonus;
+      this.applyProgressSpeedFillRate();
+    } else {
+      this.progress = Math.min(1, this.progress + this.forgeAxeProgressGain);
+    }
+    this.syncVisuals();
+  }
+
+  private totalProgressSpeed(): number {
+    return (
+      this.baseProgressSpeed +
+      this.forgeSwordSpeedAdd +
+      this.birthdayBalloonSpeedAdd +
+      this.birthdayZoneSpeedAdd
+    );
+  }
+
+  private applyProgressSpeedFillRate(): void {
+    const total = this.totalProgressSpeed();
+    this.fillRate = this.baseFillRate * (1 + total / 100);
+    this.setProgressHint(total);
+  }
+
+  private finishForgeVolley(): void {
+    this.forgePhase = "idle";
+    this.forgeCooldownMoves = 9;
+    this.forgeFishMoves = 0;
+  }
+
+  private clearForgeWeapons(): void {
+    const scene = this.root.scene;
+    for (const sprite of this.forgeWeaponSprites) {
+      scene.tweens.killTweensOf(sprite);
+      sprite.destroy();
+    }
+    this.forgeWeaponSprites = [];
+    this.forgeWeaponsPending = 0;
+  }
+
+  private updateZeusStrike(dt: number): void {
+    if (!this.zeusStrike || !this.ready) return;
+
+    if (this.zeusPhase === "idle") {
+      this.zeusRollTimer += dt;
+      if (this.zeusRollTimer < 1) return;
+      this.zeusRollTimer = 0;
+      if (Math.random() >= this.zeusStrikeChance) return;
+      this.beginZeusWarning();
+      return;
+    }
+
+    if (this.zeusPhase === "warn") {
+      this.zeusWarnTimer -= dt;
+      if (this.zeusWarnTimer > 0) return;
+      if (this.zeusWarnVisible) {
+        // End of "on" blink → hide briefly
+        this.zeusWarnVisible = false;
+        this.zeusWarnIcon.setVisible(false);
+        this.zeusZoneRect.setAlpha(0.12);
+        this.zeusWarnTimer = 0.16;
+        this.zeusWarnBeepsLeft -= 1;
+        if (this.zeusWarnBeepsLeft <= 0) {
+          this.triggerZeusLightning();
+        }
+      } else {
+        // End of "off" → next beep
+        this.zeusWarnVisible = true;
+        this.zeusWarnIcon.setVisible(true).setAlpha(1).setScale(1.15);
+        this.zeusZoneRect.setAlpha(0.4);
+        playWarningBeep(this.root.scene, {
+          pitch: 760 + (3 - this.zeusWarnBeepsLeft) * 90,
+        });
+        this.root.scene.tweens.add({
+          targets: this.zeusWarnIcon,
+          scale: 1,
+          duration: 120,
+          ease: "Back.easeOut",
+        });
+        this.zeusWarnTimer = 0.22;
+      }
+    }
+  }
+
+  private beginZeusWarning(): void {
+    const half = this.barWidth / 2 - this.zeusZoneW / 2 - 8;
+    this.zeusZoneX = Phaser.Math.FloatBetween(-half, half);
+    this.zeusPhase = "warn";
+    this.zeusWarnBeepsLeft = 3;
+    this.zeusWarnVisible = true;
+    this.zeusWarnTimer = 0.22;
+    this.zeusZoneRect
+      .setVisible(true)
+      .setPosition(this.zeusZoneX, -8)
+      .setAlpha(0.4);
+    this.zeusWarnIcon
+      .setVisible(true)
+      .setPosition(this.zeusZoneX, -8)
+      .setAlpha(1)
+      .setScale(1.2);
+    playWarningBeep(this.root.scene, { pitch: 760 });
+    this.root.scene.tweens.add({
+      targets: this.zeusWarnIcon,
+      scale: 1,
+      duration: 120,
+      ease: "Back.easeOut",
+    });
+  }
+
+  private triggerZeusLightning(): void {
+    this.zeusPhase = "strike";
+    this.zeusStrikeChance *= 0.5;
+    this.zeusWarnIcon.setVisible(false);
+    playLightningCrack(this.root.scene);
+    this.playZeusLightningFx();
+
+    const zL = this.zeusZoneX - this.zeusZoneW / 2;
+    const zR = this.zeusZoneX + this.zeusZoneW / 2;
+    const fishHit = this.fishX >= zL && this.fishX <= zR;
+    const halfWhite = this.whiteWidth / 2;
+    const barL = this.whiteX - halfWhite;
+    const barR = this.whiteX + halfWhite;
+    const barHit = barL < zR && barR > zL;
+
+    if (fishHit) {
+      this.clearZeusTelegraph();
+      this.finish(true);
+      return;
+    }
+    if (barHit) {
+      this.setElectrified(true);
+    }
+    this.root.scene.time.delayedCall(280, () => {
+      if (!this.active) return;
+      this.clearZeusTelegraph();
+      this.zeusPhase = "idle";
+      this.zeusRollTimer = 0.35;
+    });
+  }
+
+  private clearZeusTelegraph(): void {
+    this.zeusZoneRect.setVisible(false);
+    this.zeusWarnIcon.setVisible(false);
+    this.zeusWarnVisible = false;
+  }
+
+  private setElectrified(on: boolean): void {
+    this.electrified = on;
+    if (on) {
+      this.whiteBar.setFillStyle(0xc8f0ff, 0.95);
+      this.whiteBar.setStrokeStyle(2, 0xffe066);
+      for (const s of this.elecSparks) s.setVisible(true);
+    } else {
+      this.whiteBar.setFillStyle(0xffffff, 0.95);
+      this.whiteBar.setStrokeStyle(1, 0xcccccc);
+      for (const s of this.elecSparks) s.setVisible(false);
+      this.applyElectrifiedSlow(false);
+    }
+  }
+
+  private applyElectrifiedSlow(on: boolean): void {
+    if (on) {
+      this.fishMaxSpeed = this.baseFishMaxSpeed * 0.78;
+      this.fishAccel = this.baseFishAccel * 0.85;
+      this.fishVel *= 0.98;
+      this.fishTargetVel *= 0.98;
+    } else {
+      this.fishMaxSpeed = this.baseFishMaxSpeed;
+      this.fishAccel = this.baseFishAccel;
+    }
+  }
+
+  private playZeusLightningFx(): void {
+    const scene = this.root.scene;
+    const cx = this.root.x + this.zeusZoneX;
+    const cy = this.root.y - 8;
+    const bolt = scene.add.graphics().setDepth(220).setScrollFactor(0);
+    bolt.lineStyle(4, 0xffffff, 1);
+    let x = cx + Phaser.Math.Between(-6, 6);
+    let y = cy - 70;
+    bolt.beginPath();
+    bolt.moveTo(x, y);
+    for (let i = 0; i < 5; i++) {
+      x += Phaser.Math.Between(-18, 18);
+      y += 16 + (i % 2) * 6;
+      bolt.lineTo(x, y);
+    }
+    bolt.lineTo(cx, cy + 18);
+    bolt.strokePath();
+    bolt.lineStyle(2, 0xffe066, 0.95);
+    bolt.strokePath();
+
+    const flash = scene.add
+      .rectangle(cx, cy, this.zeusZoneW + 20, this.barHeight + 24, 0xffffff, 0.85)
+      .setDepth(219)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const glow = scene.add
+      .circle(cx, cy, 16, 0xffe066, 0.9)
+      .setDepth(221)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    scene.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 220,
+      onComplete: () => flash.destroy(),
+    });
+    scene.tweens.add({
+      targets: glow,
+      scale: 3.2,
+      alpha: 0,
+      duration: 380,
+      ease: "Cubic.easeOut",
+      onComplete: () => glow.destroy(),
+    });
+    scene.tweens.add({
+      targets: bolt,
+      alpha: 0,
+      duration: 280,
+      onComplete: () => bolt.destroy(),
+    });
+
+    for (let i = 0; i < 10; i++) {
+      const spark = scene.add
+        .circle(cx, cy, 2.5, i % 2 === 0 ? 0xffffff : 0xffe066, 1)
+        .setDepth(222)
+        .setScrollFactor(0);
+      const ang = (i / 10) * Math.PI * 2;
+      scene.tweens.add({
+        targets: spark,
+        x: cx + Math.cos(ang) * Phaser.Math.Between(28, 56),
+        y: cy + Math.sin(ang) * Phaser.Math.Between(16, 36),
+        alpha: 0,
+        duration: 320,
+        ease: "Cubic.easeOut",
+        onComplete: () => spark.destroy(),
+      });
+    }
   }
 
   private playCrystalBurstFx(): void {
@@ -414,7 +1195,110 @@ export class CatchMinigame {
     }
   }
 
+  private bubbleCoverRadius(w: number, h: number): number {
+    return Math.max(w, h) * 0.68 + 10;
+  }
+
+  private layoutFishBubble(fx: number, fy: number): void {
+    const r = this.bubbleCoverRadius(this.fishBubbleW, this.fishBubbleH);
+    const pulse = 0.82 + Math.sin(Date.now() / 170) * 0.1;
+    this.fishBubble
+      .setVisible(true)
+      .setPosition(fx, fy)
+      .setRadius(r)
+      .setScale(pulse);
+    this.fishBubbleShine
+      .setVisible(true)
+      .setPosition(fx - r * 0.28, fy - r * 0.32)
+      .setRadius(Math.max(3, r * 0.14));
+  }
+
+  private triggerTranquilBubblePop(): void {
+    this.bubbleActive = false;
+    this.tranquilRush = true;
+    this.progressBg.setFillStyle(0x1a4a32);
+    this.progressBg.setStrokeStyle(1, 0x6dff9a);
+    this.progressFill.setFillStyle(0x7dffb0);
+    this.playTranquilBubblePopFx();
+    this.onTranquilBubblePop?.();
+  }
+
+  private playTranquilBubblePopFx(): void {
+    const scene = this.root.scene;
+    const fishR = this.bubbleCoverRadius(this.fishBubbleW, this.fishBubbleH);
+    const fishX = this.root.x + this.fishIcon.x;
+    const fishY = this.root.y + this.fishIcon.y;
+    const markerX =
+      this.root.x + (-this.barWidth / 2 + this.barWidth * this.bubbleBurstProgress);
+    const markerY = this.root.y + 34;
+
+    if (this.bubbleMarker.visible) {
+      scene.tweens.add({
+        targets: this.bubbleMarker,
+        scaleX: 2,
+        scaleY: 2,
+        alpha: 0,
+        duration: 130,
+        ease: "Back.easeOut",
+      });
+    }
+
+    playTranquilBubblePopFx(scene, markerX, markerY, 10, {
+      depth: 210,
+      scrollFactor: 0,
+      intensity: 0.52,
+    });
+
+    playTranquilBubblePopFx(scene, fishX, fishY, fishR, {
+      depth: 205,
+      scrollFactor: 0,
+      intensity: 1,
+    });
+
+    const rushFlash = scene.add
+      .rectangle(
+        this.root.x - this.barWidth / 2,
+        markerY,
+        this.barWidth * (1 - this.bubbleBurstProgress),
+        10,
+        0x7dffb0,
+        0.85
+      )
+      .setOrigin(0, 0.5)
+      .setDepth(204)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    scene.tweens.add({
+      targets: rushFlash,
+      alpha: 0,
+      scaleX: 1.04,
+      duration: 420,
+      ease: "Sine.easeOut",
+      onComplete: () => rushFlash.destroy(),
+    });
+
+    this.fishBubble.setVisible(false);
+    this.fishBubbleShine.setVisible(false);
+    this.bubbleMarker.setVisible(false);
+  }
+
   private updateWhiteBarPhysics(dt: number, holding: boolean): void {
+    if (this.recoilKickActive) {
+      const dir = Math.sign(this.recoilKickTarget - this.whiteX);
+      const dist = Math.abs(this.recoilKickTarget - this.whiteX);
+      const step = this.recoilKickSpeed * dt;
+      if (dist <= step) {
+        this.whiteX = this.recoilKickTarget;
+        this.whiteVel = dir * 160;
+        this.recoilKickActive = false;
+        this.recoilPhase = "idle";
+      } else {
+        this.whiteX += dir * step;
+        this.whiteVel = dir * this.recoilKickSpeed;
+      }
+      return;
+    }
+
     // Hold accelerates right; release pulls left (like gravity / spring bias)
     const force = holding ? this.accel : -this.accel;
     this.whiteVel += force * dt;
@@ -542,6 +1426,28 @@ export class CatchMinigame {
   }
 
   private pickFishBehavior(): void {
+    if (
+      this.recoilKick &&
+      this.recoilPhase === "idle" &&
+      this.ready
+    ) {
+      this.recoilFishMoves += 1;
+      if (this.recoilFishMoves >= 4) {
+        this.beginRecoilWarning();
+      }
+    }
+
+    if (this.forgeStrike && this.ready && this.forgePhase === "idle") {
+      if (this.forgeCooldownMoves > 0) {
+        this.forgeCooldownMoves -= 1;
+      } else {
+        this.forgeFishMoves += 1;
+        if (this.forgeFishMoves >= 3) {
+          this.beginForgeArming();
+        }
+      }
+    }
+
     const m = this.speedMult;
 
     if (this.jerky) {
@@ -633,6 +1539,24 @@ export class CatchMinigame {
 
   private syncVisuals(): void {
     this.whiteBar.setX(this.whiteX);
+    if (this.zeusPhase !== "idle") {
+      this.zeusZoneRect.setX(this.zeusZoneX);
+      this.zeusWarnIcon.setX(this.zeusZoneX);
+    }
+    if (this.electrified) {
+      const t = Date.now() / 70;
+      for (let i = 0; i < this.elecSparks.length; i++) {
+        const s = this.elecSparks[i]!;
+        const side = i % 2 === 0 ? -1 : 1;
+        const along = ((i / this.elecSparks.length) * 2 - 1) * (this.whiteWidth * 0.42);
+        s.setPosition(
+          this.whiteX + along + Math.sin(t + i) * 2,
+          -8 + side * (this.barHeight * 0.28) + Math.cos(t * 1.4 + i) * 3
+        );
+        s.setAlpha(0.45 + Math.sin(t * 2 + i) * 0.4);
+        s.setAngle(Math.sin(t + i * 0.7) * 25);
+      }
+    }
     const offset = this.dualCatch ? -14 : 0;
     this.fishIcon.setX(this.fishX + offset);
     this.fishGlow.setX(this.fishX + offset);
@@ -659,6 +1583,22 @@ export class CatchMinigame {
       this.fishGlow2.setAlpha(pulse);
     }
     this.progressFill.width = this.barWidth * this.progress;
+    if (this.bubbleActive) {
+      this.layoutFishBubble(this.fishIcon.x + offset, this.fishIcon.y);
+      this.bubbleMarker
+        .setVisible(true)
+        .setX(-this.barWidth / 2 + this.barWidth * this.bubbleBurstProgress);
+    } else {
+      this.fishBubble.setVisible(false);
+      this.fishBubbleShine.setVisible(false);
+      this.bubbleMarker.setVisible(false);
+    }
+    if (this.tranquilRush) {
+      const rushPulse = 0.92 + Math.sin(Date.now() / 90) * 0.08;
+      this.progressFill.setScale(1, rushPulse);
+    } else {
+      this.progressFill.setScale(1, 1);
+    }
   }
 
   private setProgressHint(progressSpeed: number): void {
@@ -672,13 +1612,287 @@ export class CatchMinigame {
     }
   }
 
+  private applyWhiteBarWidth(animateMs = 0): void {
+    const whiteShare = Math.min(
+      0.85,
+      (this.baseWhiteShare + this.birthdayControlShare) * this.birthdayBarSizeMult
+    );
+    const target = this.barWidth * whiteShare;
+    this.whiteBarWidthTween?.stop();
+    this.whiteBarWidthTween = undefined;
+    if (animateMs <= 0 || Math.abs(target - this.whiteWidth) < 0.5) {
+      this.whiteWidth = target;
+      this.whiteBar.setSize(this.whiteWidth, this.barHeight - 10);
+      this.whiteBar.updateDisplayOrigin();
+      return;
+    }
+    const scene = this.root.scene;
+    const state = { w: this.whiteWidth };
+    this.whiteBarWidthTween = scene.tweens.add({
+      targets: state,
+      w: target,
+      duration: animateMs,
+      ease: "Sine.easeInOut",
+      onUpdate: () => {
+        this.whiteWidth = state.w;
+        this.whiteBar.setSize(this.whiteWidth, this.barHeight - 10);
+        this.whiteBar.updateDisplayOrigin();
+      },
+      onComplete: () => {
+        this.whiteBarWidthTween = undefined;
+      },
+    });
+  }
+
+  private triggerBirthdayInstaCatch(): void {
+    this.guaranteeConfetti = true;
+    this.progress = 1;
+    this.playBirthdayConfettiFx();
+    this.syncVisuals();
+    this.root.scene.time.delayedCall(650, () => {
+      if (this.active) this.finish(true);
+    });
+  }
+
+  private birthdayBarScreenBounds(): {
+    left: number;
+    right: number;
+    spawnY: number;
+    topY: number;
+  } {
+    const matrix = this.root.getWorldTransformMatrix();
+    const barY = matrix.transformPoint(0, -8).y;
+    const leftX = matrix.transformPoint(-this.barWidth / 2 + 24, 0).x;
+    const rightX = matrix.transformPoint(this.barWidth / 2 - 24, 0).x;
+    return {
+      left: Math.min(leftX, rightX),
+      right: Math.max(leftX, rightX),
+      spawnY: barY + 28,
+      topY: 20,
+    };
+  }
+
+  private updateBirthdayParty(
+    dt: number,
+    rightClick: boolean,
+    pointerX: number,
+    pointerY: number
+  ): void {
+    if (!this.birthdayParty || !this.ready) return;
+
+    this.birthdaySpawnTimer += dt;
+    if (this.birthdaySpawnTimer >= this.birthdayNextSpawn) {
+      this.birthdaySpawnTimer = 0;
+      this.birthdayNextSpawn = Phaser.Math.FloatBetween(0.85, 1.45);
+      this.spawnBirthdayBalloon();
+    }
+
+    const bounds = this.birthdayBarScreenBounds();
+    for (let i = this.birthdayBalloons.length - 1; i >= 0; i--) {
+      const b = this.birthdayBalloons[i]!;
+      b.root.y -= b.vy * dt;
+      b.root.setScale(1 + Math.sin(Date.now() / 320 + i) * 0.05);
+      if (b.root.y < bounds.topY) {
+        this.destroyBirthdayBalloon(i);
+      }
+    }
+
+    if (rightClick) {
+      this.tryPopBirthdayBalloon(pointerX, pointerY);
+    }
+  }
+
+  private spawnBirthdayBalloon(): void {
+    const bounds = this.birthdayBarScreenBounds();
+    const kinds: BirthdayBalloonKind[] = ["blue", "red", "green"];
+    const kind = kinds[Math.floor(Math.random() * kinds.length)]!;
+    const colors: Record<BirthdayBalloonKind, { fill: number; stroke: number }> =
+      {
+        blue: { fill: 0x4488ff, stroke: 0xa8d4ff },
+        red: { fill: 0xff4455, stroke: 0xffaab0 },
+        green: { fill: 0x44cc66, stroke: 0xa8ffbb },
+      };
+    const c = colors[kind];
+    const w = this.birthdayBalloonW;
+    const h = this.birthdayBalloonH;
+    const x = Phaser.Math.Between(Math.floor(bounds.left), Math.floor(bounds.right));
+    const y = bounds.spawnY;
+    const scene = this.root.scene;
+    const string = scene.add
+      .rectangle(0, h * 0.38, 2, h * 0.45, 0xcccccc, 0.85)
+      .setOrigin(0.5, 0);
+    const balloon = scene.add
+      .ellipse(0, 0, w, h, c.fill, 0.94)
+      .setStrokeStyle(2.5, c.stroke, 0.95);
+    const shine = scene.add
+      .ellipse(-w * 0.18, -h * 0.22, w * 0.28, h * 0.18, 0xffffff, 0.45);
+    const root = scene.add.container(x, y, [string, balloon, shine]);
+    root.setScrollFactor(0);
+    this.birthdayBalloonLayer.add(root);
+    this.birthdayBalloons.push({
+      kind,
+      root,
+      vy: Phaser.Math.Between(110, 145),
+    });
+  }
+
+  private tryPopBirthdayBalloon(pointerX: number, pointerY: number): void {
+    const hitR = this.birthdayBalloonHitR;
+    for (let i = this.birthdayBalloons.length - 1; i >= 0; i--) {
+      const b = this.birthdayBalloons[i]!;
+      const dx = pointerX - b.root.x;
+      const dy = pointerY - b.root.y;
+      if (dx * dx + dy * dy > hitR * hitR) continue;
+      this.popBirthdayBalloon(i);
+      return;
+    }
+  }
+
+  private popBirthdayBalloon(index: number): void {
+    const b = this.birthdayBalloons[index];
+    if (!b) return;
+    const x = b.root.x;
+    const y = b.root.y;
+    const kind = b.kind;
+
+    if (kind === "blue") {
+      this.progress = Math.min(1, this.progress + 0.1);
+    } else if (kind === "red") {
+      this.birthdayBalloonSpeedAdd += 10;
+      this.applyProgressSpeedFillRate();
+    } else {
+      this.birthdayBarSizeMult *= 1.1;
+      this.applyWhiteBarWidth(420);
+    }
+
+    this.playBirthdayBalloonPopFx(x, y, kind);
+    this.destroyBirthdayBalloon(index);
+    this.syncVisuals();
+  }
+
+  private playBirthdayBalloonPopFx(
+    x: number,
+    y: number,
+    kind: BirthdayBalloonKind
+  ): void {
+    const scene = this.root.scene;
+    const burst = scene.add
+      .circle(0, 0, 12, 0xffffff, 0.9)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.birthdayBalloonLayer.add(burst);
+    burst.setPosition(x, y);
+    scene.tweens.add({
+      targets: burst,
+      scale: 2.6,
+      alpha: 0,
+      duration: 220,
+      ease: "Quad.easeOut",
+      onComplete: () => burst.destroy(),
+    });
+    const sparkColor =
+      kind === "red" ? 0xff6677 : kind === "green" ? 0x66ff88 : 0x88bbff;
+    for (let j = 0; j < 6; j++) {
+      const ang = (j / 6) * Math.PI * 2;
+      const spark = scene.add.circle(0, 0, 4, sparkColor, 0.95);
+      this.birthdayBalloonLayer.add(spark);
+      spark.setPosition(x, y);
+      scene.tweens.add({
+        targets: spark,
+        x: x + Math.cos(ang) * 34,
+        y: y + Math.sin(ang) * 34,
+        alpha: 0,
+        scale: 0.15,
+        duration: 280,
+        ease: "Cubic.easeOut",
+        onComplete: () => spark.destroy(),
+      });
+    }
+  }
+
+  private destroyBirthdayBalloon(index: number): void {
+    const b = this.birthdayBalloons[index];
+    if (!b) return;
+    this.birthdayBalloons.splice(index, 1);
+    b.root.destroy();
+  }
+
+  private clearBirthdayBalloons(): void {
+    this.whiteBarWidthTween?.stop();
+    this.whiteBarWidthTween = undefined;
+    for (const b of this.birthdayBalloons) {
+      b.root.destroy();
+    }
+    this.birthdayBalloons = [];
+  }
+
+  private playBirthdayConfettiFx(): void {
+    const scene = this.root.scene;
+    const w = scene.scale.width;
+    const h = scene.scale.height;
+    const colors = [
+      0xff3344, 0xffee44, 0x44ccff, 0xff66cc, 0x66ff88, 0xffaa22, 0xaa66ff,
+    ];
+    for (let i = 0; i < 90; i++) {
+      const x = Phaser.Math.Between(0, w);
+      const y = Phaser.Math.Between(0, h * 0.35);
+      const color = colors[i % colors.length]!;
+      const piece =
+        Math.random() > 0.5
+          ? scene.add.rectangle(x, y, Phaser.Math.Between(4, 9), Phaser.Math.Between(6, 14), color, 0.95)
+          : scene.add.circle(x, y, Phaser.Math.Between(3, 6), color, 0.95);
+      piece.setDepth(220).setScrollFactor(0).setAngle(Math.random() * 360);
+      scene.tweens.add({
+        targets: piece,
+        x: x + Phaser.Math.Between(-120, 120),
+        y: y + Phaser.Math.Between(80, h * 0.75),
+        angle: piece.angle + Phaser.Math.Between(-540, 540),
+        alpha: 0,
+        duration: Phaser.Math.Between(700, 1400),
+        ease: "Cubic.easeOut",
+        onComplete: () => piece.destroy(),
+      });
+    }
+    const flash = scene.add
+      .rectangle(w / 2, h / 2, w, h, 0xffffff, 0.35)
+      .setDepth(219)
+      .setScrollFactor(0);
+    scene.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 420,
+      ease: "Quad.easeOut",
+      onComplete: () => flash.destroy(),
+    });
+  }
+
   private finish(success: boolean): void {
     this.active = false;
     this.ready = false;
+    this.clearZeusTelegraph();
+    this.clearRecoilTelegraph();
+    this.clearForgeWeapons();
+    this.clearBirthdayBalloons();
+    this.birthdayBalloonLayer.setVisible(false);
+    this.forgePhase = "idle";
+    this.setElectrified(false);
+    this.zeusPhase = "idle";
     this.root.setVisible(false);
     const cb = this.onResult;
+    const meta: CatchMinigameResultMeta | undefined =
+      this.guaranteeThunder || this.forgeHadEmberWeapon || this.guaranteeConfetti
+        ? {
+            ...(this.guaranteeThunder ? { guaranteeThunder: true } : {}),
+            ...(this.forgeHadEmberWeapon ? { guaranteeAshencast: true } : {}),
+            ...(this.guaranteeConfetti ? { guaranteeConfetti: true } : {}),
+          }
+        : undefined;
     this.onResult = undefined;
-    cb?.(success);
+    this.onTranquilBubblePop = undefined;
+    this.guaranteeThunder = false;
+    this.forgeHadEmberWeapon = false;
+    this.guaranteeConfetti = false;
+    this.birthdayInstaPending = false;
+    cb?.(success, meta);
   }
 
   forceClose(): void {

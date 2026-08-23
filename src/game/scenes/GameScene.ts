@@ -5,6 +5,7 @@ import { Bobber } from "../entities/Bobber";
 import { Sailboat } from "../entities/Sailboat";
 import { FishMerchant } from "../entities/FishMerchant";
 import { TalkNpc } from "../entities/TalkNpc";
+import { CodeGuyNpc } from "../entities/CodeGuyNpc";
 import {
   FishQuestIslandId,
   FISH_QUEST_ISLAND_IDS,
@@ -16,7 +17,22 @@ import { DayNightCycle } from "../systems/DayNightCycle";
 import { AmuletRitual } from "../systems/AmuletRitual";
 import { DolphinAbundance } from "../systems/DolphinAbundance";
 import { CoralRodSpawn } from "../systems/CoralRodSpawn";
-import { placeVillage, placeJungle, placeCoralReef, placeCollectorsIsland, placeFrostpeakIsle } from "../world/WorldDecor";
+import {
+  placeVillage,
+  placeJungle,
+  placeCoralReef,
+  placeCollectorsIsland,
+  placeFrostpeakIsle,
+} from "../world/WorldDecor";
+import {
+  placeAshencastIsland,
+  ashencastPierCollisionBounds,
+} from "../world/AshencastIsland";
+import { applyDevInventoryBootstrap } from "../dev/DevGrants";
+import { ensurePlayerRodArt } from "../entities/PlayerArt";
+import { ensureRodIconTextures } from "./BootScene";
+import { ForgeRodTipVfx } from "../fx/ForgeRodFx";
+import { WorldZoneLoader } from "../world/WorldZoneLoader";
 import {
   placeFrostpeakCave,
   caveWalkZones,
@@ -32,7 +48,7 @@ import { AmbientMusic, musicZoneForX, areaNameForZone, MusicZone } from "../audi
 import { BargainerNpc } from "../entities/BargainerNpc";
 import { CurioTraderStock, formatCurioRestock } from "../systems/CurioTraderStock";
 import { loadActiveSave, saveActiveSave } from "../save/SaveBank";
-import { ItemId, ITEMS, FishHabitat } from "../data/items";
+import { ItemId, ITEMS, FishHabitat, rollAshencastOceanSpecies } from "../data/items";
 import { BoatId } from "../data/boats";
 import { CaveWhaleAbundance } from "../systems/CaveWhaleAbundance";
 import { CrystalGalleryChallenge } from "../systems/CrystalGalleryChallenge";
@@ -65,20 +81,21 @@ export class GameScene extends Phaser.Scene {
   curioStock!: CurioTraderStock;
   sailboat: Sailboat | null = null;
   merchant!: FishMerchant;
-  jungleMerchant!: FishMerchant;
+  jungleMerchant?: FishMerchant;
   /** One fish buyer per Frostpeak Cave chamber. */
   private caveMerchants: FishMerchant[] = [];
   reefGuide!: TalkNpc;
-  frostHermit!: TalkNpc;
+  codeGuy?: CodeGuyNpc;
+  frostHermit?: TalkNpc;
   /** Gem Vault keeper — lost the jewels. */
-  vaultKeeper!: TalkNpc;
+  vaultKeeper?: TalkNpc;
   /** Crystal Gallery curator — memory challenge for rod skin. */
-  galleryCurator!: TalkNpc;
+  galleryCurator?: TalkNpc;
   /** Entrance Hall — lost his nautilus, rewards Shell Hat. */
-  shellSeeker!: TalkNpc;
+  shellSeeker?: TalkNpc;
   /** Per-island Fish Quest anglers. */
   private fishQuestNpcs: Partial<Record<FishQuestIslandId, TalkNpc>> = {};
-  private galleryChallenge!: CrystalGalleryChallenge;
+  private galleryChallenge?: CrystalGalleryChallenge;
   private vaultPedestalGems: Phaser.GameObjects.Image[] = [];
   private worldGemRoots: Partial<
     Record<VaultGemId, Phaser.GameObjects.Container>
@@ -95,12 +112,24 @@ export class GameScene extends Phaser.Scene {
   get frostCaveX(): number {
     return (this.frostLeft + this.frostRight) / 2 + 50;
   }
-  fishCollector!: BargainerNpc;
-  curioTrader!: BargainerNpc;
+  fishCollector?: BargainerNpc;
+  curioTrader?: BargainerNpc;
+  ashenMerchant?: FishMerchant;
+  ashenForgeNpc?: TalkNpc;
+  private ashenBuildAnvil?: () => void;
+  private anvilOceanFish?: Fish;
+  private zoneLoader!: WorldZoneLoader;
+  /** Shared water-zone list — cave chambers append when the cave loads. */
+  private waterZoneList: { left: number; right: number }[] = [];
+  /** Avoid double-drawing the same ocean stretch when adjacent zones both load. */
+  private drawnWaterKeys = new Set<string>();
+  /** Ocean stretches between islands — spawn once when either end loads. */
+  private spawnedFishCorridors = new Set<string>();
+  private forgeRodVfx: ForgeRodTipVfx | null = null;
   private music!: AmbientMusic;
   private tutorialDone = false;
   private autosaveTimer?: Phaser.Time.TimerEvent;
-  private lastAreaZone: MusicZone | "reef" | "collectors" | "frostpeak" | null = null;
+  private lastAreaZone: MusicZone | "reef" | "collectors" | "frostpeak" | "ashencast" | null = null;
   private skyVisual?: {
     sky: Phaser.GameObjects.Graphics;
     sun: Phaser.GameObjects.Container;
@@ -112,9 +141,19 @@ export class GameScene extends Phaser.Scene {
     skyH: number;
   };
 
-  /** West ocean → village → long east ocean → jungle → voyage → Frostpeak Isle */
-  /** Far west tip beyond Collector's Island. */
-  readonly westWaterLeft = -5800;
+  /** West ocean → Ashencast → Collectors → village → jungle → Frostpeak */
+  /** Far west tip beyond Ashencast Isle. */
+  readonly westWaterLeft = -14900;
+  /** Ashencast Isle — west of Collectors (~6.5k ocean voyage). */
+  readonly ashenLeft = -14500;
+  readonly ashenRight = -12100;
+  readonly ashenWestDock = -14640;
+  readonly ashenEastDock = -11960;
+  /** Hotspring ponds on Ashencast (west third). */
+  readonly ashenSpringALeft = -14220;
+  readonly ashenSpringARight = -13980;
+  readonly ashenSpringBLeft = -13840;
+  readonly ashenSpringBRight = -13580;
   /** Collector's Island — west of the reef (reach reef first, then island). */
   readonly collectorLeft = -5600;
   readonly collectorRight = -3200;
@@ -176,6 +215,8 @@ export class GameScene extends Phaser.Scene {
   readonly caveCrackX = this.pondRight + 230;
   /** Green cottage — backpack shop entrance. */
   readonly greenHouseX = 640 + 480;
+  /** Code Guy — between green and blue cottages. */
+  readonly codeGuyX = (640 + 480 + 640 + 720) / 2;
 
   private ground!: Phaser.Physics.Arcade.StaticGroup;
   private groundCollider?: Phaser.Physics.Arcade.Collider;
@@ -203,9 +244,39 @@ export class GameScene extends Phaser.Scene {
     this.lastAreaZone = null;
     this.groundCollider = undefined;
     this.secretFallReadyAt = 0;
+    this.drawnWaterKeys = new Set();
+    this.spawnedFishCorridors = new Set();
+    // Frostpeak cave — stale flags/arrays made re-entry skip rebuilding ground
+    this.inFrostpeakCave = false;
+    this.lastCaveAreaId = "";
+    this.caveLands = [];
+    this.caveWaters = [];
+    this.cavePorts = [];
+    this.caveMerchants = [];
+    this.frostCaveBoards = undefined;
+    this.vaultKeeper = undefined;
+    this.shellSeeker = undefined;
+    this.galleryCurator = undefined;
+    this.galleryChallenge = undefined;
+    this.ashenBuildAnvil = undefined;
+    this.anvilOceanFish = undefined;
+    this.frostHermit = undefined;
+    this.ashenMerchant = undefined;
+    this.ashenForgeNpc = undefined;
+    this.fishCollector = undefined;
+    this.curioTrader = undefined;
+    this.jungleMerchant = undefined;
+    this.fishQuestNpcs = {};
+    this.forgeRodVfx = null;
+    this.vaultPedestalGems = [];
+    this.worldGemRoots = {};
+    this.redGemBob = 0;
   }
 
   create(): void {
+    ensurePlayerRodArt(this);
+    ensureRodIconTextures(this);
+
     const kb = this.input.keyboard;
     if (kb) {
       kb.enabled = true;
@@ -214,22 +285,11 @@ export class GameScene extends Phaser.Scene {
 
     const save = loadActiveSave();
     this.inventory = new InventorySystem(save);
-    this.tutorialDone = save.tutorialDone;
-
-    // One-shot cleanup of the Amber White Perch test grant
-    const clearKey = "fischers_cleared_amber_perch_test_v1";
-    if (!localStorage.getItem(clearKey)) {
-      for (const slot of [...this.inventory.bag, ...this.inventory.hotbar]) {
-        if (slot.itemId === "white_perch" && slot.mutation === "amber") {
-          slot.itemId = null;
-          slot.count = 0;
-          slot.mutation = null;
-          slot.size = null;
-          slot.keep = false;
-        }
-      }
-      localStorage.setItem(clearKey, "1");
+    if (import.meta.env.DEV) {
+      applyDevInventoryBootstrap(this.inventory);
     }
+
+    this.tutorialDone = save.tutorialDone;
 
     const worldLeft = this.westWaterLeft;
     const worldWidth = this.caveEndX - worldLeft + 80;
@@ -249,60 +309,9 @@ export class GameScene extends Phaser.Scene {
       this.islandRight,
       this.nightAmbient
     );
-    placeJungle(
-      this,
-      this.groundY,
-      this.jungleLeft,
-      this.jungleRight,
-      this.pondLeft,
-      this.pondRight,
-      this.nightAmbient
-    );
-    // Secret tree — right after the pond (no labels)
-    this.add
-      .image(this.secretFallTreeX, this.groundY + 2, "swamp_tree_tall")
-      .setDepth(2)
-      .setOrigin(0.5, 1)
-      .setScale(0.96);
-    placeCoralReef(
-      this,
-      this.waterSurfaceY,
-      this.reefLeft,
-      this.reefRight,
-      this.reefBlendEnd
-    );
-    placeCollectorsIsland(
-      this,
-      this.groundY,
-      this.collectorLeft,
-      this.collectorRight,
-      this.collectorWestDock,
-      this.collectorEastDock,
-      this.nightAmbient
-    );
-    const frost = placeFrostpeakIsle(
-      this,
-      this.groundY,
-      this.frostLeft,
-      this.frostRight,
-      this.frostWestDock,
-      this.frostEastDock,
-      this.nightAmbient,
-      this.inventory.frostpeakCaveOpen
-    );
-    this.frostCaveBoards = frost.caveBoards;
-    this.createWaterVisual();
-
-    // Mountain cave — unreachable by sailing (void gap after farWaterRight)
-    const cave = placeFrostpeakCave(
-      this,
-      this.caveOriginX,
-      this.groundY,
-      this.ground
-    );
-    this.caveLands = cave.lands;
-    this.caveWaters = cave.waters;
-    this.cavePorts = cave.ports;
+    this.createVillageWaterVisual();
+    this.spawnStarterFish();
+    this.initWorldZoneLoader();
 
     const spawn = this.resolveSafeSpawn(save.playerX, save.playerY);
     this.player = new Player(this, spawn.x, spawn.y);
@@ -312,17 +321,11 @@ export class GameScene extends Phaser.Scene {
       this.player.sprite,
       this.ground
     );
+    this.zoneLoader.refresh(spawn.x);
 
     // Fish buyer between the red-roof and green houses (in front of market stand)
     this.merchant = new FishMerchant(this, this.islandLeft + 350, this.groundY);
-    this.jungleMerchant = new FishMerchant(
-      this,
-      this.jungleLeft + 320,
-      this.groundY,
-      "Swamp Merchant"
-    );
-    this.jungleMerchant.sprite.setTint(0xb8d8a0);
-    this.spawnCaveMerchants();
+    this.spawnFishQuestNpc("village");
     this.reefGuide = new TalkNpc(
       this,
       this.islandLeft + 90,
@@ -334,65 +337,37 @@ export class GameScene extends Phaser.Scene {
         "rod there priced around 40k… but when I checked,\n" +
         "I couldn't find it."
     );
-    this.frostHermit = new TalkNpc(
-      this,
-      (this.frostLeft + this.frostRight) / 2 - 30,
-      this.groundY,
-      "Hermit",
-      ""
-    );
-    this.frostHermit.sprite.setTint(0xd0e0f0);
-    this.setupVaultGemQuest();
-    this.setupCrystalGalleryChallenge();
-    this.setupShellSeeker();
-    this.setupFishQuestNpcs();
+    this.codeGuy = new CodeGuyNpc(this, this.codeGuyX, this.groundY);
     this.syncPlayerHat();
-    // Collector's Harbor bargainers (in front of trader stands)
-    const cMid = (this.collectorLeft + this.collectorRight) / 2;
-    this.fishCollector = new BargainerNpc(
-      this,
-      cMid + 140,
-      this.groundY,
-      "fish_buy",
-      "Fish Collector"
-    );
-    this.curioTrader = new BargainerNpc(
-      this,
-      cMid - 80,
-      this.groundY,
-      "curio_sell",
-      "Curio Trader",
-      0xf0e0c8
-    );
     this.curioStock = new CurioTraderStock();
     this.curioStock.setOwnsRod((id) => this.inventory.ownsRod(id));
     this.curioStock.setOwnsBobber((id) => this.inventory.ownsBobber(id));
+    this.curioStock.setHasItem((id) => this.inventory.hasItem(id));
+    this.curioStock.setNeedsAnvilCurio(
+      () =>
+        this.inventory.ashencastQuestStage === 1 &&
+        !this.inventory.hasItem("anvil_piece_curio")
+    );
     this.curioStock.start(this.time.now);
-    this.placeWildflowerRodProp();
 
     this.bobber = new Bobber(this);
-    this.spawnFish();
 
-    const waterZones = [
-      // Far west ocean — fish from Collectors west beach / dock
-      { left: this.westWaterLeft, right: this.collectorLeft },
-      // Reef shallows — fish from Collectors east beach / pier
+    this.waterZoneList = [
+      { left: this.westWaterLeft, right: this.ashenLeft },
+      { left: this.ashenRight, right: this.collectorLeft },
+      { left: this.ashenSpringALeft, right: this.ashenSpringARight },
+      { left: this.ashenSpringBLeft, right: this.ashenSpringBRight },
       { left: this.reefLeft, right: this.reefBlendEnd },
-      // Approach ocean toward Starter
       { left: this.reefBlendEnd, right: this.westWaterRight },
       { left: this.eastWaterLeft, right: this.eastWaterRight },
-      // Voyage swamp → Frostpeak Isle
       { left: this.farWaterLeft, right: this.frostLeft },
-      // Beyond Frostpeak Isle
       { left: this.frostRight, right: this.farWaterRight },
       { left: this.pondLeft, right: this.pondRight },
-      // Frostpeak Cave lakes
-      ...this.caveWaters.map((w) => ({ left: w.left, right: w.right })),
     ];
 
     this.weather = new WeatherSystem(
       this,
-      waterZones,
+      this.waterZoneList,
       this.waterSurfaceY,
       this.groundY
     );
@@ -415,6 +390,22 @@ export class GameScene extends Phaser.Scene {
     this.dayNight.setTimeScale(1);
     this.weather.bindDayNight(this.dayNight);
     this.weather.forceWeather("clear");
+    this.weather.getLightningFishTargets = () =>
+      this.fishList
+        .filter(
+          (f) =>
+            f.state !== "caught" &&
+            f.sprite.active &&
+            f.sprite.visible &&
+            f.sprite.alpha > 0.4
+        )
+        .map((f) => ({
+          x: f.sprite.x,
+          y: f.sprite.y,
+          alreadyThunder: f.mutation === "thunder",
+          applyThunder: () => f.setMutation("thunder"),
+        }));
+    this.weather.getLightningAnchorX = () => this.player.sprite.x;
 
     const getLuck = () =>
       this.weather.getLuck(
@@ -451,7 +442,7 @@ export class GameScene extends Phaser.Scene {
       this.bobber,
       this.fishList,
       this.inventory,
-      waterZones,
+      this.waterZoneList,
       this.waterSurfaceY
     );
     this.fishing.setWeather(this.weather);
@@ -498,10 +489,13 @@ export class GameScene extends Phaser.Scene {
       weather: this.weather,
       dayNight: this.dayNight,
       player: this.player,
-      getPointerDown: () =>
-        this.input.pointer1.isDown ||
-        this.input.pointer2.isDown ||
-        this.input.activePointer.isDown,
+      getPointerDown: () => {
+        const p = this.input.activePointer;
+        if (!p.isDown) return false;
+        if (p.rightButtonDown() && !p.leftButtonDown()) return false;
+        return true;
+      },
+      getPointerRightDown: () => this.input.activePointer.rightButtonDown(),
       tryMobileCast: () => this.tryMobileCast(),
       canOpenBoatMenu: () =>
         this.isPlayerOnPort() &&
@@ -620,6 +614,8 @@ export class GameScene extends Phaser.Scene {
       this.isPlayerOnJungleEastPort() ||
       this.isPlayerOnCollectorEastPort() ||
       this.isPlayerOnCollectorWestPort() ||
+      this.isPlayerOnAshenEastPort() ||
+      this.isPlayerOnAshenWestPort() ||
       this.isPlayerOnFrostWestPort() ||
       this.isPlayerOnFrostEastPort() ||
       this.isPlayerOnCavePort()
@@ -638,6 +634,18 @@ export class GameScene extends Phaser.Scene {
     return x >= this.collectorWestDock && x <= this.collectorLeft + 50;
   }
 
+  isPlayerOnAshenEastPort(): boolean {
+    if (this.player.isOnBoat()) return false;
+    const x = this.player.sprite.x;
+    return x >= this.ashenRight - 50 && x <= this.ashenEastDock;
+  }
+
+  isPlayerOnAshenWestPort(): boolean {
+    if (this.player.isOnBoat()) return false;
+    const x = this.player.sprite.x;
+    return x >= this.ashenWestDock && x <= this.ashenLeft + 50;
+  }
+
   isPlayerOnFrostWestPort(): boolean {
     if (this.player.isOnBoat()) return false;
     const x = this.player.sprite.x;
@@ -652,9 +660,7 @@ export class GameScene extends Phaser.Scene {
 
   private isOnJungleIsland(): boolean {
     const x = this.player.sprite.x;
-    return (
-      x >= this.jungleWestDockEnd - 80 && x <= this.jungleEastDockEnd + 80
-    );
+    return x >= this.jungleWestDockEnd && x <= this.jungleEastDockEnd;
   }
 
   private isOnCollectorsIsland(): boolean {
@@ -664,14 +670,14 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
+  private isOnAshencastIsland(): boolean {
+    const x = this.player.sprite.x;
+    return x >= this.ashenWestDock - 40 && x <= this.ashenEastDock + 40;
+  }
+
   private isOnFrostpeak(): boolean {
     const x = this.player.sprite.x;
     return x >= this.frostWestDock - 40 && x <= this.frostEastDock + 40;
-  }
-
-  private isOnVillageIsland(): boolean {
-    const x = this.player.sprite.x;
-    return x >= this.westDockEnd - 80 && x <= this.dockEnd + 80;
   }
 
   private isBoatNearEastPort(): boolean {
@@ -710,6 +716,18 @@ export class GameScene extends Phaser.Scene {
     return x >= this.collectorWestDock - 120 && x <= this.collectorLeft + 80;
   }
 
+  private isBoatNearAshenEastPort(): boolean {
+    if (!this.sailboat) return false;
+    const x = this.sailboat.hull.x;
+    return x <= this.ashenEastDock + 120 && x >= this.ashenRight - 80;
+  }
+
+  private isBoatNearAshenWestPort(): boolean {
+    if (!this.sailboat) return false;
+    const x = this.sailboat.hull.x;
+    return x >= this.ashenWestDock - 120 && x <= this.ashenLeft + 80;
+  }
+
   private isBoatNearFrostWestPort(): boolean {
     if (!this.sailboat) return false;
     const x = this.sailboat.hull.x;
@@ -730,6 +748,8 @@ export class GameScene extends Phaser.Scene {
       this.isBoatNearJungleEastPort() ||
       this.isBoatNearCollectorEastPort() ||
       this.isBoatNearCollectorWestPort() ||
+      this.isBoatNearAshenEastPort() ||
+      this.isBoatNearAshenWestPort() ||
       this.isBoatNearFrostWestPort() ||
       this.isBoatNearFrostEastPort() ||
       this.cavePortNearBoat() != null
@@ -749,6 +769,8 @@ export class GameScene extends Phaser.Scene {
     const onJungleEast = this.isPlayerOnJungleEastPort();
     const onCollectorEast = this.isPlayerOnCollectorEastPort();
     const onCollectorWest = this.isPlayerOnCollectorWestPort();
+    const onAshenEast = this.isPlayerOnAshenEastPort();
+    const onAshenWest = this.isPlayerOnAshenWestPort();
     const onFrostWest = this.isPlayerOnFrostWestPort();
     const onFrostEast = this.isPlayerOnFrostEastPort();
     const cavePort = this.cavePortNearPlayer();
@@ -770,8 +792,16 @@ export class GameScene extends Phaser.Scene {
       waterR = this.westWaterRight;
     } else if (onCollectorWest) {
       x = this.collectorWestDock - 28;
-      waterL = this.westWaterLeft;
+      waterL = this.ashenRight;
       waterR = this.collectorLeft;
+    } else if (onAshenEast) {
+      x = this.ashenEastDock + 28;
+      waterL = this.ashenRight;
+      waterR = this.collectorLeft;
+    } else if (onAshenWest) {
+      x = this.ashenWestDock - 28;
+      waterL = this.westWaterLeft;
+      waterR = this.ashenLeft;
     } else if (onJungleWest) {
       x = this.jungleWestDockEnd - 28;
       waterL = this.eastWaterLeft;
@@ -816,10 +846,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   tryTalkToMerchant(): boolean {
+    const ui = this.scene.get("UIScene") as UIScene;
+    if (ui.isForgeOpen?.()) {
+      ui.closeForge();
+      return true;
+    }
+    if (ui.isCodeGuyOpen?.()) {
+      return true;
+    }
     if (this.player.isOnBoat()) return false;
     if (this.fishing.isBusy()) return false;
 
-    const ui = this.scene.get("UIScene") as UIScene;
+    if (
+      this.codeGuy?.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      return this.handleCodeGuyTalk();
+    }
 
     if (
       this.reefGuide.talking ||
@@ -829,10 +871,22 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (
-      this.frostHermit.talking ||
-      this.frostHermit.isNear(this.player.sprite.x, this.player.sprite.y)
+      this.frostHermit &&
+      (this.frostHermit.talking ||
+        this.frostHermit.isNear(this.player.sprite.x, this.player.sprite.y))
     ) {
       return this.handleHermitTalk();
+    }
+
+    if (
+      this.ashenForgeNpc &&
+      (this.ashenForgeNpc.talking ||
+        this.ashenForgeNpc.isNear(
+          this.player.sprite.x,
+          this.player.sprite.y
+        ))
+    ) {
+      return this.handleAshencastForgeTalk();
     }
 
     if (
@@ -929,7 +983,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private allFishMerchants(): FishMerchant[] {
-    return [this.merchant, this.jungleMerchant, ...this.caveMerchants];
+    return [
+      this.merchant,
+      ...(this.jungleMerchant ? [this.jungleMerchant] : []),
+      ...(this.ashenMerchant ? [this.ashenMerchant] : []),
+      ...this.caveMerchants,
+    ];
   }
 
   private anyFishMerchantTalking(): boolean {
@@ -1086,20 +1145,6 @@ export class GameScene extends Phaser.Scene {
     this.shellSeeker.sprite.setTint(0xe8d0a0);
   }
 
-  private setupFishQuestNpcs(): void {
-    const spots: { id: FishQuestIslandId; x: number; tint: number }[] = [
-      { id: "village", x: this.islandLeft + 480, tint: 0xb0d8ff },
-      { id: "swamp", x: this.jungleLeft + 580, tint: 0xb8e0a0 },
-      { id: "collectors", x: (this.collectorLeft + this.collectorRight) / 2 + 280, tint: 0xffc878 },
-      { id: "frostpeak", x: (this.frostLeft + this.frostRight) / 2 - 200, tint: 0xc8e8ff },
-    ];
-    for (const s of spots) {
-      const npc = new TalkNpc(this, s.x, this.groundY, "Fish Quest", "");
-      npc.sprite.setTint(s.tint);
-      this.fishQuestNpcs[s.id] = npc;
-    }
-  }
-
   private handleFishQuestTalk(islandId: FishQuestIslandId): boolean {
     const npc = this.fishQuestNpcs[islandId];
     if (!npc) return false;
@@ -1122,6 +1167,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleShellSeekerTalk(): boolean {
+    if (!this.shellSeeker) return false;
     if (this.shellSeeker.talking) {
       this.shellSeeker.decline();
       return true;
@@ -1182,6 +1228,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleGalleryCuratorTalk(): boolean {
+    if (!this.galleryCurator || !this.galleryChallenge) return false;
     if (this.galleryCurator.talking) {
       this.galleryCurator.decline();
       return true;
@@ -1226,6 +1273,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleVaultKeeperTalk(): boolean {
+    if (!this.vaultKeeper) return false;
     if (this.vaultKeeper.talking) {
       this.vaultKeeper.decline();
       return true;
@@ -1392,8 +1440,94 @@ export class GameScene extends Phaser.Scene {
     return false;
   }
 
+  /** Ashencast Forge Keeper — anvil repair quest. */
+  private handleAshencastForgeTalk(): boolean {
+    if (!this.ashenForgeNpc) return false;
+    if (this.ashenForgeNpc.talking) {
+      this.ashenForgeNpc.decline();
+      return true;
+    }
+
+    const ui = this.scene.get("UIScene") as UIScene;
+    const inv = this.inventory;
+    let text = "";
+
+    if (inv.ashencastQuestStage === 0) {
+      inv.startAshencastQuest();
+      text =
+        "Could you fix the anvil?\n" +
+        "It's in three pieces — scattered far and wide.\n\n" +
+        "Find the anvil pieces and bring them back.";
+      ui.showToast("Quest started: Find the anvil pieces", "#ffaa88");
+      this.refreshAnvilOceanFloater();
+      this.curioStock?.forceRestock(this.time.now);
+    } else if (inv.ashencastQuestStage === 1) {
+      if (inv.turnInAnvilPieces()) {
+        text =
+          "You've gathered every shard — the frame is whole.\n\n" +
+          "Now I need an Ashencast Trout from these waters.\n" +
+          "Bring me one and I'll finish the forge.";
+        ui.showToast("Quest: Catch an Ashencast Trout", "#7a8cff");
+        this.refreshAnvilOceanFloater();
+        this.refreshAshencastOceanFish();
+      } else {
+        text =
+          "Find the anvil pieces.\n" +
+          `${inv.ashencastQuestProgressLabel()}\n\n` +
+          "· Curio Trader stocks one ($5.6k)\n" +
+          "· One drifts on the ocean surface\n" +
+          "· One sits in the amulet cave ($5k)";
+      }
+    } else if (inv.ashencastQuestStage === 2) {
+      if (inv.turnInAshencastTrout()) {
+        text =
+          "The trout's heat seals the metal…\n" +
+          "The anvil is fixed!\n\n" +
+          "Use the forge to craft the Tranquil Rod.";
+        ui.showToast("Ashencast Forge unlocked!", "#7CFC00");
+        this.ashenBuildAnvil?.();
+      } else {
+        text =
+          "I still need an Ashencast Trout.\n" +
+          "They haunt the ocean around this isle.";
+      }
+    } else {
+      text =
+        "The anvil rings true.\n" +
+        "Approach the forge to craft your rods.";
+      this.openAshencastForge();
+    }
+
+    this.ashenForgeNpc.speak(text);
+    this.persistSave();
+    ui.refreshQuestTracker?.();
+    return true;
+  }
+
+  private openAshencastForge(): void {
+    if (!this.inventory.isAshencastForgeReady()) return;
+    const ui = this.scene.get("UIScene") as UIScene;
+    this.player.setLocked(true);
+    ui.openForge(() => {
+      this.player.setLocked(false);
+    });
+  }
+
+  /** Code Guy — promo code rewards on starter island. */
+  private handleCodeGuyTalk(): boolean {
+    if (!this.codeGuy) return false;
+    const ui = this.scene.get("UIScene") as UIScene;
+    if (ui.isCodeGuyOpen()) return true;
+    this.player.setLocked(true);
+    ui.openCodeGuy(() => {
+      this.player.setLocked(false);
+    });
+    return true;
+  }
+
   /** Frostpeak Hermit 3-stage cave quest. */
   private handleHermitTalk(): boolean {
+    if (!this.frostHermit) return false;
     if (this.frostHermit.talking) {
       this.frostHermit.decline();
       return true;
@@ -1495,6 +1629,9 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    this.refreshAnvilOceanFloater();
+    ui?.refreshQuestTracker?.();
+
     if (this.inventory.frostpeakQuestStage !== 2) return;
     const rodId = this.inventory.getEquippedRodId();
     let any = false;
@@ -1539,12 +1676,12 @@ export class GameScene extends Phaser.Scene {
 
     const px = this.player.sprite.x;
     const py = this.player.sprite.y;
-    if (this.fishCollector.isNear(px, py)) {
+    if (this.fishCollector?.isNear(px, py)) {
       this.fishCollector.showBubble("Got fish? Name your price.");
       ui.openBargain("fish_buy", this.fishCollector.name);
       return true;
     }
-    if (this.curioTrader.isNear(px, py)) {
+    if (this.curioTrader?.isNear(px, py)) {
       const empty = this.curioStock.isEmpty();
       this.curioTrader.showBubble(
         empty
@@ -1562,12 +1699,12 @@ export class GameScene extends Phaser.Scene {
     if (session.kind === "fish_buy") {
       const result = this.inventory.sellFishUnitAtPrice(session.slot, price);
       ui.showToast(result.message, result.ok ? "#7CFC00" : "#ffaa66");
-      this.fishCollector.clearBubble();
+      this.fishCollector?.clearBubble();
     } else {
       const entry = this.curioStock.getEntry(session.stockId);
       if (!entry) {
         ui.showToast("That curio was already sold.", "#ffaa66");
-        this.curioTrader.clearBubble();
+        this.curioTrader?.clearBubble();
       } else {
         const result = this.inventory.buyCurioAtPrice(
           {
@@ -1582,11 +1719,12 @@ export class GameScene extends Phaser.Scene {
           this.curioStock.remove(session.stockId);
         }
         ui.showToast(result.message, result.ok ? "#7CFC00" : "#ffaa66");
-        this.curioTrader.clearBubble();
+        this.curioTrader?.clearBubble();
       }
     }
     ui.onCoinsChanged();
     this.persistSave();
+    ui.refreshQuestTracker?.();
   }
 
   private placeWildflowerRodProp(): void {
@@ -1739,9 +1877,15 @@ export class GameScene extends Phaser.Scene {
         landX = this.collectorRight - 60;
       else if (this.isBoatNearCollectorWestPort())
         landX = this.collectorLeft + 60;
-      else if (this.isBoatNearJungleWestPort()) landX = this.jungleLeft + 50;
-      else if (this.isBoatNearJungleEastPort()) landX = this.jungleRight - 50;
-      else if (this.isBoatNearFrostWestPort()) landX = this.frostLeft + 60;
+      else if (this.isBoatNearAshenEastPort()) landX = this.ashenRight - 60;
+      else if (this.isBoatNearAshenWestPort()) landX = this.ashenLeft + 60;
+      else if (this.isBoatNearJungleWestPort()) {
+        this.zoneLoader.forceLoad("swamp");
+        landX = this.jungleLeft + 50;
+      } else if (this.isBoatNearJungleEastPort()) {
+        this.zoneLoader.forceLoad("swamp");
+        landX = this.jungleRight - 50;
+      } else if (this.isBoatNearFrostWestPort()) landX = this.frostLeft + 60;
       else if (this.isBoatNearFrostEastPort()) landX = this.frostRight - 60;
       else if (this.isBoatNearEastPort()) landX = this.dockEnd - 40;
       else {
@@ -1814,12 +1958,17 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
-  private addIslandBedrock(left: number, right: number, lushFringe: boolean): void {
+  private addIslandBedrock(
+    left: number,
+    right: number,
+    lushFringe: boolean,
+    surfaceY = this.groundY + 32
+  ): void {
     const islandW = right - left;
     const bedrock = this.add.graphics().setDepth(2);
-    const underTop = this.groundY + 32;
+    const underTop = surfaceY;
     const underBottom = this.groundY + 420;
-    const underH = underBottom - underTop;
+    const underH = Math.max(80, underBottom - underTop);
 
     bedrock.fillStyle(lushFringe ? 0x3a5228 : 0x6b4423);
     bedrock.fillRect(left, underTop, islandW, 56);
@@ -1852,7 +2001,7 @@ export class GameScene extends Phaser.Scene {
     }
     for (let i = 0; i < 120; i++) {
       const x = left + Phaser.Math.Between(4, islandW - 8);
-      const y = underTop + Phaser.Math.Between(160, underH - 10);
+      const y = underTop + Phaser.Math.Between(160, Math.max(170, underH - 10));
       bedrock.fillStyle(
         Phaser.Math.RND.pick([0x6a6560, 0x3a3632, 0x2a2826, 0x7a756e]),
         0.9
@@ -1862,7 +2011,7 @@ export class GameScene extends Phaser.Scene {
 
     bedrock.fillStyle(lushFringe ? 0x1e6b32 : 0x4a9344);
     for (let x = left; x < right; x += 6) {
-      bedrock.fillRect(x, this.groundY + 28, 3, Phaser.Math.Between(3, 7));
+      bedrock.fillRect(x, underTop - 4, 3, Phaser.Math.Between(3, 7));
     }
   }
 
@@ -1888,13 +2037,33 @@ export class GameScene extends Phaser.Scene {
       tile.refreshBody();
     }
     this.addIslandBedrock(this.islandLeft, this.islandRight, false);
+  }
 
-    // Jungle island strip → swamp mud grass (gap at pond; bridge in createWaterVisual)
-    for (let x = this.jungleLeft; x < this.jungleLeft + 64; x += 32) {
+  private createJungleTerrain(): void {
+    const left = this.jungleLeft;
+    const right = this.jungleRight;
+    const gy = this.groundY;
+    const pl = this.pondLeft;
+    const pr = this.pondRight;
+
+    // Solid floor plate (pond stays open water; prevents tile-gap falls)
+    const floor = this.add.graphics().setDepth(2.4);
+    floor.fillStyle(0x4a6828, 1);
+    if (pl > left) {
+      floor.fillRect(left, gy - 14, pl - left, 50);
+    }
+    if (pr < right) {
+      floor.fillRect(pr, gy - 14, right - pr, 50);
+    }
+    floor.fillStyle(0x3d5820, 1);
+    floor.fillRect(pl - 10, gy - 10, 12, 28);
+    floor.fillRect(pr - 2, gy - 10, 12, 28);
+
+    for (let x = left; x < left + 64; x += 32) {
       const tile = this.ground.create(x + 16, this.groundY + 16, "shore");
       tile.refreshBody();
     }
-    for (let x = this.jungleLeft + 64; x < this.pondLeft; x += 32) {
+    for (let x = left + 64; x < pl; x += 32) {
       const variant = Math.floor(x / 32) % 4;
       const tile = this.ground.create(
         x + 16,
@@ -1903,7 +2072,7 @@ export class GameScene extends Phaser.Scene {
       );
       tile.refreshBody();
     }
-    for (let x = this.pondRight; x < this.jungleRight - 64; x += 32) {
+    for (let x = pr; x < right - 64; x += 32) {
       const variant = Math.floor(x / 32) % 4;
       const tile = this.ground.create(
         x + 16,
@@ -1912,30 +2081,11 @@ export class GameScene extends Phaser.Scene {
       );
       tile.refreshBody();
     }
-    for (let x = this.jungleRight - 64; x < this.jungleRight; x += 32) {
+    for (let x = right - 64; x < right; x += 32) {
       const tile = this.ground.create(x + 16, this.groundY + 16, "shore");
       tile.refreshBody();
     }
-    this.addIslandBedrock(this.jungleLeft, this.jungleRight, true);
-
-    // Collector's Island — multi-height beach / grass / overlook
-    this.createCollectorsTerrain();
-    this.createFrostpeakTerrain();
-
-    for (const [left, right] of [
-      [this.westWaterLeft, this.collectorLeft],
-      [this.reefBlendEnd, this.westWaterRight],
-      [this.eastWaterLeft, this.eastWaterRight],
-      [this.farWaterLeft, this.frostLeft],
-      [this.frostRight, this.farWaterRight],
-    ] as const) {
-      for (let x = left; x < right; x += 32) {
-        this.add
-          .image(x + 16, this.groundY + 96, "sand")
-          .setTint(0x7a6840)
-          .setDepth(2);
-      }
-    }
+    this.addIslandBedrock(left, right, true);
   }
 
   /** Flat walkable strip — same collision model as Starter / Swamp (no floating platforms). */
@@ -2012,37 +2162,26 @@ export class GameScene extends Phaser.Scene {
       waterWidth,
       Math.max(120, deep - 460)
     );
-
-    const strips = Math.max(6, Math.floor(waterWidth / 70));
-    for (let i = 0; i < strips; i++) {
-      const strip = this.add
-        .rectangle(
-          left + 40 + i * 70,
-          this.waterSurfaceY + 3,
-          50,
-          2,
-          0xc8eaff,
-          0.4
-        )
-        .setDepth(6);
-      this.tweens.add({
-        targets: strip,
-        alpha: 0.08,
-        x: strip.x + 16,
-        duration: 1400 + i * 90,
-        yoyo: true,
-        repeat: -1,
-      });
-    }
   }
 
-  private createWaterVisual(): void {
-    // Far west of collectors (under west dock to shore) + approach ocean east of reef
-    this.drawWaterBody(this.westWaterLeft, this.collectorLeft);
-    this.drawWaterBody(this.reefBlendEnd, this.westWaterRight);
-    this.drawWaterBody(this.eastWaterLeft, this.eastWaterRight);
-    this.drawWaterBody(this.farWaterLeft, this.frostLeft);
-    this.drawWaterBody(this.frostRight, this.farWaterRight);
+  /**
+   * Draw an ocean stretch at most once — so Ashencast/Frostpeak can own their
+   * approach water even if the neighboring zone hasn't loaded yet.
+   */
+  private ensureWaterBody(
+    left: number,
+    right: number,
+    _opts?: { sandTint?: number; sandStep?: number }
+  ): void {
+    const key = `${left}:${right}`;
+    if (this.drawnWaterKeys.has(key)) return;
+    this.drawnWaterKeys.add(key);
+    this.drawWaterBody(left, right);
+  }
+
+  private createVillageWaterVisual(): void {
+    this.ensureWaterBody(this.reefBlendEnd, this.westWaterRight);
+    this.ensureWaterBody(this.eastWaterLeft, this.eastWaterRight);
 
     const pier = this.ground.create(
       this.islandRight - 40,
@@ -2060,22 +2199,6 @@ export class GameScene extends Phaser.Scene {
     westLip.setDisplaySize(80, 32);
     westLip.refreshBody();
 
-    const jWestLip = this.ground.create(
-      this.jungleLeft + 40,
-      this.groundY + 16,
-      "shore"
-    );
-    jWestLip.setDisplaySize(80, 32);
-    jWestLip.refreshBody();
-
-    const jEastLip = this.ground.create(
-      this.jungleRight - 40,
-      this.groundY + 16,
-      "shore"
-    );
-    jEastLip.setDisplaySize(80, 32);
-    jEastLip.refreshBody();
-
     const addDock = (left: number, right: number) => {
       const w = right - left;
       const dock = this.ground.create(left + w / 2, this.groundY + 8, "dock");
@@ -2085,13 +2208,23 @@ export class GameScene extends Phaser.Scene {
     };
     addDock(this.islandRight, this.dockEnd);
     addDock(this.westDockEnd, this.islandLeft);
-    addDock(this.jungleWestDockEnd, this.jungleLeft);
-    addDock(this.jungleRight, this.jungleEastDockEnd);
+  }
+
+  private createCollectorsWaterVisual(): void {
+    // West voyage toward Ashencast
+    this.ensureWaterBody(this.ashenRight, this.collectorLeft, {
+      sandTint: 0x7a6840,
+      sandStep: 48,
+    });
+    const addDock = (left: number, right: number) => {
+      const w = right - left;
+      const dock = this.ground.create(left + w / 2, this.groundY + 8, "dock");
+      dock.setDisplaySize(w, 16);
+      dock.refreshBody();
+      dock.setVisible(false);
+    };
     addDock(this.collectorWestDock, this.collectorLeft);
     addDock(this.collectorRight, this.collectorEastDock);
-    addDock(this.frostWestDock, this.frostLeft);
-    addDock(this.frostRight, this.frostEastDock);
-
     const cWestLip = this.ground.create(
       this.collectorLeft + 40,
       this.groundY + 16,
@@ -2099,7 +2232,6 @@ export class GameScene extends Phaser.Scene {
     );
     cWestLip.setDisplaySize(80, 32);
     cWestLip.refreshBody();
-
     const cEastLip = this.ground.create(
       this.collectorRight - 40,
       this.groundY + 16,
@@ -2107,24 +2239,35 @@ export class GameScene extends Phaser.Scene {
     );
     cEastLip.setDisplaySize(80, 32);
     cEastLip.refreshBody();
+  }
 
-    const sWestLip = this.ground.create(
-      this.frostLeft + 40,
+  private createSwampWaterVisual(): void {
+    // Own approach + far ocean so sailing in isn't light-blue before frost loads.
+    this.ensureWaterBody(this.eastWaterLeft, this.eastWaterRight);
+    this.ensureWaterBody(this.farWaterLeft, this.frostLeft);
+    const addDock = (left: number, right: number) => {
+      const w = right - left;
+      const dock = this.ground.create(left + w / 2, this.groundY + 8, "dock");
+      dock.setDisplaySize(w, 16);
+      dock.refreshBody();
+      dock.setVisible(false);
+    };
+    const jWestLip = this.ground.create(
+      this.jungleLeft + 40,
       this.groundY + 16,
       "shore"
     );
-    sWestLip.setDisplaySize(80, 32);
-    sWestLip.refreshBody();
-
-    const sEastLip = this.ground.create(
-      this.frostRight - 40,
+    jWestLip.setDisplaySize(80, 32);
+    jWestLip.refreshBody();
+    const jEastLip = this.ground.create(
+      this.jungleRight - 40,
       this.groundY + 16,
       "shore"
     );
-    sEastLip.setDisplaySize(80, 32);
-    sEastLip.refreshBody();
-
-    // Footbridge over jungle pond (until swimming exists)
+    jEastLip.setDisplaySize(80, 32);
+    jEastLip.refreshBody();
+    addDock(this.jungleWestDockEnd, this.jungleLeft);
+    addDock(this.jungleRight, this.jungleEastDockEnd);
     const pondW = this.pondRight - this.pondLeft;
     const bridge = this.ground.create(
       this.pondLeft + pondW / 2,
@@ -2134,6 +2277,37 @@ export class GameScene extends Phaser.Scene {
     bridge.setDisplaySize(pondW + 16, 14);
     bridge.refreshBody();
     bridge.setVisible(false);
+  }
+
+  private createFrostpeakWaterVisual(): void {
+    // Own both sides so spawning here isn't light-blue until swamp loads.
+    this.ensureWaterBody(this.farWaterLeft, this.frostLeft);
+    this.ensureWaterBody(this.frostRight, this.farWaterRight, {
+      sandTint: 0x7a6840,
+    });
+    const addDock = (left: number, right: number) => {
+      const w = right - left;
+      const dock = this.ground.create(left + w / 2, this.groundY + 8, "dock");
+      dock.setDisplaySize(w, 16);
+      dock.refreshBody();
+      dock.setVisible(false);
+    };
+    addDock(this.frostWestDock, this.frostLeft);
+    addDock(this.frostRight, this.frostEastDock);
+    const sWestLip = this.ground.create(
+      this.frostLeft + 40,
+      this.groundY + 16,
+      "shore"
+    );
+    sWestLip.setDisplaySize(80, 32);
+    sWestLip.refreshBody();
+    const sEastLip = this.ground.create(
+      this.frostRight - 40,
+      this.groundY + 16,
+      "shore"
+    );
+    sEastLip.setDisplaySize(80, 32);
+    sEastLip.refreshBody();
   }
 
   isNearBlueHouse(): boolean {
@@ -2231,6 +2405,7 @@ export class GameScene extends Phaser.Scene {
   /** Teleport into the mountain cave region (same GameScene). */
   private enterFrostpeakCave(): void {
     const ui = this.scene.get("UIScene") as UIScene | undefined;
+    this.zoneLoader.forceLoad("cave");
     if (this.sailboat && !this.sailboat.occupied) {
       this.sailboat.destroy();
       this.sailboat = null;
@@ -2535,7 +2710,56 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
-  private spawnFish(): void {
+  private spawnOceanCorridor(
+    id: string,
+    left: number,
+    right: number,
+    count: number,
+    ashencastWaters = false
+  ): void {
+    if (this.spawnedFishCorridors.has(id)) return;
+    this.spawnedFishCorridors.add(id);
+    this.spawnFishInZone(left, right, count, "ocean", ashencastWaters);
+  }
+
+  /** Collectors ↔ Ashencast open ocean — either island load fills the voyage. */
+  private spawnCollectorsAshencastOceanFish(): void {
+    const gapL = this.ashenRight;
+    const gapR = this.collectorLeft;
+    const gapMid = (gapL + gapR) / 2;
+    this.spawnOceanCorridor(
+      "ocean-ashen-collectors-west",
+      gapL,
+      gapMid,
+      10,
+      true
+    );
+    this.spawnOceanCorridor(
+      "ocean-ashen-collectors-east",
+      gapMid,
+      gapR,
+      10,
+      true
+    );
+  }
+
+  /** Swamp approach ↔ Frostpeak open ocean — either island load fills the voyage. */
+  private spawnSwampFrostpeakOceanFish(): void {
+    this.spawnOceanCorridor(
+      "ocean-swamp-frostpeak",
+      this.farWaterLeft,
+      this.frostLeft,
+      6
+    );
+  }
+
+  private spawnFishInZone(
+    left: number,
+    right: number,
+    count: number,
+    habitat: FishHabitat,
+    ashencastWaters = false
+  ): void {
     const getLuck = () =>
       this.weather
         ? this.weather.getLuck(
@@ -2551,93 +2775,453 @@ export class GameScene extends Phaser.Scene {
     };
     const getIsRainy = () => this.weather?.isRainy() ?? false;
     const getIsSunny = () => this.weather?.weather === "sunny";
-    const zones: {
-      left: number;
-      right: number;
-      count: number;
-      habitat: FishHabitat;
-    }[] = [
-      {
-        left: this.reefLeft,
-        right: this.reefRight,
-        count: 8,
-        habitat: "reef",
+    for (let i = 0; i < count; i++) {
+      const pad = habitat === "pond" ? 30 : 60;
+      const x = Phaser.Math.Between(left + pad, right - pad);
+      const y = this.waterSurfaceY + Phaser.Math.Between(28, 70);
+      const rollSpecies = ashencastWaters && habitat === "ocean"
+        ? () =>
+            rollAshencastOceanSpecies(
+              getLuck(),
+              this.inventory.bestiaryFound.includes("ashencast_trout"),
+              getExcludeSpecies({} as Fish),
+              this.inventory.ashencastQuestStage >= 2,
+              this.inventory.ashencastQuestStage === 2
+            )
+        : undefined;
+      const fish = new Fish(
+        this,
+        x,
+        y,
+        left + (habitat === "pond" ? 20 : 50),
+        right - (habitat === "pond" ? 20 : 50),
+        this.waterSurfaceY,
+        getLuck,
+        habitat,
+        undefined,
+        getExcludeSpecies,
+        getIsRainy,
+        rollSpecies ? { rollSpecies } : undefined,
+        getIsSunny
+      );
+      this.fishList.push(fish);
+    }
+  }
+
+  /** Fish near Starter Isle — other zones spawn when sailed near. */
+  private spawnStarterFish(): void {
+    this.spawnFishInZone(this.reefBlendEnd, this.westWaterRight, 10, "ocean");
+    this.spawnFishInZone(this.eastWaterLeft, this.eastWaterRight, 10, "ocean");
+  }
+
+  private spawnFishQuestNpc(islandId: FishQuestIslandId): void {
+    if (this.fishQuestNpcs[islandId]) return;
+    const spots: Record<FishQuestIslandId, { x: number; tint: number }> = {
+      village: { x: this.islandLeft + 480, tint: 0xb0d8ff },
+      swamp: { x: this.jungleLeft + 580, tint: 0xb8e0a0 },
+      collectors: {
+        x: (this.collectorLeft + this.collectorRight) / 2 + 280,
+        tint: 0xffc878,
       },
-      {
-        // West ocean beyond Collectors
-        left: this.westWaterLeft,
-        right: this.collectorLeft,
-        count: 4,
-        habitat: "ocean",
+      frostpeak: {
+        x: (this.frostLeft + this.frostRight) / 2 - 200,
+        tint: 0xc8e8ff,
       },
-      {
-        // Deep west approach east of the reef blend
-        left: this.reefBlendEnd,
-        right: this.westWaterRight,
-        count: 10,
-        habitat: "ocean",
-      },
-      {
-        left: this.eastWaterLeft,
-        right: this.eastWaterRight,
-        count: 10,
-        habitat: "ocean",
-      },
-      {
-        // Voyage swamp → Frostpeak Isle
-        left: this.farWaterLeft,
-        right: this.frostLeft,
-        count: 6,
-        habitat: "ocean",
-      },
-      {
-        // East of Frostpeak Isle
-        left: this.frostRight,
-        right: this.farWaterRight,
-        count: 4,
-        habitat: "ocean",
-      },
-      {
-        left: this.pondLeft,
-        right: this.pondRight,
-        count: 3,
-        habitat: "pond",
-      },
-      ...this.caveWaters.map((w) => ({
-        left: w.left,
-        right: w.right,
-        count: w.id === "lake" ? 10 : w.id === "channel" ? 8 : 6,
-        habitat: "cave" as FishHabitat,
-      })),
+    };
+    const s = spots[islandId];
+    const npc = new TalkNpc(this, s.x, this.groundY, "Fish Quest", "");
+    npc.sprite.setTint(s.tint);
+    this.fishQuestNpcs[islandId] = npc;
+  }
+
+  private initWorldZoneLoader(): void {
+    this.zoneLoader = new WorldZoneLoader();
+    const loadR = 2200;
+    this.zoneLoader.register({
+      id: "ashencast",
+      centerX: (this.ashenLeft + this.ashenRight) / 2,
+      loadRadius: loadR,
+      onLoad: () => this.loadAshencastZone(),
+    });
+    this.zoneLoader.register({
+      id: "collectors",
+      centerX: (this.collectorLeft + this.collectorRight) / 2,
+      loadRadius: loadR,
+      onLoad: () => this.loadCollectorsZone(),
+    });
+    this.zoneLoader.register({
+      id: "reef",
+      centerX: (this.reefLeft + this.reefRight) / 2,
+      loadRadius: loadR,
+      onLoad: () => this.loadReefZone(),
+    });
+    this.zoneLoader.register({
+      id: "swamp",
+      centerX: (this.jungleLeft + this.jungleRight) / 2,
+      loadRadius: loadR,
+      onLoad: () => this.loadSwampZone(),
+    });
+    this.zoneLoader.register({
+      id: "frostpeak",
+      centerX: (this.frostLeft + this.frostRight) / 2,
+      loadRadius: loadR,
+      onLoad: () => this.loadFrostpeakZone(),
+    });
+    this.zoneLoader.register({
+      id: "cave",
+      centerX: this.caveOriginX + CAVE_LOCAL_W / 2,
+      loadRadius: 0,
+      onLoad: () => this.loadFrostpeakCaveZone(),
+    });
+  }
+
+  private loadCollectorsZone(): void {
+    this.createCollectorsTerrain();
+    this.createCollectorsWaterVisual();
+    placeCollectorsIsland(
+      this,
+      this.groundY,
+      this.collectorLeft,
+      this.collectorRight,
+      this.collectorWestDock,
+      this.collectorEastDock,
+      this.nightAmbient
+    );
+    const cMid = (this.collectorLeft + this.collectorRight) / 2;
+    this.fishCollector = new BargainerNpc(
+      this,
+      cMid + 140,
+      this.groundY,
+      "fish_buy",
+      "Fish Collector"
+    );
+    this.curioTrader = new BargainerNpc(
+      this,
+      cMid - 80,
+      this.groundY,
+      "curio_sell",
+      "Curio Trader",
+      0xf0e0c8
+    );
+    this.spawnFishQuestNpc("collectors");
+    this.spawnFishInZone(this.reefLeft, this.reefRight, 8, "reef");
+    this.spawnCollectorsAshencastOceanFish();
+  }
+
+  private loadAshencastZone(): void {
+    this.createAshencastTerrain();
+    this.createAshencastWaterVisual();
+    const placed = placeAshencastIsland(
+      this,
+      this.groundY,
+      this.ashenLeft,
+      this.ashenRight,
+      this.ashenWestDock,
+      this.ashenEastDock,
+      this.ashenSpringALeft,
+      this.ashenSpringARight,
+      this.ashenSpringBLeft,
+      this.ashenSpringBRight,
+      this.inventory.isAshencastForgeReady()
+    );
+    this.ashenBuildAnvil = placed.buildAnvil;
+    this.ashenMerchant = new FishMerchant(
+      this,
+      placed.harbourX,
+      this.groundY,
+      "Ashencast Merchant"
+    );
+    this.ashenForgeNpc = new TalkNpc(
+      this,
+      placed.forgeX + 70,
+      this.groundY,
+      "Forge Keeper",
+      ""
+    );
+    this.ashenForgeNpc.sprite.setTint(0xffaa88);
+    this.spawnFishInZone(this.westWaterLeft, this.ashenLeft, 8, "ocean", true);
+    this.spawnCollectorsAshencastOceanFish();
+    // Hotsprings stay fishable water, but no swamp pond fish spawn here.
+    this.refreshAnvilOceanFloater();
+    if (this.inventory.ashencastQuestStage >= 2) {
+      this.refreshAshencastOceanFish();
+    }
+  }
+
+  private createAshencastWaterVisual(): void {
+    // Own both oceans around the isle so spawn isn't light-blue until collectors loads.
+    this.ensureWaterBody(this.westWaterLeft, this.ashenLeft, {
+      sandTint: 0x8a6040,
+    });
+    this.ensureWaterBody(this.ashenRight, this.collectorLeft, {
+      sandTint: 0x7a6840,
+      sandStep: 48,
+    });
+    const pier = ashencastPierCollisionBounds(
+      this.ashenLeft,
+      this.ashenRight,
+      this.ashenWestDock,
+      this.ashenEastDock
+    );
+    const addDock = (left: number, right: number) => {
+      const w = right - left;
+      if (w <= 0) return;
+      const dock = this.ground.create(left + w / 2, this.groundY + 8, "dock");
+      dock.setDisplaySize(w, 16);
+      dock.refreshBody();
+      dock.setVisible(false);
+    };
+    const addDockCap = (centerX: number) => {
+      const cap = this.ground.create(centerX, this.groundY + 16, "shore");
+      cap.setDisplaySize(64, 32);
+      cap.refreshBody();
+      cap.setVisible(false);
+      cap.setTint(0xd4a070);
+    };
+    addDock(pier.westLeft, pier.westRight);
+    addDockCap(pier.westLeft + 32);
+    addDock(pier.eastLeft, pier.eastRight);
+    addDockCap(pier.eastRight - 32);
+    const westLip = this.ground.create(
+      this.ashenLeft + 40,
+      this.groundY + 16,
+      "shore"
+    );
+    westLip.setDisplaySize(80, 32);
+    westLip.refreshBody();
+    westLip.setTint(0xd4a070);
+    const eastLip = this.ground.create(
+      this.ashenRight - 40,
+      this.groundY + 16,
+      "shore"
+    );
+    eastLip.setDisplaySize(80, 32);
+    eastLip.refreshBody();
+    eastLip.setTint(0xd4a070);
+
+    // Walkable bridges over hotspring ponds
+    for (const [pl, pr] of [
+      [this.ashenSpringALeft, this.ashenSpringARight],
+      [this.ashenSpringBLeft, this.ashenSpringBRight],
+    ] as const) {
+      const pondW = pr - pl;
+      const bridge = this.ground.create(pl + pondW / 2, this.groundY + 6, "dock");
+      bridge.setDisplaySize(pondW + 16, 14);
+      bridge.refreshBody();
+      bridge.setVisible(false);
+    }
+  }
+
+  private createAshencastTerrain(): void {
+    const left = this.ashenLeft;
+    const right = this.ashenRight;
+    const gy = this.groundY;
+    const ponds: [number, number][] = [
+      [this.ashenSpringALeft, this.ashenSpringARight],
+      [this.ashenSpringBLeft, this.ashenSpringBRight],
     ];
-    for (const zone of zones) {
-      for (let i = 0; i < zone.count; i++) {
-        const pad = zone.habitat === "pond" ? 30 : 60;
-        const x = Phaser.Math.Between(zone.left + pad, zone.right - pad);
-        const y = this.waterSurfaceY + Phaser.Math.Between(28, 70);
-        const fish = new Fish(
-          this,
-          x,
-          y,
-          zone.left + (zone.habitat === "pond" ? 20 : 50),
-          zone.right - (zone.habitat === "pond" ? 20 : 50),
-          this.waterSurfaceY,
-          getLuck,
-          zone.habitat,
-          undefined,
-          getExcludeSpecies,
-          getIsRainy,
-          undefined,
-          getIsSunny
-        );
-        this.fishList.push(fish);
+    const inPond = (x: number) =>
+      ponds.some(([pl, pr]) => x >= pl && x < pr);
+
+    // Solid scorched floor plate so sky never shows through tile gaps
+    const floor = this.add.graphics().setDepth(2.4);
+    floor.fillStyle(0xb06038, 1);
+    let cursor = left;
+    for (const [pl, pr] of ponds) {
+      if (pl > cursor) {
+        floor.fillRect(cursor, gy - 14, pl - cursor, 50);
       }
+      cursor = Math.max(cursor, pr);
+    }
+    if (cursor < right) {
+      floor.fillRect(cursor, gy - 14, right - cursor, 50);
+    }
+    // Opaque bank lips at each pond so the rim isn't sky
+    floor.fillStyle(0xa85830, 1);
+    for (const [pl, pr] of ponds) {
+      floor.fillRect(pl - 10, gy - 10, 12, 28);
+      floor.fillRect(pr - 2, gy - 10, 12, 28);
+    }
+
+    for (let x = left; x < left + 110; x += 32) {
+      const tile = this.ground.create(x + 16, gy + 16, "shore");
+      tile.refreshBody();
+      tile.setTint(0xd4a070);
+    }
+    for (let x = left + 110; x < right - 110; x += 32) {
+      if (inPond(x)) continue;
+      const nearPondEdge = ponds.some(
+        ([pl, pr]) => Math.abs(x - pl) < 40 || Math.abs(x - pr) < 40
+      );
+      const variant = Math.floor(Math.abs(x) / 32) % 4;
+      const tile = this.ground.create(
+        x + 16,
+        gy + 16,
+        nearPondEdge ? "shore" : `grass_${variant}`
+      );
+      tile.refreshBody();
+      tile.setTint(nearPondEdge ? 0xc48858 : 0xc87848);
+    }
+    for (let x = right - 110; x < right; x += 32) {
+      const tile = this.ground.create(x + 16, gy + 16, "shore");
+      tile.refreshBody();
+      tile.setTint(0xd4a070);
+    }
+    // Bedrock starts at the surface so nothing under the grass is empty sky
+    this.addIslandBedrock(left, right, false, gy);
+  }
+
+  /** Re-roll Ashencast-adjacent ocean fish so trout can appear after reaching stage 2. */
+  private refreshAshencastOceanFish(): void {
+    for (const fish of this.fishList) {
+      if (fish === this.anvilOceanFish) continue;
+      if (fish.habitat !== "ocean") continue;
+      const x = fish.sprite.x;
+      const near =
+        (x >= this.westWaterLeft && x <= this.ashenLeft) ||
+        (x >= this.ashenRight && x <= this.collectorLeft);
+      if (!near) continue;
+      if (fish.state !== "idle") continue;
+      fish.resetIdle();
+    }
+  }
+
+  /** Keep one surface anvil shard floating while the quest needs it. */
+  private refreshAnvilOceanFloater(): void {
+    const need =
+      this.inventory.ashencastQuestStage === 1 &&
+      !this.inventory.hasItem("anvil_piece_ocean");
+    if (!need) {
+      if (this.anvilOceanFish) {
+        const idx = this.fishList.indexOf(this.anvilOceanFish);
+        if (idx >= 0) this.fishList.splice(idx, 1);
+        this.anvilOceanFish.destroy();
+        this.anvilOceanFish = undefined;
+      }
+      return;
+    }
+    if (this.anvilOceanFish && this.fishList.includes(this.anvilOceanFish)) {
+      return;
+    }
+    const mid = (this.ashenRight + this.collectorLeft) / 2;
+    const fish = new Fish(
+      this,
+      mid,
+      this.waterSurfaceY + 24,
+      this.ashenRight + 80,
+      this.collectorLeft - 80,
+      this.waterSurfaceY,
+      () => this.inventory.getFishingStats().luck,
+      "ocean",
+      "anvil_piece_ocean",
+      () => [],
+      () => this.weather?.isRainy() ?? false,
+      { lockSpecies: true, noDespawn: true },
+      () => this.weather?.weather === "sunny"
+    );
+    this.anvilOceanFish = fish;
+    this.fishList.push(fish);
+  }
+
+  private loadReefZone(): void {
+    placeCoralReef(
+      this,
+      this.waterSurfaceY,
+      this.reefLeft,
+      this.reefRight,
+      this.reefBlendEnd
+    );
+  }
+
+  private loadSwampZone(): void {
+    this.createJungleTerrain();
+    this.createSwampWaterVisual();
+    placeJungle(
+      this,
+      this.groundY,
+      this.jungleLeft,
+      this.jungleRight,
+      this.pondLeft,
+      this.pondRight,
+      this.nightAmbient
+    );
+    this.add
+      .image(this.secretFallTreeX, this.groundY + 2, "swamp_tree_tall")
+      .setDepth(2)
+      .setOrigin(0.5, 1)
+      .setScale(0.96);
+    this.jungleMerchant = new FishMerchant(
+      this,
+      this.jungleLeft + 320,
+      this.groundY,
+      "Swamp Merchant"
+    );
+    this.jungleMerchant.sprite.setTint(0xb8d8a0);
+    this.placeWildflowerRodProp();
+    this.spawnFishQuestNpc("swamp");
+    this.spawnSwampFrostpeakOceanFish();
+    this.spawnFishInZone(this.pondLeft, this.pondRight, 3, "pond");
+  }
+
+  private loadFrostpeakZone(): void {
+    this.createFrostpeakTerrain();
+    this.createFrostpeakWaterVisual();
+    const frost = placeFrostpeakIsle(
+      this,
+      this.groundY,
+      this.frostLeft,
+      this.frostRight,
+      this.frostWestDock,
+      this.frostEastDock,
+      this.nightAmbient,
+      this.inventory.frostpeakCaveOpen
+    );
+    this.frostCaveBoards = frost.caveBoards;
+    this.frostHermit = new TalkNpc(
+      this,
+      (this.frostLeft + this.frostRight) / 2 - 30,
+      this.groundY,
+      "Hermit",
+      ""
+    );
+    this.frostHermit.sprite.setTint(0xd0e0f0);
+    this.spawnFishQuestNpc("frostpeak");
+    this.spawnSwampFrostpeakOceanFish();
+    this.spawnFishInZone(this.frostRight, this.farWaterRight, 4, "ocean");
+  }
+
+  private loadFrostpeakCaveZone(): void {
+    if (this.caveWaters.length > 0) return;
+    const cave = placeFrostpeakCave(
+      this,
+      this.caveOriginX,
+      this.groundY,
+      this.ground
+    );
+    this.caveLands = cave.lands;
+    this.caveWaters = cave.waters;
+    this.cavePorts = cave.ports;
+    for (const w of this.caveWaters) {
+      this.waterZoneList.push({ left: w.left, right: w.right });
+    }
+    this.spawnCaveMerchants();
+    this.setupVaultGemQuest();
+    this.setupCrystalGalleryChallenge();
+    this.setupShellSeeker();
+    for (const w of this.caveWaters) {
+      this.spawnFishInZone(
+        w.left,
+        w.right,
+        w.id === "lake" ? 10 : w.id === "channel" ? 8 : 6,
+        "cave"
+      );
     }
   }
 
   update(_time: number, delta: number): void {
     this.dayNight?.update(delta);
     this.weather?.update(delta);
+    this.updateAshenSkyHeat();
     if (this.dayNight && this.nightAmbient) {
       this.nightAmbient.update(this.dayNight.getNightFactor());
     }
@@ -2647,7 +3231,17 @@ export class GameScene extends Phaser.Scene {
     this.updateVaultGemFx(delta);
     this.curioStock?.update(this.time.now);
     this.syncPlayerCarriedRod();
+    this.syncForgeRodVfx();
     this.player.update();
+    if (!this.inFrostpeakCave) {
+      if (
+        Math.abs(this.player.sprite.x - (this.jungleLeft + this.jungleRight) / 2) <
+        2400
+      ) {
+        this.zoneLoader?.forceLoad("swamp");
+      }
+      this.zoneLoader?.refresh(this.player.sprite.x);
+    }
     for (const fish of this.fishList) {
       fish.update(delta);
     }
@@ -2657,13 +3251,15 @@ export class GameScene extends Phaser.Scene {
     const areaId = this.getAreaId(this.player.sprite.x);
     let musicZone: MusicZone;
     if (this.inFrostpeakCave) {
-      musicZone = "ocean";
+      musicZone = "frostpeak_cave";
     } else if (areaId === "reef") {
       musicZone = "reef";
     } else if (areaId === "collectors") {
       musicZone = "collectors";
+    } else if (areaId === "ashencast") {
+      musicZone = "ashencast";
     } else if (areaId === "frostpeak") {
-      musicZone = "ocean";
+      musicZone = "frostpeak";
     } else {
       musicZone = areaId as MusicZone;
     }
@@ -2709,13 +3305,29 @@ export class GameScene extends Phaser.Scene {
     ) {
       ui.setPrompt("F / X — Close");
     } else if (
+      this.codeGuy?.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      ui.setPrompt(
+        ui.isCodeGuyOpen()
+          ? "Type code · Enter redeem · Esc leave"
+          : "F — Talk to Code Guy"
+      );
+    } else if (
       this.reefGuide.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
       ui.setPrompt("F — Talk to Dock Guide");
     } else if (
-      this.frostHermit.isNear(this.player.sprite.x, this.player.sprite.y)
+      this.frostHermit?.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
       ui.setPrompt("F — Talk to Hermit");
+    } else if (
+      this.ashenForgeNpc?.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      ui.setPrompt(
+        this.inventory.isAshencastForgeReady()
+          ? "F — Talk / Open Forge"
+          : "F — Talk to Forge Keeper"
+      );
     } else if (
       FISH_QUEST_ISLAND_IDS.some((id) =>
         this.fishQuestNpcs[id]?.isNear(
@@ -2726,11 +3338,11 @@ export class GameScene extends Phaser.Scene {
     ) {
       ui.setPrompt("F — Talk to Fish Quest");
     } else if (
-      this.fishCollector.isNear(this.player.sprite.x, this.player.sprite.y)
+      this.fishCollector?.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
       ui.setPrompt("F — Bargain with Fish Collector");
     } else if (
-      this.curioTrader.isNear(this.player.sprite.x, this.player.sprite.y)
+      this.curioTrader?.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
       const restock = formatCurioRestock(
         this.curioStock.msUntilRestock(this.time.now)
@@ -2793,11 +3405,11 @@ export class GameScene extends Phaser.Scene {
     }
     if (uiScene.isBargainOpen()) {
       const near =
-        this.fishCollector.isNear(
+        this.fishCollector?.isNear(
           this.player.sprite.x,
           this.player.sprite.y
         ) ||
-        this.curioTrader.isNear(this.player.sprite.x, this.player.sprite.y);
+        this.curioTrader?.isNear(this.player.sprite.x, this.player.sprite.y);
       if (!near) uiScene.closeBargain();
     }
     if (
@@ -2808,8 +3420,31 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private getAreaId(x: number): MusicZone | "reef" | "collectors" | "frostpeak" {
+  /** Fade volcanic red sky in as you approach / stand on Ashencast. */
+  private updateAshenSkyHeat(): void {
+    if (!this.weather || this.inFrostpeakCave) {
+      this.weather?.setAshenSkyHeat(0);
+      return;
+    }
+    const x = this.player.sprite.x;
+    const mid = (this.ashenLeft + this.ashenRight) / 2;
+    const dist = Math.abs(x - mid);
+    const fullAt = 1600;
+    const fadeAt = 4200;
+    const heat =
+      dist <= fullAt
+        ? 1
+        : dist >= fadeAt
+          ? 0
+          : 1 - (dist - fullAt) / (fadeAt - fullAt);
+    this.weather.setAshenSkyHeat(heat);
+  }
+
+  private getAreaId(x: number): MusicZone | "reef" | "collectors" | "frostpeak" | "ashencast" {
     if (this.inFrostpeakCave || x >= this.caveOriginX) return "frostpeak";
+    if (x >= this.ashenWestDock && x <= this.ashenEastDock) {
+      return "ashencast";
+    }
     if (x >= this.collectorWestDock && x <= this.collectorEastDock) {
       return "collectors";
     }
@@ -2823,10 +3458,11 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private getAreaName(id: MusicZone | "reef" | "collectors" | "frostpeak"): string {
+  private getAreaName(id: MusicZone | "reef" | "collectors" | "frostpeak" | "ashencast"): string {
     if (id === "reef") return "Coral Reef";
     if (id === "collectors") return "Collector's Island";
     if (id === "frostpeak") return "Frostpeak Isle";
+    if (id === "ashencast") return "Ashencast Isle";
     return areaNameForZone(id);
   }
 
@@ -2839,6 +3475,10 @@ export class GameScene extends Phaser.Scene {
     names: string[];
   }[] {
     const landmarks = [
+      {
+        name: "Ashencast Isle",
+        x: (this.ashenLeft + this.ashenRight) / 2,
+      },
       {
         name: "Coral Reef",
         x: (this.reefLeft + this.reefRight) / 2,
@@ -2877,9 +3517,12 @@ export class GameScene extends Phaser.Scene {
     return out;
   }
 
-  /** True if X is on walkable village, collectors, swamp, or frostpeak docks/island. */
+  /** True if X is on walkable village, collectors, ashencast, swamp, or frostpeak docks/island. */
   private isWalkableLandX(x: number): boolean {
     if (x >= this.westDockEnd + 16 && x <= this.dockEnd - 16) return true;
+    if (x >= this.ashenWestDock + 8 && x <= this.ashenEastDock - 8) {
+      return true;
+    }
     if (
       x >= this.collectorWestDock + 8 &&
       x <= this.collectorEastDock - 8
@@ -2941,12 +3584,28 @@ export class GameScene extends Phaser.Scene {
         }
         return { x, y: landY };
       }
+      if (x >= this.ashenWestDock + 8 && x <= this.ashenEastDock - 8) {
+        if (x < this.ashenLeft + 40) {
+          return { x: this.ashenLeft + 100, y: landY };
+        }
+        if (x > this.ashenRight - 40) {
+          return { x: this.ashenRight - 100, y: landY };
+        }
+        return { x, y: landY };
+      }
       return { x, y: landY };
     }
 
-    // Far west of collectors
+    // Far west of Ashencast
+    if (x < this.ashenWestDock + 8) {
+      return { x: this.ashenLeft + 120, y: landY };
+    }
+    // Between Ashencast and Collectors
     if (x < this.collectorWestDock + 8) {
-      return { x: this.collectorLeft + 120, y: landY };
+      const mid = (this.ashenEastDock + this.collectorWestDock) / 2;
+      return x < mid
+        ? { x: this.ashenRight - 100, y: landY }
+        : { x: this.collectorLeft + 120, y: landY };
     }
     // Reef / approach ocean between collectors and starter
     if (x < this.westDockEnd + 16) {
@@ -3050,6 +3709,20 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (this.isOnAshencastIsland()) {
+      const minX = this.ashenWestDock + 8;
+      const maxX = this.ashenEastDock - 8;
+      if (this.player.sprite.x > maxX) {
+        this.player.sprite.x = maxX;
+        this.player.sprite.setVelocityX(0);
+      }
+      if (this.player.sprite.x < minX) {
+        this.player.sprite.x = minX;
+        this.player.sprite.setVelocityX(0);
+      }
+      return;
+    }
+
     if (this.isOnFrostpeak()) {
       const minX = this.frostWestDock + 8;
       const maxX = this.frostEastDock - 8;
@@ -3069,6 +3742,22 @@ export class GameScene extends Phaser.Scene {
       const mid = (this.reefRight + this.westDockEnd) / 2;
       this.player.sprite.x =
         x < mid ? this.collectorEastDock - 8 : this.westDockEnd + 16;
+      this.player.sprite.setVelocityX(0);
+      return;
+    }
+
+    // Stranded between Ashencast and Collectors
+    if (x > this.ashenEastDock + 40 && x < this.collectorWestDock - 40) {
+      const mid = (this.ashenEastDock + this.collectorWestDock) / 2;
+      this.player.sprite.x =
+        x < mid ? this.ashenEastDock - 8 : this.collectorWestDock + 8;
+      this.player.sprite.setVelocityX(0);
+      return;
+    }
+
+    // West of Ashencast into void ocean
+    if (x < this.ashenWestDock - 40) {
+      this.player.sprite.x = this.ashenWestDock + 8;
       this.player.sprite.setVelocityX(0);
       return;
     }
@@ -3098,12 +3787,6 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (!this.isOnVillageIsland() && x >= this.jungleWestDockEnd - 80 && x < this.frostWestDock) {
-      this.player.sprite.x = this.jungleWestDockEnd + 16;
-      this.player.sprite.setVelocityX(0);
-      return;
-    }
-
     const maxX = this.dockEnd - 16;
     const minX = this.westDockEnd + 16;
     if (this.player.sprite.x > maxX) {
@@ -3114,6 +3797,22 @@ export class GameScene extends Phaser.Scene {
       this.player.sprite.x = minX;
       this.player.sprite.setVelocityX(0);
     }
+  }
+
+  /** Sync ember halo to the forge furnace on the rod shaft. */
+  private syncForgeRodVfx(): void {
+    const show = !this.inFrostpeakCave && this.player.isForgeRodInHand();
+    if (!show) {
+      this.forgeRodVfx?.setActive(false);
+      return;
+    }
+    if (!this.forgeRodVfx) {
+      this.forgeRodVfx = new ForgeRodTipVfx(this);
+    }
+    this.forgeRodVfx.setActive(true);
+    const furnace = this.player.getForgeFurnaceWorld();
+    this.forgeRodVfx.setDepth(this.player.sprite.depth + 1);
+    this.forgeRodVfx.update(furnace.x, furnace.y, this.time.now);
   }
 
   /** Hotbar rod + optional Crystal Rod gallery skin in-hand. */

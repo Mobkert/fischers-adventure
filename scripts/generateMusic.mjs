@@ -5,6 +5,9 @@
  * Jungle: rainforest-ish percussion + melody
  * Reef: tropical lounge pads + muted plucks
  * Collectors: chill fingerstyle guitar harbor loop
+ * Ashencast: volcanic tribal drum loop (~30s)
+ * Frostpeak: secretive cold island ambient (~32s)
+ * Frostpeak Cave: deeper hidden cavern ambient (~32s)
  */
 import fs from "fs";
 import path from "path";
@@ -591,10 +594,258 @@ function makeCollectors() {
   return samples;
 }
 
+/** Ashencast — volcanic tribal drums (~30s, 9 bars @ 72 BPM). */
+function makeAshencast() {
+  const duration = 30;
+  const n = SR * duration;
+  const samples = new Float32Array(n);
+  const bpm = 72;
+  const beat = 60 / bpm;
+  const bars = 9;
+  const events = [];
+
+  for (let bar = 0; bar < bars; bar++) {
+    const t0 = bar * 4 * beat;
+    if (t0 >= duration - 0.05) break;
+    const accent = bar % 4 === 3;
+
+    // Deep taiko — downbeats
+    events.push({ t: t0, type: "taiko", vel: 0.34 });
+    events.push({ t: t0 + beat * 2, type: "taiko", vel: accent ? 0.38 : 0.26 });
+
+    // Mid toms — offbeats & syncopation
+    events.push({ t: t0 + beat * 1, type: "tom", midi: 48, vel: 0.14 });
+    events.push({ t: t0 + beat * 3, type: "tom", midi: 45, vel: 0.12 });
+    if (bar % 2 === 1) {
+      events.push({ t: t0 + beat * 1.5, type: "tom", midi: 50, vel: 0.1 });
+    }
+
+    // Frame drum / rim chatter
+    events.push({ t: t0 + beat * 0.5, type: "frame", vel: 0.09 });
+    events.push({ t: t0 + beat * 2.5, type: "frame", vel: 0.08 });
+    events.push({ t: t0 + beat * 3.5, type: "frame", vel: 0.07 });
+
+    // Fill every 4th bar
+    if (accent) {
+      events.push({ t: t0 + beat * 3.25, type: "tom", midi: 52, vel: 0.16 });
+      events.push({ t: t0 + beat * 3.5, type: "rim", vel: 0.11 });
+      events.push({ t: t0 + beat * 3.75, type: "taiko", vel: 0.22 });
+    }
+  }
+
+  let lp = 0;
+  for (let i = 0; i < n; i++) {
+    const time = i / SR;
+    let v = 0;
+
+    // Smoldering low rumble (volcano bed)
+    const swell = 0.82 + 0.18 * Math.sin(2 * Math.PI * time / duration);
+    v += Math.sin(2 * Math.PI * 38 * time) * 0.028 * swell;
+    v += Math.sin(2 * Math.PI * 57 * time) * 0.018 * swell;
+    v += Math.sin(2 * Math.PI * 76 * time) * 0.01 * swell;
+    // Heat shimmer
+    v +=
+      noise() *
+      0.014 *
+      (0.35 + 0.65 * Math.sin(2 * Math.PI * 0.11 * time + 0.6));
+
+    for (const e of events) {
+      const age = time - e.t;
+      if (age < 0 || age > 1.6) continue;
+      if (e.type === "taiko") {
+        const env = Math.exp(-5.2 * age) * e.vel;
+        const pitch = 62 + age * -95;
+        v += Math.sin(2 * Math.PI * pitch * age) * env;
+        v += Math.sin(2 * Math.PI * (pitch * 0.5) * age) * env * 0.45;
+        v += noise() * Math.exp(-20 * age) * e.vel * 0.32;
+      } else if (e.type === "tom") {
+        const f = freq(e.midi);
+        const env = Math.exp(-7.5 * age) * e.vel;
+        v += Math.sin(2 * Math.PI * f * age) * env;
+        v += noise() * Math.exp(-28 * age) * e.vel * 0.18;
+      } else if (e.type === "frame") {
+        const env = Math.exp(-16 * age) * e.vel;
+        v += noise() * env * 0.55;
+        v += Math.sin(2 * Math.PI * 180 * age) * env * 0.25;
+      } else if (e.type === "rim") {
+        const env = Math.exp(-22 * age) * e.vel;
+        v += Math.sin(2 * Math.PI * 420 * age) * env * 0.35;
+        v += noise() * env * 0.2;
+      }
+    }
+
+    lp = lp * 0.88 + v * 0.12;
+    samples[i] = v * 0.72 + lp * 0.28;
+  }
+
+  const fade = Math.floor(SR * 0.45);
+  for (let i = 0; i < fade; i++) {
+    const w = i / fade;
+    samples[i] *= w;
+    samples[n - 1 - i] *= w;
+  }
+  return samples;
+}
+
+/** Frostpeak Isle — secretive cold ambient, sparse bells & wind. */
+function makeFrostpeak() {
+  const samples = new Float32Array(N);
+  const rng = mulberry32(0xf057ea00);
+  const scale = [60, 62, 63, 65, 67, 70, 72];
+  const events = [];
+
+  let t = 1.4 + rng() * 2.2;
+  while (t < DURATION - 2.5) {
+    events.push({
+      t,
+      type: "bell",
+      midi: pick(rng, scale) + (rng() > 0.65 ? 12 : 0),
+      vel: 0.06 + rng() * 0.09,
+    });
+    if (rng() > 0.5) {
+      events.push({
+        t: t + 0.1 + rng() * 0.2,
+        type: "ghost",
+        midi: pick(rng, scale) + (rng() > 0.5 ? 7 : -5),
+        vel: 0.035 + rng() * 0.05,
+      });
+    }
+    t += 2.6 + rng() * 4.4;
+  }
+
+  let lp = 0;
+  for (let i = 0; i < N; i++) {
+    const time = i / SR;
+    let v = 0;
+    const breathe = 0.75 + 0.25 * Math.sin(2 * Math.PI * time / DURATION);
+    v += Math.sin(2 * Math.PI * freq(50) * time) * 0.012 * breathe;
+    v += Math.sin(2 * Math.PI * freq(58) * time) * 0.009 * breathe;
+    v += Math.sin(2 * Math.PI * freq(65) * time) * 0.006 * breathe;
+    const wind =
+      noise() *
+      0.013 *
+      (0.25 + 0.75 * Math.sin(2 * Math.PI * 0.038 * time + 0.9));
+
+    for (const e of events) {
+      const age = time - e.t;
+      if (age < 0 || age > 6.5) continue;
+      const f = freq(e.midi);
+      if (e.type === "bell") {
+        const env = Math.min(1, age * 18) * Math.exp(-1.7 * age) * e.vel;
+        v += Math.sin(2 * Math.PI * f * age) * env * 0.75;
+        v += Math.sin(2 * Math.PI * f * 2.01 * age) * env * 0.14;
+        if (age > 0.25) {
+          v +=
+            Math.sin(2 * Math.PI * f * (age - 0.15)) *
+            Math.exp(-3.8 * age) *
+            e.vel *
+            0.07;
+        }
+      } else {
+        const env = Math.exp(-3.4 * age) * e.vel;
+        v += Math.sin(2 * Math.PI * f * age) * env * 0.55;
+      }
+    }
+
+    lp = lp * 0.92 + (v + wind) * 0.08;
+    samples[i] = v * 0.7 + lp * 0.35;
+  }
+
+  const fade = Math.floor(SR * 0.65);
+  for (let i = 0; i < fade; i++) {
+    const w = i / fade;
+    samples[i] *= w;
+    samples[N - 1 - i] *= w;
+  }
+  return samples;
+}
+
+/** Frostpeak Cave — hushed cavern drones, drips, rare crystal pings. */
+function makeFrostpeakCave() {
+  const samples = new Float32Array(N);
+  const rng = mulberry32(0xca0ef057);
+  const events = [];
+
+  let t = 0.6 + rng() * 1.2;
+  while (t < DURATION - 0.5) {
+    events.push({ t, type: "drip", vel: 0.035 + rng() * 0.055 });
+    t += 1.6 + rng() * 3.8;
+  }
+
+  t = 2.2 + rng() * 2;
+  while (t < DURATION - 1.5) {
+    events.push({
+      t,
+      type: "crystal",
+      midi: pick(rng, [72, 74, 76, 79, 84, 86]),
+      vel: 0.045 + rng() * 0.07,
+    });
+    if (rng() > 0.6) {
+      events.push({
+        t: t + 0.12 + rng() * 0.18,
+        type: "whisper",
+        midi: pick(rng, [67, 70, 74]),
+        vel: 0.03 + rng() * 0.04,
+      });
+    }
+    t += 4.8 + rng() * 6.2;
+  }
+
+  let lp = 0;
+  for (let i = 0; i < N; i++) {
+    const time = i / SR;
+    let v = 0;
+    const pulse = 0.8 + 0.2 * Math.sin(2 * Math.PI * 0.06 * time);
+    v += Math.sin(2 * Math.PI * 40 * time) * 0.014 * pulse;
+    v += Math.sin(2 * Math.PI * 61 * time) * 0.009 * pulse;
+    v += Math.sin(2 * Math.PI * 82 * time) * 0.005 * pulse;
+
+    for (const e of events) {
+      const age = time - e.t;
+      if (age < 0) continue;
+      if (e.type === "drip") {
+        if (age > 0.35) continue;
+        const env = Math.exp(-38 * age) * e.vel;
+        v += Math.sin(2 * Math.PI * (720 + age * -1800) * age) * env;
+        v += noise() * env * 0.35;
+      } else if (e.type === "crystal") {
+        if (age > 5.5) continue;
+        const f = freq(e.midi);
+        const env = Math.min(1, age * 35) * Math.exp(-2.1 * age) * e.vel;
+        v += Math.sin(2 * Math.PI * f * age) * env;
+        v += Math.sin(2 * Math.PI * f * 3.01 * age) * env * 0.1;
+      } else if (e.type === "whisper") {
+        if (age > 3.5) continue;
+        const f = freq(e.midi);
+        const env = Math.exp(-2.8 * age) * e.vel;
+        v += Math.sin(2 * Math.PI * f * age) * env * 0.45;
+      }
+    }
+
+    const hush =
+      noise() *
+      0.008 *
+      (0.35 + 0.65 * Math.sin(2 * Math.PI * 0.025 * time + 2.1));
+    lp = lp * 0.93 + (v + hush) * 0.07;
+    samples[i] = v * 0.78 + lp * 0.32;
+  }
+
+  const fade = Math.floor(SR * 0.7);
+  for (let i = 0; i < fade; i++) {
+    const w = i / fade;
+    samples[i] *= w;
+    samples[N - 1 - i] *= w;
+  }
+  return samples;
+}
+
 fs.mkdirSync(OUT, { recursive: true });
 writeWav(path.join(OUT, "music_island.wav"), makeIsland());
 writeWav(path.join(OUT, "music_ocean.wav"), makeOcean());
 writeWav(path.join(OUT, "music_jungle.wav"), makeJungle());
 writeWav(path.join(OUT, "music_reef.wav"), makeReef());
 writeWav(path.join(OUT, "music_collectors.wav"), makeCollectors());
+writeWav(path.join(OUT, "music_ashencast.wav"), makeAshencast());
+writeWav(path.join(OUT, "music_frostpeak.wav"), makeFrostpeak());
+writeWav(path.join(OUT, "music_frostpeak_cave.wav"), makeFrostpeakCave());
 console.log("done");

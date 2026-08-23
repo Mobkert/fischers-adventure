@@ -28,7 +28,7 @@ export type BargainSession =
       itemId: ItemId;
       fair: number;
       label: string;
-      stockKind: "fish" | "rod" | "bobber";
+      stockKind: "fish" | "rod" | "bobber" | "misc";
       mutation: InventorySlot["mutation"];
       size: InventorySlot["size"];
       needsLabel?: string;
@@ -273,6 +273,7 @@ export class BargainPanel {
     for (const entry of stock.slice(0, 6)) {
       let sub = `fair ~$${entry.fair}`;
       if (entry.kind === "rod") sub = `rod · fair ~$${entry.fair}`;
+      if (entry.kind === "misc") sub = `curios · fair ~$${entry.fair}`;
       if (entry.kind === "bobber") {
         sub = `needs ${entry.needsLabel} · fair ~$${entry.fair}`;
       }

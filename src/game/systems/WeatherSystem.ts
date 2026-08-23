@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { RodStats } from "../data/items";
 import { DayNightCycle, lerpColor } from "./DayNightCycle";
+import { playWorldLightning } from "../audio/ZeusSfx";
 
 export type WeatherId =
   | "clear"
@@ -15,8 +16,14 @@ export const WEATHER_DURATION_MS = 5 * 60 * 1000;
 /** Chance a night becomes Full Moon (skipped if previous night was). */
 const FULL_MOON_NIGHT_CHANCE = 0.1;
 /** How often a lightning strike may roll during thunder. */
-const LIGHTNING_CHECK_MS = 25_000;
-const LIGHTNING_CHANCE = 0.15;
+const LIGHTNING_CHECK_MS = 7_000;
+const LIGHTNING_CHANCE = 0.4;
+/** Share of strikes that also spawn a whirlpool (when none active). */
+const WHIRLPOOL_STRIKE_CHANCE = 0.25;
+/** Horizontal radius around the player where lightning may strike. */
+const STRIKE_NEAR_PLAYER_RANGE = 280;
+/** Horizontal hit radius for striking swimming fish. */
+const FISH_STRIKE_RADIUS = 58;
 /** Horizontal radius of the whirlpool thunder column. */
 const WHIRLPOOL_COLUMN_RADIUS = 58;
 /** How far the vortex VFX stretches underwater. */
@@ -83,7 +90,7 @@ export const WEATHER: Record<WeatherId, WeatherDef> = {
     icon: "⚡",
     iconColor: "#ffe066",
     tooltip:
-      "Thunderstorm\n+300% luck\nWhirlpools grant Thunder catches\nZeus Rod: +15% stats",
+      "Thunderstorm\n+300% luck\nLightning may strike fish (Thunder)\n25% of strikes spawn a whirlpool\nZeus Rod: +15% stats",
   },
   fullmoon: {
     id: "fullmoon",
@@ -155,9 +162,20 @@ export class WeatherSystem {
   private wasNight = false;
   /** After a Full Moon night, the next night cannot roll one. */
   private blockFullMoonNextNight = false;
+  /** 0–1 volcanic sky heat when near Ashencast Isle. */
+  private ashenSkyHeat = 0;
 
   onWeatherChange?: (id: WeatherId, name: string) => void;
   onLightningAnnounce?: (message: string) => void;
+  /** Swimming fish that lightning can convert to Thunder. */
+  getLightningFishTargets?: () => Array<{
+    x: number;
+    y: number;
+    alreadyThunder: boolean;
+    applyThunder: () => void;
+  }>;
+  /** World X to bias strikes toward (usually the player). */
+  getLightningAnchorX?: () => number;
   /** When true, rain/thunder FX stay off (Frostpeak Cave). */
   private rainBlocked = false;
 
@@ -203,6 +221,17 @@ export class WeatherSystem {
     this.dayNight = cycle;
     this.wasNight = this.isNightTime();
     this.syncAtmosphere(true);
+  }
+
+  /** Blend volcanic red into the sky (0 = normal, 1 = full Ashencast heat). */
+  setAshenSkyHeat(factor: number): void {
+    const next = Phaser.Math.Clamp(factor, 0, 1);
+    if (Math.abs(next - this.ashenSkyHeat) < 0.008) {
+      this.ashenSkyHeat = next;
+      return;
+    }
+    this.ashenSkyHeat = next;
+    this.syncAtmosphere(false);
   }
 
   /**
@@ -352,10 +381,10 @@ export class WeatherSystem {
       this.clearFullMoonForDay();
     }
 
-    if (this.weather === "thunder") {
+    if (this.weather === "thunder" && !this.rainBlocked) {
       if (now - this.lastLightningCheck >= LIGHTNING_CHECK_MS) {
         this.lastLightningCheck = now;
-        if (!this.whirlpool?.active && Math.random() < LIGHTNING_CHANCE) {
+        if (Math.random() < LIGHTNING_CHANCE) {
           this.spawnLightningStrike();
         }
       }
@@ -470,43 +499,196 @@ export class WeatherSystem {
   }
 
   private spawnLightningStrike(): void {
-    const zone =
-      this.waterZones[Math.floor(Math.random() * this.waterZones.length)];
-    const pad = Math.min(50, Math.floor((zone.right - zone.left) / 4));
-    const x = Phaser.Math.Between(zone.left + pad, zone.right - pad);
+    const x = this.pickStrikeXNearPlayer();
+    if (x == null) return;
     const y = this.waterSurfaceY + 28;
 
-    this.onLightningAnnounce?.(
-      "⚡ Lightning strikes the water! A deep whirlpool forms…"
+    const spawnWhirl =
+      !this.whirlpool?.active && Math.random() < WHIRLPOOL_STRIKE_CHANCE;
+
+    playWorldLightning(this.scene, { volumeScale: spawnWhirl ? 1.75 : 1 });
+    this.playLightningBoltFx(x);
+
+    const struckFish = this.tryStrikeFish(x);
+
+    if (spawnWhirl) {
+      this.onLightningAnnounce?.(
+        "⚡ Lightning strikes the water! A deep whirlpool forms…"
+      );
+      this.scene.cameras.main.flash(220, 200, 220, 255, false);
+      this.scene.cameras.main.shake(280, 0.005);
+      this.createWhirlpool(x, y);
+    } else if (struckFish) {
+      this.onLightningAnnounce?.(
+        "⚡ Lightning hits a fish — it crackles with Thunder!"
+      );
+    }
+  }
+
+  /** Prefer a water X near the player so strikes stay on-screen. */
+  private pickStrikeXNearPlayer(): number | null {
+    const anchor =
+      this.getLightningAnchorX?.() ?? this.scene.cameras.main.midPoint.x;
+    const nearZones = this.waterZones.filter(
+      (z) =>
+        z.right >= anchor - STRIKE_NEAR_PLAYER_RANGE &&
+        z.left <= anchor + STRIKE_NEAR_PLAYER_RANGE
     );
+    const pool = nearZones.length > 0 ? nearZones : this.waterZones;
+    const zone = pool[Math.floor(Math.random() * pool.length)];
+    if (!zone) return null;
 
-    // Flash bolt
-    const bolt = this.scene.add.graphics().setDepth(40);
-    bolt.lineStyle(4, 0xffffff, 1);
-    bolt.beginPath();
-    bolt.moveTo(x - 10, this.waterSurfaceY - 220);
-    bolt.lineTo(x + 8, this.waterSurfaceY - 120);
-    bolt.lineTo(x - 6, this.waterSurfaceY - 120);
-    bolt.lineTo(x + 14, this.waterSurfaceY + 10);
-    bolt.strokePath();
-    bolt.lineStyle(2, 0xffe066, 0.9);
-    bolt.beginPath();
-    bolt.moveTo(x - 6, this.waterSurfaceY - 220);
-    bolt.lineTo(x + 4, this.waterSurfaceY - 100);
-    bolt.lineTo(x + 10, this.waterSurfaceY + 10);
-    bolt.strokePath();
+    const lo = Math.max(zone.left + 24, anchor - STRIKE_NEAR_PLAYER_RANGE);
+    const hi = Math.min(zone.right - 24, anchor + STRIKE_NEAR_PLAYER_RANGE);
+    if (hi <= lo) {
+      return Phaser.Math.Clamp(anchor, zone.left + 24, zone.right - 24);
+    }
+    return Phaser.Math.Between(Math.floor(lo), Math.floor(hi));
+  }
 
-    this.scene.cameras.main.flash(180, 200, 220, 255, false);
-    this.scene.cameras.main.shake(220, 0.004);
+  private tryStrikeFish(strikeX: number): boolean {
+    const targets = this.getLightningFishTargets?.() ?? [];
+    let best: (typeof targets)[number] | null = null;
+    let bestDist = FISH_STRIKE_RADIUS;
+    for (const t of targets) {
+      if (t.alreadyThunder) continue;
+      if (t.y < this.waterSurfaceY - 10) continue;
+      if (t.y > this.waterSurfaceY + WHIRLPOOL_COLUMN_DEPTH_PX) continue;
+      const d = Math.abs(t.x - strikeX);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = t;
+      }
+    }
+    if (!best) return false;
+    best.applyThunder();
+    return true;
+  }
 
-    this.scene.tweens.add({
+  private playLightningBoltFx(x: number): void {
+    const scene = this.scene;
+    const surface = this.waterSurfaceY;
+    const skyY = surface - Phaser.Math.Between(250, 340);
+
+    // Build a jagged path once, then stroke glow / core layers
+    const pts: { x: number; y: number }[] = [];
+    const forks: { ax: number; ay: number; bx: number; by: number }[] = [];
+    pts.push({ x: x + Phaser.Math.Between(-10, 10), y: skyY });
+    const steps = 8;
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const px = x + Phaser.Math.Between(-26, 26) * (1 - t * 0.4);
+      const py = Phaser.Math.Linear(skyY, surface + 8, t);
+      if (i < steps && Math.random() < 0.4) {
+        forks.push({
+          ax: px,
+          ay: py,
+          bx: px + Phaser.Math.Between(16, 42) * (Math.random() < 0.5 ? -1 : 1),
+          by: py + Phaser.Math.Between(14, 40),
+        });
+      }
+      pts.push({ x: px, y: py });
+    }
+    pts.push({ x, y: surface + 10 });
+
+    const bolt = scene.add.graphics().setDepth(42);
+    const strokePath = (width: number, color: number, alpha: number) => {
+      bolt.lineStyle(width, color, alpha);
+      bolt.beginPath();
+      bolt.moveTo(pts[0]!.x, pts[0]!.y);
+      for (let i = 1; i < pts.length; i++) {
+        bolt.lineTo(pts[i]!.x, pts[i]!.y);
+      }
+      bolt.strokePath();
+      for (const f of forks) {
+        bolt.beginPath();
+        bolt.moveTo(f.ax, f.ay);
+        bolt.lineTo(f.bx, f.by);
+        bolt.strokePath();
+      }
+    };
+    strokePath(10, 0x4da6ff, 0.28);
+    strokePath(5, 0xffe066, 0.75);
+    strokePath(2.2, 0xffffff, 1);
+
+    // Local impact bloom (no camera flash)
+    const bloom = scene.add
+      .circle(x, surface + 4, 14, 0xffffff, 0.9)
+      .setDepth(43)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const goldBloom = scene.add
+      .circle(x, surface + 4, 22, 0xffe066, 0.7)
+      .setDepth(41)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const ring = scene.add
+      .circle(x, surface + 6, 12, 0x4da6ff, 0)
+      .setStrokeStyle(3, 0xa8e8ff, 0.95)
+      .setDepth(40);
+
+    for (let i = 0; i < 12; i++) {
+      const spark = scene.add
+        .circle(x, surface + 2, Phaser.Math.Between(2, 4), i % 2 === 0 ? 0xffffff : 0xffe066, 1)
+        .setDepth(44)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      const ang = (i / 12) * Math.PI * 2 + Math.random() * 0.4;
+      const dist = Phaser.Math.Between(28, 70);
+      scene.tweens.add({
+        targets: spark,
+        x: x + Math.cos(ang) * dist,
+        y: surface + 2 + Math.sin(ang) * dist * 0.45,
+        alpha: 0,
+        scale: 0.2,
+        duration: Phaser.Math.Between(280, 480),
+        ease: "Cubic.easeOut",
+        onComplete: () => spark.destroy(),
+      });
+    }
+
+    // Brief underwater glow column
+    const column = scene.add.graphics().setDepth(5);
+    column.fillStyle(0xffe066, 0.22);
+    column.fillTriangle(x - 18, surface + 6, x + 18, surface + 6, x, surface + 120);
+    column.fillStyle(0x4da6ff, 0.16);
+    column.fillTriangle(x - 10, surface + 6, x + 10, surface + 6, x, surface + 160);
+
+    scene.tweens.add({
       targets: bolt,
       alpha: 0,
-      duration: 500,
+      duration: 380,
+      delay: 40,
+      ease: "Quad.easeIn",
       onComplete: () => bolt.destroy(),
     });
-
-    this.createWhirlpool(x, y);
+    scene.tweens.add({
+      targets: bloom,
+      scale: 3.8,
+      alpha: 0,
+      duration: 360,
+      ease: "Cubic.easeOut",
+      onComplete: () => bloom.destroy(),
+    });
+    scene.tweens.add({
+      targets: goldBloom,
+      scale: 4.2,
+      alpha: 0,
+      duration: 480,
+      ease: "Cubic.easeOut",
+      onComplete: () => goldBloom.destroy(),
+    });
+    scene.tweens.add({
+      targets: ring,
+      scale: 5.5,
+      alpha: 0,
+      duration: 520,
+      ease: "Cubic.easeOut",
+      onComplete: () => ring.destroy(),
+    });
+    scene.tweens.add({
+      targets: column,
+      alpha: 0,
+      duration: 520,
+      onComplete: () => column.destroy(),
+    });
   }
 
   private createWhirlpool(x: number, y: number): void {
@@ -806,12 +988,19 @@ export class WeatherSystem {
     const nightBot = 0x1a2848;
     const sunsetTop = 0xd45828;
     const sunsetBot = 0xffa060;
+    const ashenTop = 0xb02818;
+    const ashenBot = 0xf07840;
 
     let top = look.top;
     let bottom = look.bottom;
     if (warmth > 0.001) {
       top = lerpColor(top, sunsetTop, warmth * 0.9);
       bottom = lerpColor(bottom, sunsetBot, warmth * 0.85);
+    }
+    if (this.ashenSkyHeat > 0.001) {
+      const h = this.ashenSkyHeat;
+      top = lerpColor(top, ashenTop, h * 0.88);
+      bottom = lerpColor(bottom, ashenBot, h * 0.82);
     }
     if (night > 0.001) {
       top = lerpColor(top, nightTop, night);

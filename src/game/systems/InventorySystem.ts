@@ -13,7 +13,6 @@ import {
   FishSizeId,
   mutationSellMult,
   sizeSellMult,
-  MUTATIONS,
   BESTIARY_CLAIM_REWARD,
   BASE_ATTRACT_RADIUS,
   backpackSlotCount,
@@ -25,6 +24,8 @@ import {
   applyAugmentUpgrades,
   augmentHasUpgradeableStat,
   STARTER_HAT_IDS,
+  formatCraftIngredientLabel,
+  fishMeetsMinRarity,
 } from "../data/items";
 import { SaveData, cloneSave, defaultSave } from "../save/SaveBank";
 import type { WeatherId } from "./WeatherSystem";
@@ -37,6 +38,11 @@ import {
   missingEpicRods,
   rodDisplayName,
 } from "./FrostpeakQuest";
+import {
+  ANVIL_PIECE_IDS,
+  AshencastQuestStage,
+} from "./AshencastQuest";
+import type { PromoCodeId } from "./PromoCodes";
 import {
   VaultGemId,
   VAULT_GEM_IDS,
@@ -105,6 +111,8 @@ export class InventorySystem {
   equippedHatId: ItemId | null = null;
   nautilusQuestDone = false;
   activeFishQuest: ActiveFishQuest | null = null;
+  ashencastQuestStage: AshencastQuestStage = 0;
+  redeemedPromoCodes: PromoCodeId[] = [];
   backpackId: ItemId = "backpack_starter";
 
   selectedHotbarIndex = 0;
@@ -166,6 +174,8 @@ export class InventorySystem {
     this.activeFishQuest = save.activeFishQuest
       ? { ...save.activeFishQuest }
       : null;
+    this.ashencastQuestStage = save.ashencastQuestStage;
+    this.redeemedPromoCodes = [...save.redeemedPromoCodes];
     this.backpackId = save.backpackId;
     this.selectedHotbarIndex = save.selectedHotbarIndex;
     this.hotbar = save.hotbar.map((s) => ({ ...s }));
@@ -256,8 +266,16 @@ export class InventorySystem {
       activeFishQuest: this.activeFishQuest
         ? { ...this.activeFishQuest }
         : null,
+      ashencastQuestStage: this.ashencastQuestStage,
+      redeemedPromoCodes: [...this.redeemedPromoCodes],
       updatedAt: Date.now(),
     });
+  }
+
+  markPromoRedeemed(codeId: PromoCodeId): void {
+    if (!this.redeemedPromoCodes.includes(codeId)) {
+      this.redeemedPromoCodes.push(codeId);
+    }
   }
 
   getSelectedItem(): ItemId | null {
@@ -298,12 +316,16 @@ export class InventorySystem {
       rod = applyAugmentUpgrades(rod, this.augmentUpgrades);
     }
     const bob = ITEMS[this.equippedBobberId]?.bobberStats ?? {};
+    const lineDepth =
+      bob.lineDepthOverride != null
+        ? bob.lineDepthOverride
+        : rod.lineDepth + (bob.lineDepth ?? 0);
     return {
       luck: rod.luck + (bob.luck ?? 0),
       resilience: rod.resilience,
       control: rod.control + (bob.control ?? 0),
       progressSpeed: rod.progressSpeed + (bob.progressSpeed ?? 0),
-      lineDepth: rod.lineDepth + (bob.lineDepth ?? 0),
+      lineDepth,
     };
   }
 
@@ -342,7 +364,7 @@ export class InventorySystem {
    */
   buyCurioAtPrice(
     entry: {
-      kind: "fish" | "rod" | "bobber";
+      kind: "fish" | "rod" | "bobber" | "misc";
       itemId: ItemId;
       mutation?: FishMutationId | null;
       size?: FishSizeId | null;
@@ -358,8 +380,21 @@ export class InventorySystem {
         message: `Need $${cost} — you have $${this.coins}.`,
       };
     }
+    if (entry.kind === "misc") {
+      if (this.hasItem(entry.itemId)) {
+        return { ok: false, message: `You already have the ${def.name}.` };
+      }
+      this.coins -= cost;
+      if (!this.addItem(entry.itemId)) {
+        this.coins += cost;
+        return { ok: false, message: "Bag is full." };
+      }
+      return { ok: true, message: `Bought ${def.name} for $${cost}!` };
+    }
     if (entry.kind === "rod") {
-      if (!def.isRod) return { ok: false, message: "That isn't a rod." };
+      if (!def.isRod || entry.itemId === "tranquil_rod" || entry.itemId === "recoil_rod" || entry.itemId === "portal_rod" || entry.itemId === "forge_rod" || entry.itemId === "birthday_rod") {
+        return { ok: false, message: "That isn't a rod." };
+      }
       if (this.ownsRod(entry.itemId)) {
         return { ok: false, message: `You already own the ${def.name}.` };
       }
@@ -379,25 +414,17 @@ export class InventorySystem {
       }
       // Still need the craft fish — only the coin price is discounted
       for (const ing of def.craftCost.ingredients) {
-        const muts = this.craftIngredientMutations(ing);
-        const have = this.countFishMatching(ing.itemId, muts);
+        const have = this.countIngredientMatching(ing);
         if (have < ing.count) {
-          const mutLabel = muts
-            ? muts.map((m) => MUTATIONS[m]?.name ?? m).join("/") + " "
-            : "";
           return {
             ok: false,
-            message: `Need ${ing.count}× ${mutLabel}${ITEMS[ing.itemId].name} (have ${have}).`,
+            message: `Need ${formatCraftIngredientLabel(ing)} (have ${have}).`,
           };
         }
       }
       this.coins -= cost;
       for (const ing of def.craftCost.ingredients) {
-        this.removeFishMatching(
-          ing.itemId,
-          ing.count,
-          this.craftIngredientMutations(ing) ?? undefined
-        );
+        this.removeIngredientMatching(ing);
       }
       this.ownedBobbers.push(entry.itemId);
       return {
@@ -405,7 +432,7 @@ export class InventorySystem {
         message: `Bought ${def.name} for $${cost} (fish used)!`,
       };
     }
-    if (def.sellPrice == null) {
+    if (def.sellPrice == null || def.isQuestItem) {
       return { ok: false, message: "That isn't for sale." };
     }
     this.coins -= cost;
@@ -473,7 +500,7 @@ export class InventorySystem {
   /** Buy a shop rod if affordable and not already owned. */
   buyRod(rodId: ItemId): { ok: boolean; message: string } {
     const def = ITEMS[rodId];
-    if (!def?.isRod || def.buyPrice == null) {
+    if (!def?.isRod || def.buyPrice == null || rodId === "tranquil_rod" || rodId === "recoil_rod" || rodId === "portal_rod" || rodId === "forge_rod" || rodId === "birthday_rod") {
       return { ok: false, message: "That isn't for sale." };
     }
     if (this.ownsRod(rodId)) {
@@ -587,6 +614,29 @@ export class InventorySystem {
     return { ok: true, message: `Purchased ${def.name}!` };
   }
 
+  /** Buy a non-amulet shelf item in the amulet cave (e.g. anvil shard). */
+  buyCaveShelfItem(itemId: ItemId): { ok: boolean; message: string } {
+    const def = ITEMS[itemId];
+    if (!def || def.buyPrice == null || def.isAmulet) {
+      return { ok: false, message: "That isn't for sale." };
+    }
+    if (this.hasItem(itemId)) {
+      return { ok: false, message: `You already have the ${def.name}.` };
+    }
+    if (this.coins < def.buyPrice) {
+      return {
+        ok: false,
+        message: `Need $${def.buyPrice.toLocaleString("en-US")} — you have $${this.coins.toLocaleString("en-US")}.`,
+      };
+    }
+    this.coins -= def.buyPrice;
+    if (!this.addItem(itemId)) {
+      this.coins += def.buyPrice;
+      return { ok: false, message: "Bag is full." };
+    }
+    return { ok: true, message: `Purchased ${def.name}!` };
+  }
+
   /**
    * Consume one amulet if owned. Caller applies the world effect.
    * @param isDay true when daytime (nightFactor near 0)
@@ -618,6 +668,12 @@ export class InventorySystem {
     };
   }
 
+  /**
+   * Count bag/hotbar stacks for crafting.
+   * Size is ignored (big/giant always OK).
+   * If `mutation` is null/omitted, any mutation (or none) counts.
+   * If mutations are listed, the fish must have one of those (any size).
+   */
   countFishMatching(
     itemId: ItemId,
     mutation?: FishMutationId | FishMutationId[] | null
@@ -628,14 +684,98 @@ export class InventorySystem {
       : mutation != null
         ? [mutation]
         : null;
-    for (const slot of [...this.bag, ...this.hotbar]) {
-      if (slot.itemId !== itemId || slot.count <= 0) continue;
-      if (allowed) {
-        if (!slot.mutation || !allowed.includes(slot.mutation)) continue;
-      }
+    for (const slot of this.craftCandidateSlots()) {
+      if (!this.slotMatchesCraft(slot, itemId, allowed)) continue;
       n += slot.count;
     }
     return n;
+  }
+
+  private craftCandidateSlots(): InventorySlot[] {
+    // Prefer spending non-favorited stacks first when removing
+    return [...this.bag, ...this.hotbar].sort(
+      (a, b) => Number(!!a.keep) - Number(!!b.keep)
+    );
+  }
+
+  private slotMatchesCraft(
+    slot: InventorySlot,
+    itemId: ItemId,
+    allowed: FishMutationId[] | null
+  ): boolean {
+    if (slot.itemId !== itemId || slot.count <= 0) return false;
+    // Size never matters for recipes
+    if (allowed) {
+      if (!slot.mutation || !allowed.includes(slot.mutation)) return false;
+    }
+    return true;
+  }
+
+  private slotMatchesIngredient(
+    slot: InventorySlot,
+    ing: import("../data/items").BobberCraftIngredient
+  ): boolean {
+    if (!slot.itemId || slot.count <= 0) return false;
+
+    if (ing.anyFish) {
+      if (!FISH_ITEM_IDS.includes(slot.itemId)) return false;
+      if (ing.minRarity && !fishMeetsMinRarity(slot.itemId, ing.minRarity)) {
+        return false;
+      }
+    } else {
+      const ids =
+        ing.itemIds && ing.itemIds.length > 0 ? ing.itemIds : [ing.itemId];
+      if (!ids.includes(slot.itemId)) return false;
+    }
+
+    const allowed = this.craftIngredientMutations(ing);
+    if (allowed) {
+      return !!slot.mutation && allowed.includes(slot.mutation);
+    }
+    if (ing.anyMutation) {
+      if (slot.mutation) return true;
+      if (ing.sizes?.length && slot.size && ing.sizes.includes(slot.size)) {
+        return true;
+      }
+      return false;
+    }
+    if (ing.sizes?.length) {
+      return !!slot.size && ing.sizes.includes(slot.size);
+    }
+    return true;
+  }
+
+  countIngredientMatching(
+    ing: import("../data/items").BobberCraftIngredient
+  ): number {
+    let n = 0;
+    for (const slot of this.craftCandidateSlots()) {
+      if (!this.slotMatchesIngredient(slot, ing)) continue;
+      n += slot.count;
+    }
+    return n;
+  }
+
+  removeIngredientMatching(
+    ing: import("../data/items").BobberCraftIngredient
+  ): boolean {
+    if (this.countIngredientMatching(ing) < ing.count) return false;
+    let left = ing.count;
+    for (const slot of this.craftCandidateSlots()) {
+      if (left <= 0) break;
+      if (!this.slotMatchesIngredient(slot, ing)) continue;
+      const take = Math.min(slot.count, left);
+      slot.count -= take;
+      left -= take;
+      if (slot.count <= 0) {
+        slot.itemId = null;
+        slot.count = 0;
+        slot.mutation = null;
+        slot.size = null;
+        slot.keep = false;
+      }
+    }
+    return left === 0;
   }
 
   private removeFishMatching(
@@ -650,12 +790,9 @@ export class InventorySystem {
         ? [mutation]
         : null;
     let left = count;
-    for (const slot of [...this.bag, ...this.hotbar]) {
+    for (const slot of this.craftCandidateSlots()) {
       if (left <= 0) break;
-      if (slot.itemId !== itemId || slot.count <= 0) continue;
-      if (allowed) {
-        if (!slot.mutation || !allowed.includes(slot.mutation)) continue;
-      }
+      if (!this.slotMatchesCraft(slot, itemId, allowed)) continue;
       const take = Math.min(slot.count, left);
       slot.count -= take;
       left -= take;
@@ -678,6 +815,54 @@ export class InventorySystem {
     return null;
   }
 
+  /** Public wrapper for forge / shop UI ingredient checks. */
+  getCraftIngredientMutations(
+    ing: import("../data/items").BobberCraftIngredient
+  ): FishMutationId[] | null {
+    return this.craftIngredientMutations(ing);
+  }
+
+  canCraftForgeRod(rodId: ItemId): { ok: boolean; message: string } {
+    const def = ITEMS[rodId];
+    if (!def?.isRod || !def.craftCost) {
+      return { ok: false, message: "That can't be forged." };
+    }
+    if (this.ownsRod(rodId)) {
+      return { ok: false, message: `You already own the ${def.name}.` };
+    }
+    if (def.craftCost.coins > 0 && this.coins < def.craftCost.coins) {
+      return {
+        ok: false,
+        message: `Need $${def.craftCost.coins} — you have $${this.coins}.`,
+      };
+    }
+    for (const ing of def.craftCost.ingredients) {
+      const have = this.countIngredientMatching(ing);
+      if (have < ing.count) {
+        const label = formatCraftIngredientLabel(ing);
+        return {
+          ok: false,
+          message: `Need ${label} (have ${have}).`,
+        };
+      }
+    }
+    return { ok: true, message: "Ready to forge." };
+  }
+
+  craftForgeRod(rodId: ItemId): { ok: boolean; message: string } {
+    const check = this.canCraftForgeRod(rodId);
+    if (!check.ok) return check;
+    const def = ITEMS[rodId];
+    const cost = def.craftCost!;
+    if (cost.coins > 0) this.coins -= cost.coins;
+    for (const ing of cost.ingredients) {
+      this.removeIngredientMatching(ing);
+    }
+    this.ownedRods.push(rodId);
+    this.equipRod(rodId);
+    return { ok: true, message: `Forged the ${def.name}!` };
+  }
+
   canCraftBobber(bobberId: ItemId): { ok: boolean; message: string } {
     const def = ITEMS[bobberId];
     if (!def?.isBobber || !def.craftCost) {
@@ -693,15 +878,12 @@ export class InventorySystem {
       };
     }
     for (const ing of def.craftCost.ingredients) {
-      const muts = this.craftIngredientMutations(ing);
-      const have = this.countFishMatching(ing.itemId, muts);
+      const have = this.countIngredientMatching(ing);
       if (have < ing.count) {
-        const mutLabel = muts
-          ? muts.map((m) => MUTATIONS[m]?.name ?? m).join("/") + " "
-          : "";
+        const label = formatCraftIngredientLabel(ing);
         return {
           ok: false,
-          message: `Need ${ing.count}× ${mutLabel}${ITEMS[ing.itemId].name} (have ${have}).`,
+          message: `Need ${label} (have ${have}).`,
         };
       }
     }
@@ -715,11 +897,7 @@ export class InventorySystem {
     const cost = def.craftCost!;
     this.coins -= cost.coins;
     for (const ing of cost.ingredients) {
-      this.removeFishMatching(
-        ing.itemId,
-        ing.count,
-        this.craftIngredientMutations(ing) ?? undefined
-      );
+      this.removeIngredientMatching(ing);
     }
     this.ownedBobbers.push(bobberId);
     return { ok: true, message: `Crafted ${def.name}!` };
@@ -773,9 +951,12 @@ export class InventorySystem {
       return true;
     }
 
+    if (!ITEMS[itemId].stackable && this.hasItem(itemId)) {
+      return false;
+    }
+
     if (ITEMS[itemId].stackable) {
-      // Prefer an unlocked matching stack so kept stacks stay separate
-      const stack = this.findStack(itemId, mutation, size, false);
+      const stack = this.findStack(itemId, mutation, size);
       if (stack) {
         stack.count += count;
         this.discoverFish(itemId);
@@ -970,7 +1151,7 @@ export class InventorySystem {
 
   /** Returns true if this is a newly discovered species. */
   discoverFish(itemId: ItemId): boolean {
-    if (!FISH_ITEM_IDS.includes(itemId)) return false;
+    if (!FISH_ITEM_IDS.includes(itemId) || ITEMS[itemId].isQuestItem) return false;
     if (this.bestiaryFound.includes(itemId)) return false;
     this.bestiaryFound.push(itemId);
     return true;
@@ -1192,14 +1373,12 @@ export class InventorySystem {
   private findStack(
     itemId: ItemId,
     mutation: FishMutationId | null = null,
-    size: FishSizeId | null = null,
-    allowKept = false
+    size: FishSizeId | null = null
   ): InventorySlot | undefined {
     const match = (s: InventorySlot) =>
       s.itemId === itemId &&
       sameMutation(s.mutation, mutation) &&
-      sameSize(s.size, size) &&
-      (allowKept || !s.keep);
+      sameSize(s.size, size);
     return this.bag.find(match) ?? this.hotbar.find(match);
   }
 
@@ -1215,7 +1394,9 @@ export class InventorySystem {
         (s) =>
           s.itemId != null &&
           FISH_ITEM_IDS.includes(s.itemId) &&
-          !s.keep
+          !s.keep &&
+          !ITEMS[s.itemId].isQuestItem &&
+          ITEMS[s.itemId].sellPrice != null
       )
       .reduce((sum, s) => sum + s.count, 0);
   }
@@ -1228,7 +1409,9 @@ export class InventorySystem {
         !slot.itemId ||
         !FISH_ITEM_IDS.includes(slot.itemId) ||
         slot.count <= 0 ||
-        slot.keep
+        slot.keep ||
+        ITEMS[slot.itemId].isQuestItem ||
+        ITEMS[slot.itemId].sellPrice == null
       ) {
         continue;
       }
@@ -1259,7 +1442,9 @@ export class InventorySystem {
         !slot.itemId ||
         !FISH_ITEM_IDS.includes(slot.itemId) ||
         slot.count <= 0 ||
-        slot.keep
+        slot.keep ||
+        ITEMS[slot.itemId].isQuestItem ||
+        ITEMS[slot.itemId].sellPrice == null
       ) {
         continue;
       }
@@ -1468,5 +1653,58 @@ export class InventorySystem {
     this.frostpeakQuestStage = 4;
     this.frostpeakCaveOpen = true;
     return true;
+  }
+
+  startAshencastQuest(): boolean {
+    if (this.ashencastQuestStage !== 0) return false;
+    this.ashencastQuestStage = 1;
+    return true;
+  }
+
+  countOwnedAnvilPieces(): number {
+    return ANVIL_PIECE_IDS.filter((id) => this.hasItem(id)).length;
+  }
+
+  hasAllAnvilPieces(): boolean {
+    return ANVIL_PIECE_IDS.every((id) => this.hasItem(id));
+  }
+
+  /** Stage 1 → 2: consume all three shards. */
+  turnInAnvilPieces(): boolean {
+    if (this.ashencastQuestStage !== 1) return false;
+    if (!this.hasAllAnvilPieces()) return false;
+    for (const id of ANVIL_PIECE_IDS) {
+      if (!this.removeOneItem(id)) return false;
+    }
+    this.ashencastQuestStage = 2;
+    return true;
+  }
+
+  hasAshencastTrout(): boolean {
+    return this.hasItem("ashencast_trout");
+  }
+
+  /** Stage 2 → 3: consume trout, unlock forge. */
+  turnInAshencastTrout(): boolean {
+    if (this.ashencastQuestStage !== 2) return false;
+    if (!this.removeOneItem("ashencast_trout")) return false;
+    this.ashencastQuestStage = 3;
+    return true;
+  }
+
+  isAshencastForgeReady(): boolean {
+    return this.ashencastQuestStage >= 3;
+  }
+
+  ashencastQuestProgressLabel(): string {
+    if (this.ashencastQuestStage === 1) {
+      return `Anvil pieces ${this.countOwnedAnvilPieces()}/3`;
+    }
+    if (this.ashencastQuestStage === 2) {
+      return this.hasAshencastTrout()
+        ? "Ashencast Trout ready"
+        : "Need an Ashencast Trout";
+    }
+    return "";
   }
 }

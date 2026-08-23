@@ -15,7 +15,16 @@ import {
   FishMutationId,
   FishSizeId,
   luckApproachSpeedMult,
+  fishRarityRank,
+  PORTAL_PULL_RADIUS_PX,
 } from "../data/items";
+import {
+  playPortalPullFx,
+  PortalRodTipVfx,
+} from "../fx/PortalRodFx";
+
+/** Successful Tranquil catches needed before the bubble minigame procs. */
+const TRANQUIL_BUBBLE_CATCHES = 2;
 
 export type FishingState =
   | "idle"
@@ -71,8 +80,6 @@ export class FishingSystem {
     zone: WaterZone;
     lineDepth: number;
   };
-  /** When waiting started (ms) — timeout if nothing bites. */
-  private waitingSince = 0;
   private secondWaitUntil = 0;
 
   onBite?: (speciesId: ItemId) => void;
@@ -95,6 +102,9 @@ export class FishingSystem {
   lastCatchSize: FishSizeId | null = null;
   /** All fish landed on the last successful catch. */
   lastCaughtFish: CaughtFishResult[] = [];
+
+  private portalTipFx: PortalRodTipVfx | null = null;
+  private portalPullUsed = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -138,6 +148,74 @@ export class FishingSystem {
     return (
       this.weather?.modifyStats(base, this.inventory.getEquippedRodId()) ?? base
     );
+  }
+
+  private tranquilBubbleProc = false;
+  private tranquilBubbleCatchCountdown = TRANQUIL_BUBBLE_CATCHES;
+
+  private shouldShowTranquilBubble(): boolean {
+    return (
+      ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+      "tranquil_bubble"
+    );
+  }
+
+  private hasPortalPull(): boolean {
+    return (
+      ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+      "portal_pull"
+    );
+  }
+
+  private syncPortalTipFx(): void {
+    if (!this.hasPortalPull() || this.state === "idle") {
+      this.portalTipFx?.setActive(false);
+      return;
+    }
+    if (!this.portalTipFx) {
+      this.portalTipFx = new PortalRodTipVfx(this.scene);
+    }
+    this.portalTipFx.setActive(true);
+    const tip = this.player.getRodTip();
+    this.portalTipFx.update(tip.x, tip.y, this.scene.time.now);
+  }
+
+  private stopPortalFx(): void {
+    this.portalTipFx?.setActive(false);
+    this.portalPullUsed = false;
+  }
+
+  private applyTranquilBubble(fish: Fish): void {
+    if (this.tranquilBubbleProc) {
+      fish.setTranquilBubble(true);
+    }
+  }
+
+  /** Bubble minigame procs after 2 Tranquil catches; failures reset the streak. */
+  private rollTranquilBubble(): void {
+    this.tranquilBubbleProc = false;
+    if (!this.shouldShowTranquilBubble()) return;
+    this.tranquilBubbleProc = this.tranquilBubbleCatchCountdown <= 0;
+  }
+
+  private advanceTranquilBubbleCounter(success: boolean): void {
+    if (this.inventory.getEquippedRodId() !== "tranquil_rod") return;
+    if (!success) {
+      this.tranquilBubbleCatchCountdown = TRANQUIL_BUBBLE_CATCHES;
+      return;
+    }
+    if (this.tranquilBubbleProc) {
+      this.tranquilBubbleCatchCountdown = TRANQUIL_BUBBLE_CATCHES;
+      return;
+    }
+    this.tranquilBubbleCatchCountdown = Math.max(
+      0,
+      this.tranquilBubbleCatchCountdown - 1
+    );
+  }
+
+  getTranquilBubbleProc(): boolean {
+    return this.tranquilBubbleProc;
   }
 
   private isNearAnyShore(): boolean {
@@ -198,12 +276,23 @@ export class FishingSystem {
       zone.right - 40
     );
     const stats = this.fishingStats();
-    const lineDepth = stats.lineDepth ?? 0;
+    const rodId = this.inventory.getEquippedRodId();
+    let lineDepth = stats.lineDepth ?? 0;
+    if (rodId === "tranquil_rod") {
+      const roll = Math.random();
+      if (roll < 0.15) lineDepth += 2;
+      else if (roll < 0.55) lineDepth += 1;
+    }
+    const bobStats = ITEMS[this.inventory.getEquippedBobberId()]?.bobberStats;
+    if (bobStats?.lineDepthOverride != null) {
+      lineDepth = bobStats.lineDepthOverride;
+    }
     const surfaceY = this.waterSurfaceY + 16;
     const depthY = surfaceY + lineDepth * DEPTH_PX_PER_METER;
 
     this.state = "casting";
     this.secondFish = null;
+    this.portalPullUsed = false;
     this.player.setLocked(true);
     this.player.setFacing(castX >= this.player.sprite.x ? "right" : "left");
 
@@ -282,7 +371,7 @@ export class FishingSystem {
       );
     }
 
-    if (pool.length === 0) {
+    if (pool.length === 0 && !this.hasPortalPull()) {
       const deepNearby = this.fishList.some(
         (f) =>
           f.state === "idle" &&
@@ -292,20 +381,77 @@ export class FishingSystem {
           f.sprite.x <= zone.right + 40
       );
       if (deepNearby) this.onLineTooShort?.();
-      this.onNoBite?.();
-      this.cancelCast();
-      return;
+    }
+
+    this.approachingFish = [];
+    this.targetFish = null;
+
+    if (this.hasPortalPull()) {
+      this.portalPullRarestFish(bobberX, bobberY, zone, reach);
     }
 
     const racers = pool.filter((f) => !f.ignoresBobber());
-    this.approachingFish = racers;
-    this.targetFish = null;
-    this.waitingSince = this.scene.time.now;
     for (const fish of racers) {
+      if (this.approachingFish.includes(fish)) continue;
       const rarity = ITEMS[fish.speciesId].rarity ?? "common";
       const speedMult = luckApproachSpeedMult(luck, rarity);
       fish.approachBobber(bobberX, bobberY + 12, speedMult);
+      this.approachingFish.push(fish);
     }
+  }
+
+  /** Portal Rod — warp the rarest idle fish within 400px to the bobber once per cast. */
+  private portalPullRarestFish(
+    bobberX: number,
+    bobberY: number,
+    zone: WaterZone,
+    reach: number
+  ): void {
+    if (this.portalPullUsed) return;
+
+    const candidates = this.fishList.filter(
+      (f) =>
+        f.state === "idle" &&
+        !f.isDespawning() &&
+        !f.ignoresBobber() &&
+        f.depthBelowSurface() <= reach + 6 &&
+        f.distanceTo(bobberX, bobberY) <= PORTAL_PULL_RADIUS_PX &&
+        f.sprite.x >= zone.left - 40 &&
+        f.sprite.x <= zone.right + 40
+    );
+    if (candidates.length === 0) return;
+
+    candidates.sort(
+      (a, b) => fishRarityRank(b.speciesId) - fishRarityRank(a.speciesId)
+    );
+    const fish = candidates[0];
+    this.portalPullUsed = true;
+
+    const fromX = fish.sprite.x;
+    const fromY = fish.sprite.y;
+    const angle = Phaser.Math.Angle.Between(bobberX, bobberY, fromX, fromY);
+    const landX = bobberX + Math.cos(angle) * 52;
+    const landY = bobberY + Math.sin(angle) * 52;
+    const stats = this.fishingStats();
+    const luck = stats.luck ?? 0;
+    const rarity = ITEMS[fish.speciesId].rarity ?? "common";
+    const speedMult = luckApproachSpeedMult(luck, rarity) * 1.75;
+
+    playPortalPullFx(
+      this.scene,
+      fish,
+      fromX,
+      fromY,
+      landX,
+      landY,
+      () => {
+        if (this.state !== "waiting" && this.state !== "second_wait") return;
+        fish.approachBobber(bobberX, bobberY + 12, speedMult);
+        if (!this.approachingFish.includes(fish)) {
+          this.approachingFish.push(fish);
+        }
+      }
+    );
   }
 
   update(delta: number): void {
@@ -326,6 +472,8 @@ export class FishingSystem {
     } else if (this.state === "second_wait") {
       this.updateSecondWait();
     }
+
+    this.syncPortalTipFx();
   }
 
   private updateRace(): void {
@@ -333,7 +481,6 @@ export class FishingSystem {
     const by = this.bobber.sprite.y + 8;
     let winner: Fish | null = null;
     let stillRacing = 0;
-    const attract = this.inventory.getAttractRadius();
     const reach = rodMaxReachPx(this.fishingStats().lineDepth ?? 0);
 
     for (const fish of this.approachingFish) {
@@ -385,32 +532,14 @@ export class FishingSystem {
     if (stillRacing === 0 && this.approachingFish.length > 0) {
       this.approachingFish = [];
     }
-
-    const waited = this.scene.time.now - this.waitingSince;
-    if (this.approachingFish.length === 0 && waited > 7000) {
-      this.cancelCast();
-      return;
-    }
-
-    if (this.approachingFish.length === 0) {
-      const baitNearby = this.fishList.some(
-        (f) =>
-          f.state === "idle" &&
-          !f.isDespawning() &&
-          f.ignoresBobber() &&
-          f.depthBelowSurface() <= reach + 6 &&
-          f.distanceTo(bx, by) <= attract
-      );
-      if (!baitNearby) {
-        this.cancelCast();
-      }
-    }
   }
 
   private beginSecondWait(): void {
     if (!this.targetFish) return;
     this.state = "second_wait";
+    this.rollTranquilBubble();
     this.targetFish.markBitten();
+    this.applyTranquilBubble(this.targetFish);
     this.secondWaitUntil = this.scene.time.now + SECOND_BITE_WAIT_MS;
     const rarity = ITEMS[this.targetFish.speciesId].rarity ?? "common";
     const bangColor =
@@ -506,7 +635,9 @@ export class FishingSystem {
   private triggerBiteAndMinigame(): void {
     if (!this.targetFish) return;
     this.state = "bite";
+    this.rollTranquilBubble();
     this.targetFish.markBitten();
+    this.applyTranquilBubble(this.targetFish);
     const rarity = ITEMS[this.targetFish.speciesId].rarity ?? "common";
     const bangColor =
       rarity === "common" ? "#ff2222" : RARITY_COLOR[rarity];
@@ -544,6 +675,7 @@ export class FishingSystem {
       this.weather?.getRodMutationChanceBonus?.(rodId) ?? 0;
     return resolveCatchMutation(
       rodId,
+      fish.speciesId,
       fish.mutation,
       this.inventory.getMutationChanceMult(),
       rodChanceBonus,
@@ -551,7 +683,14 @@ export class FishingSystem {
     );
   }
 
-  completeCatch(success: boolean): void {
+  completeCatch(
+    success: boolean,
+    meta?: {
+      guaranteeThunder?: boolean;
+      guaranteeAshencast?: boolean;
+      guaranteeConfetti?: boolean;
+    }
+  ): void {
     this.player.hideExclamation();
     this.bobber.reelIn();
     this.player.setLocked(false);
@@ -571,7 +710,13 @@ export class FishingSystem {
     if (success && hooked.length > 0) {
       for (const fish of hooked) {
         fish.markCaught();
-        const mutation = this.resolveMutationFor(fish);
+        const mutation = meta?.guaranteeThunder
+          ? ("thunder" as const)
+          : meta?.guaranteeAshencast
+            ? ("ashencast" as const)
+            : meta?.guaranteeConfetti
+              ? ("confetti" as const)
+              : this.resolveMutationFor(fish);
         const size = fish.size;
         this.inventory.addItem(fish.speciesId, 1, mutation, size);
         this.lastCaughtFish.push({
@@ -580,7 +725,10 @@ export class FishingSystem {
           size,
         });
         this.scene.time.delayedCall(2500, () => {
-          if (ITEMS[fish.speciesId].abundanceOnly) {
+          if (
+            ITEMS[fish.speciesId].abundanceOnly ||
+            ITEMS[fish.speciesId].persistOnFail
+          ) {
             const idx = this.fishList.indexOf(fish);
             if (idx >= 0) this.fishList.splice(idx, 1);
             this.onAbundanceFishRemoved?.(fish);
@@ -598,6 +746,7 @@ export class FishingSystem {
       for (const fish of hooked) {
         if (
           ITEMS[fish.speciesId].abundanceOnly &&
+          !ITEMS[fish.speciesId].persistOnFail &&
           !this.isAbundanceActive?.()
         ) {
           const idx = this.fishList.indexOf(fish);
@@ -613,6 +762,9 @@ export class FishingSystem {
     this.approachingFish = [];
     this.targetFish = null;
     this.secondFish = null;
+    this.advanceTranquilBubbleCounter(success);
+    this.tranquilBubbleProc = false;
+    this.stopPortalFx();
     this.state = "idle";
     this.onFishingEnd?.(success);
   }
@@ -645,6 +797,10 @@ export class FishingSystem {
     return this.secondFish != null;
   }
 
+  popTargetTranquilBubble(): void {
+    this.targetFish?.popTranquilBubble();
+  }
+
   cancelCast(): void {
     this.bobberOnTip = false;
     this.pendingCast = undefined;
@@ -661,6 +817,8 @@ export class FishingSystem {
     this.approachingFish = [];
     this.targetFish = null;
     this.secondFish = null;
+    this.tranquilBubbleProc = false;
+    this.stopPortalFx();
     this.state = "idle";
     this.castCooldown = 400;
   }

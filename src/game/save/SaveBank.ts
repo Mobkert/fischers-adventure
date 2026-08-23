@@ -24,9 +24,14 @@ import {
 } from "../systems/FrostpeakQuest";
 import { normalizeVaultGemsPlaced } from "../systems/VaultGemQuest";
 import { normalizeActiveFishQuest } from "../systems/FishQuest";
+import { normalizeAshencastQuestStage } from "../systems/AshencastQuest";
+import type { PromoCodeId } from "../systems/PromoCodes";
 
 const SAVES_STORAGE_KEY = "fischers_adventure_saves_v1";
 export const SAVE_SLOT_COUNT = 5;
+
+/** Rods defined in data but not granted to players yet. */
+const UNOBTAINABLE_RODS: readonly ItemId[] = [];
 
 export interface SaveData {
   v: 1;
@@ -85,6 +90,10 @@ export interface SaveData {
   nautilusQuestDone: boolean;
   /** One active island fish quest at a time. */
   activeFishQuest: import("../systems/FishQuest").ActiveFishQuest | null;
+  /** Ashencast forge anvil quest: 0 not started … 3 anvil fixed. */
+  ashencastQuestStage: import("../systems/AshencastQuest").AshencastQuestStage;
+  /** One-time promo codes redeemed from Code Guy. */
+  redeemedPromoCodes: import("../systems/PromoCodes").PromoCodeId[];
   updatedAt: number;
 }
 
@@ -198,6 +207,8 @@ export function defaultSave(): SaveData {
     equippedHatId: null,
     nautilusQuestDone: false,
     activeFishQuest: null,
+    ashencastQuestStage: 0,
+    redeemedPromoCodes: [],
     updatedAt: Date.now(),
   };
 }
@@ -270,6 +281,19 @@ function normalizeBackpackId(id: unknown): ItemId | null {
   return ITEMS[id as ItemId].isBackpack ? (id as ItemId) : null;
 }
 
+function normalizePromoCodes(raw: unknown): PromoCodeId[] {
+  const valid: PromoCodeId[] = [
+    "birthday_rod",
+    "free_coins_10k",
+    "free_fish_gift_3",
+  ];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (id): id is PromoCodeId =>
+      typeof id === "string" && valid.includes(id as PromoCodeId)
+  );
+}
+
 export function cloneSave(raw: unknown): SaveData {
   const base = defaultSave();
   if (!raw || typeof raw !== "object") return base;
@@ -281,12 +305,15 @@ export function cloneSave(raw: unknown): SaveData {
         .filter((id): id is ItemId => id != null)
     : ["starter_rod"];
   if (!ownedRods.includes("starter_rod")) ownedRods.unshift("starter_rod");
-  // Unique preserve order
-  const uniqueRods: ItemId[] = [...new Set(ownedRods)];
+  const uniqueRods: ItemId[] = [...new Set(ownedRods)].filter(
+    (id) => !UNOBTAINABLE_RODS.includes(id)
+  );
+  if (!uniqueRods.includes("starter_rod")) uniqueRods.unshift("starter_rod");
 
   let equipped: ItemId =
     normalizeRodId(s.equippedRodId) ?? uniqueRods[0] ?? "starter_rod";
-  if (!uniqueRods.includes(equipped)) equipped = uniqueRods[0];
+  if (UNOBTAINABLE_RODS.includes(equipped)) equipped = "starter_rod";
+  if (!uniqueRods.includes(equipped)) equipped = uniqueRods[0] ?? "starter_rod";
 
   const ownedBobbers: ItemId[] = Array.isArray(s.ownedBobbers)
     ? s.ownedBobbers
@@ -315,11 +342,20 @@ export function cloneSave(raw: unknown): SaveData {
   // Always keep equipment bag on slot 2 and bestiary on slot 3
   hotbar[1] = { itemId: "equipment_bag", count: 1, mutation: null, size: null, keep: false };
   hotbar[2] = { itemId: "bestiary", count: 1, mutation: null, size: null, keep: false };
-  if (!hotbar[0].itemId || !ITEMS[hotbar[0].itemId]?.isRod) {
+  if (
+    !hotbar[0].itemId ||
+    !ITEMS[hotbar[0].itemId]?.isRod ||
+    UNOBTAINABLE_RODS.includes(hotbar[0].itemId as ItemId)
+  ) {
     hotbar[0] = { itemId: equipped, count: 1, mutation: null, size: null, keep: false };
   }
 
   const bag = cloneSlots(s.bag, MAX_INVENTORY_SIZE);
+  for (let i = 0; i < bag.length; i++) {
+    if (bag[i].itemId && UNOBTAINABLE_RODS.includes(bag[i].itemId as ItemId)) {
+      bag[i] = emptySlot();
+    }
+  }
   let bestiaryFound = parseFishIdList(s.bestiaryFound);
   const bestiaryClaimed = parseFishIdList(s.bestiaryClaimed);
   // Retroactively unlock any fish already in inventory (pre-bestiary saves)
@@ -392,6 +428,8 @@ export function cloneSave(raw: unknown): SaveData {
     equippedHatId,
     nautilusQuestDone: Boolean(s.nautilusQuestDone),
     activeFishQuest: normalizeActiveFishQuest(s.activeFishQuest),
+    ashencastQuestStage: normalizeAshencastQuestStage(s.ashencastQuestStage),
+    redeemedPromoCodes: normalizePromoCodes(s.redeemedPromoCodes),
     updatedAt: Number(s.updatedAt) || Date.now(),
   };
 }

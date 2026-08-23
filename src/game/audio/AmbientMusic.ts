@@ -1,6 +1,14 @@
 import Phaser from "phaser";
 
-export type MusicZone = "island" | "ocean" | "jungle" | "reef" | "collectors";
+export type MusicZone =
+  | "island"
+  | "ocean"
+  | "jungle"
+  | "reef"
+  | "collectors"
+  | "ashencast"
+  | "frostpeak"
+  | "frostpeak_cave";
 
 const TRACK: Record<MusicZone, string> = {
   island: "music_island",
@@ -8,6 +16,9 @@ const TRACK: Record<MusicZone, string> = {
   jungle: "music_jungle",
   reef: "music_reef",
   collectors: "music_collectors",
+  ashencast: "music_ashencast",
+  frostpeak: "music_frostpeak",
+  frostpeak_cave: "music_frostpeak_cave",
 };
 
 /** Per-zone gain vs master music volume (reef a bit louder). */
@@ -17,6 +28,9 @@ const ZONE_GAIN: Record<MusicZone, number> = {
   jungle: 1,
   reef: 1.4,
   collectors: 1,
+  ashencast: 1,
+  frostpeak: 0.95,
+  frostpeak_cave: 0.9,
 };
 
 const STORAGE_KEY = "fischers_music_volume";
@@ -187,5 +201,11 @@ export function areaNameForZone(zone: MusicZone): string {
       return "Coral Reef";
     case "collectors":
       return "Collector's Island";
+    case "ashencast":
+      return "Ashencast Isle";
+    case "frostpeak":
+      return "Frostpeak Isle";
+    case "frostpeak_cave":
+      return "Frostpeak Cave";
   }
 }

@@ -2450,7 +2450,7 @@ export function placeSwamp(
     .setScale(1.1);
 
   // Fireflies — brighter, with a night halo that intensifies after dark
-  for (let i = 0; i < 22; i++) {
+  for (let i = 0; i < 12; i++) {
     const fx = Phaser.Math.Between(swampLeft + 40, swampRight - 40);
     if (fx > pondLeft && fx < pondRight) continue;
     const fy = groundY - Phaser.Math.Between(40, 160);
@@ -2482,7 +2482,7 @@ export function placeSwamp(
 
   // Grass / reed tufts
   const tufts = scene.add.graphics().setDepth(depth + 2);
-  for (let i = 0; i < 160; i++) {
+  for (let i = 0; i < 90; i++) {
     const x = Phaser.Math.Between(swampLeft + 10, swampRight - 15);
     if (x > pondLeft && x < pondRight) continue;
     const y = groundY - Phaser.Math.Between(2, 14);
@@ -2579,20 +2579,27 @@ export function placeCoralReef(
     );
   }
 
-  // Light reef water
+  // Clear shallow reef water — translucent over coral only (sand stays on top)
   const water = scene.add.graphics().setDepth(4);
-  water.fillStyle(0x6ec4e4, 0.32);
+  water.fillStyle(0x6ec4e4, 0.35);
   water.fillRect(reefLeft, surfaceY, w, 36);
-  water.fillStyle(0x4eb0d4, 0.4);
+  water.fillStyle(0x4eb0d4, 0.42);
   water.fillRect(reefLeft, surfaceY + 30, w, 50);
-  water.fillStyle(0x3a9cc4, 0.45);
+  water.fillStyle(0x3a9cc4, 0.48);
   water.fillRect(reefLeft, surfaceY + 72, w, 60);
-  water.fillStyle(0x2a88b0, 0.4);
-  water.fillRect(reefLeft, surfaceY + 125, w, depth - 125 + 16);
-  water.fillStyle(0x90d4e8, 0.12);
+  water.fillStyle(0x2a88b0, 0.45);
+  water.fillRect(reefLeft, surfaceY + 125, w, Math.max(20, sandY - surfaceY - 140));
+  water.fillStyle(0x90d4e8, 0.14);
   water.fillRect(reefLeft, sandY - 28, w, 32);
 
-  // Clean light → dark blend with deep water under the transition
+  // Deep fill behind the sand shelf (depth 2) so sky doesn't show under the bed
+  const underSand = scene.add.graphics().setDepth(2);
+  underSand.fillStyle(0x1a7098, 1);
+  underSand.fillRect(reefLeft, sandY + 30, w, 160);
+  underSand.fillStyle(0x0e4868, 1);
+  underSand.fillRect(reefLeft, sandY + 180, w, 400);
+
+  // Clean light → dark blend into normal ocean
   const steps = 14;
   const blendDeep = 520;
   for (let i = 0; i < steps; i++) {
@@ -2602,52 +2609,28 @@ export function placeCoralReef(
     const r = Math.round(110 + (46 - 110) * t);
     const g = Math.round(196 + (111 - 196) * t);
     const b = Math.round(228 + (159 - 228) * t);
-    water.fillStyle((r << 16) | (g << 8) | b, 0.32 + t * 0.38);
+    water.fillStyle((r << 16) | (g << 8) | b, 0.35 + t * 0.38);
     water.fillRect(x, surfaceY, seg, 48);
     const r2 = Math.round(78 + (31 - 78) * t);
     const g2 = Math.round(176 + (111 - 176) * t);
     const b2 = Math.round(212 + (159 - 212) * t);
-    water.fillStyle((r2 << 16) | (g2 << 8) | b2, 0.4 + t * 0.35);
+    water.fillStyle((r2 << 16) | (g2 << 8) | b2, 0.42 + t * 0.38);
     water.fillRect(x, surfaceY + 40, seg, 120);
     const r3 = Math.round(58 + (20 - 58) * t);
     const g3 = Math.round(152 + (90 - 152) * t);
     const b3 = Math.round(196 + (130 - 196) * t);
-    water.fillStyle((r3 << 16) | (g3 << 8) | b3, 0.45 + t * 0.4);
+    water.fillStyle((r3 << 16) | (g3 << 8) | b3, 0.5 + t * 0.38);
     water.fillRect(x, surfaceY + 140, seg, 160);
-    // Extra depth under the transition
     const r4 = Math.round(42 + (12 - 42) * t);
     const g4 = Math.round(110 + (61 - 110) * t);
     const b4 = Math.round(160 + (92 - 160) * t);
-    water.fillStyle((r4 << 16) | (g4 << 8) | b4, 0.55 + t * 0.35);
+    water.fillStyle((r4 << 16) | (g4 << 8) | b4, 0.65 + t * 0.3);
     water.fillRect(x, surfaceY + 280, seg, 140);
     const r5 = Math.round(28 + (7 - 28) * t);
     const g5 = Math.round(70 + (30 - 70) * t);
     const b5 = Math.round(110 + (48 - 110) * t);
-    water.fillStyle((r5 << 16) | (g5 << 8) | b5, 0.7 + t * 0.25);
+    water.fillStyle((r5 << 16) | (g5 << 8) | b5, 0.82 + t * 0.16);
     water.fillRect(x, surfaceY + 400, seg, blendDeep - 400);
-  }
-
-  // Sparse surface sparkles
-  const strips = Math.max(4, Math.floor(w / 120));
-  for (let i = 0; i < strips; i++) {
-    const strip = scene.add
-      .rectangle(
-        reefLeft + 50 + i * 120,
-        surfaceY + 4,
-        36,
-        2,
-        0xe8f8ff,
-        0.45
-      )
-      .setDepth(6);
-    scene.tweens.add({
-      targets: strip,
-      alpha: 0.1,
-      x: strip.x + 10,
-      duration: 1800 + i * 100,
-      yoyo: true,
-      repeat: -1,
-    });
   }
 
   const coralColors = [
@@ -3950,3 +3933,6 @@ function drawSnowPine(
 
 
 
+
+/** @deprecated — use ./AshencastIsland */
+export { placeAshencastIsland } from "./AshencastIsland";

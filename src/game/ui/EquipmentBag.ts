@@ -4,7 +4,7 @@ import {
   ItemId,
   formatRodStats,
   formatBobberStats,
-  MUTATIONS,
+  formatRodMutationLines,
 } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
 
@@ -399,7 +399,8 @@ export class EquipmentBag {
       .setStrokeStyle(2, equipped ? 0xffe066 : 0x6a7355)
       .setOrigin(0.5, 0);
 
-    const iconKey = this.inventory.getRodTextureKey(rodId);
+    const rawIconKey = this.inventory.getRodTextureKey(rodId);
+    const iconKey = this.scene.textures.exists(rawIconKey) ? rawIconKey : "rod";
     const [iw, ih] = this.fitIcon(iconKey, 56);
     const icon = this.scene.add
       .image(-150, y + rowH / 2, iconKey)
@@ -414,10 +415,8 @@ export class EquipmentBag {
       .setOrigin(0, 0);
 
     const statsLines = formatRodStats(stats);
-    const mutLine =
-      def.rodMutation && MUTATIONS[def.rodMutation.mutation]
-        ? `\n${MUTATIONS[def.rodMutation.mutation].name}  ${Math.round(def.rodMutation.chance * 100)}%  ·  ${MUTATIONS[def.rodMutation.mutation].sellMult}× sell`
-        : "";
+    const mutBlock = formatRodMutationLines(def);
+    const mutLine = mutBlock ? `\n${mutBlock}` : "";
     const worldMutLine = def.grantsWorldMutations
       ? "\nWorld mutations on catch (normal rates)"
       : "";
@@ -427,13 +426,47 @@ export class EquipmentBag {
         : "";
     const burstLine =
       def.rodMinigamePower === "crystal_burst"
-        ? "\n15% crystal burst every 0.5s in catch"
+        ? "\n15% crystal burst every 0.5s (+5% progress)"
+        : "";
+    const tranquilLine =
+      def.rodMinigamePower === "tranquil_bubble"
+        ? "\n40% +1m cast depth · 15% +2m · bubble every 2 catches (fail resets, twin-hook OK)"
+        : "";
+    const zeusLine =
+      def.rodMinigamePower === "zeus_strike"
+        ? "\nLightning 25%/s then halves each strike — fish hit = instant; bar hit = electrify (slow + Thunder)"
+        : "";
+    const recoilLine =
+      def.rodMinigamePower === "recoil_kick"
+        ? "\nAfter 4 fish moves: warning → blast bar to far side (+22.5% progress)"
+        : "";
+    const portalLine =
+      def.rodMinigamePower === "portal_pull"
+        ? "\n400px portal — rarest fish warps to your bobber"
+        : "";
+    const forgeLine =
+      def.rodMinigamePower === "forge_strike"
+        ? "\nAfter 3 fish moves: 8–12 swords (+5% progress speed) & axes (+10% progress) volley — 9-move cooldown · orange sword (2.5%) = Ashencast (5×)"
+        : "";
+    const birthdayLine =
+      def.rodMinigamePower === "birthday_party"
+        ? "\n15% instant catch (Confetti 3×) · balloons (minigame bar → top of screen; right-click: blue +10% progress, red +10% speed, green +10% bar) · +1% progress speed in white zone (0.5s → 0.4s → …, resets off bar)"
         : "";
     const statsText = this.scene.add
       .text(
         -112,
         y + 42,
-        statsLines + mutLine + worldMutLine + augmentLine + burstLine,
+        statsLines +
+          mutLine +
+          worldMutLine +
+          augmentLine +
+          burstLine +
+          tranquilLine +
+          zeusLine +
+          recoilLine +
+          portalLine +
+          forgeLine +
+          birthdayLine,
         {
           fontFamily: "Arial",
           fontSize: "13px",

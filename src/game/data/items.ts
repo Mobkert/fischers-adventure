@@ -7,6 +7,11 @@ export type ItemId =
   | "zeus_rod"
   | "coral_rod"
   | "augment_rod"
+  | "tranquil_rod"
+  | "recoil_rod"
+  | "portal_rod"
+  | "forge_rod"
+  | "birthday_rod"
   | "equipment_bag"
   | "bestiary"
   | "bobber_starter"
@@ -15,6 +20,12 @@ export type ItemId =
   | "bobber_mutation"
   | "bobber_clover"
   | "bobber_depth"
+  | "bobber_inflated"
+  | "ashencast_trout"
+  | "driftwood"
+  | "anvil_piece_curio"
+  | "anvil_piece_ocean"
+  | "anvil_piece_cave"
   | "backpack_starter"
   | "backpack_t1"
   | "backpack_t2"
@@ -82,7 +93,14 @@ export type FishMutationId =
   | "thunder"
   | "moonlight"
   | "lunar"
-  | "tanned";
+  | "tanned"
+  | "ash"
+  | "blasted"
+  | "ashencast"
+  | "wrapped"
+  | "confetti";
+
+export type FishBodyTone = "black" | "orange" | "red";
 
 export type FishSizeId = "normal" | "big" | "giant";
 
@@ -94,7 +112,8 @@ export type FishRarity =
   | "rare"
   | "epic"
   | "legendary"
-  | "mythical";
+  | "mythical"
+  | "mystical";
 
 export interface MutationDef {
   id: FishMutationId;
@@ -232,6 +251,52 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     toastColor: "#c49868",
     label: "Tanned! ",
   },
+  ash: {
+    id: "ash",
+    name: "Ash",
+    sellMult: 0.8,
+    tint: 0x4a4a52,
+    tintFill: true,
+    glowColor: 0x909098,
+    toastColor: "#9a9aa8",
+    label: "Ash! ",
+  },
+  blasted: {
+    id: "blasted",
+    name: "Blasted",
+    sellMult: 3,
+    tint: 0xff6622,
+    glowColor: 0xffaa44,
+    toastColor: "#ff7733",
+    label: "Blasted! ",
+  },
+  ashencast: {
+    id: "ashencast",
+    name: "Ashencast",
+    sellMult: 5,
+    tint: 0xff7722,
+    glowColor: 0xffaa44,
+    toastColor: "#ff8833",
+    label: "Ashencast! ",
+  },
+  wrapped: {
+    id: "wrapped",
+    name: "Wrapped",
+    sellMult: 2,
+    tint: 0xff3344,
+    glowColor: 0xffee44,
+    toastColor: "#ff4455",
+    label: "Wrapped! ",
+  },
+  confetti: {
+    id: "confetti",
+    name: "Confetti",
+    sellMult: 3,
+    tint: 0xff66cc,
+    glowColor: 0xffee44,
+    toastColor: "#ff88cc",
+    label: "Confetti! ",
+  },
 };
 
 export interface SizeDef {
@@ -261,6 +326,8 @@ export interface RodMutationGrant {
   mutation: FishMutationId;
   /** 0–1 chance on each successful catch. */
   chance: number;
+  /** When set, only fish with a matching body tone can receive this mutation. */
+  fishTones?: FishBodyTone[];
 }
 
 export interface RodStats {
@@ -344,6 +411,8 @@ export interface BobberStats {
   lineDepth?: number;
   /** Extra attract radius in px (base attract is 340). */
   attractBonus?: number;
+  /** Forces cast depth in meters, ignoring rod and other bobber depth bonuses. */
+  lineDepthOverride?: number;
   /** How many fish can hook on one cast. */
   hooks?: 1 | 2;
   /** Multiplier on world-mutation chances on catch (not amber/bloom). */
@@ -352,11 +421,89 @@ export interface BobberStats {
 
 export interface BobberCraftIngredient {
   itemId: ItemId;
+  /** Accept any of these fish IDs (combined count toward `count`). */
+  itemIds?: ItemId[];
   count: number;
   /** Required mutation on the fish (e.g. earthly yellowfin). */
   mutation?: FishMutationId;
   /** Accept any of these mutations (e.g. earthly or sprout). */
   mutations?: FishMutationId[];
+  /** Accept any non-null mutation (optionally OR `sizes`). */
+  anyMutation?: boolean;
+  /** Accept fish with one of these sizes (used alone or with `anyMutation`). */
+  sizes?: FishSizeId[];
+  /** Any catchable fish species (optionally filtered by `minRarity`). */
+  anyFish?: boolean;
+  /** Minimum rarity when `anyFish` is set (`uncommon` = not common). */
+  minRarity?: FishRarity;
+  /** Override forge/craft UI icon texture key. */
+  iconKey?: string;
+  /**
+   * Size is never required unless `sizes` is set — big / giant always OK otherwise.
+   * If no mutation(s) are listed, any mutation (or none) is accepted.
+   */
+}
+
+export function formatCraftIngredientLabel(ing: BobberCraftIngredient): string {
+  const muts =
+    ing.mutations && ing.mutations.length > 0
+      ? ing.mutations
+      : ing.mutation
+        ? [ing.mutation]
+        : null;
+  const mut = muts
+    ? muts.map((m) => MUTATIONS[m]?.name ?? m).join("/") + " "
+    : "";
+  const name =
+    ing.itemIds && ing.itemIds.length > 1
+      ? ing.itemIds.map((id) => ITEMS[id]?.name ?? id).join(" / ")
+      : ITEMS[ing.itemId].name;
+  if (ing.anyFish) {
+    const rare =
+      ing.minRarity === "uncommon"
+        ? " (uncommon+)"
+        : ing.minRarity
+          ? ` (${ing.minRarity}+)`
+          : "";
+    return `${ing.count}× ${mut}any fish${rare} · any size`;
+  }
+  if (ing.anyMutation && ing.sizes?.length) {
+    return `${ing.count}× any mutation or ${ing.sizes.join("/")} ${name}`;
+  }
+  if (ing.anyMutation) {
+    return `${ing.count}× any mutation ${name}`;
+  }
+  if (ing.sizes?.length && !muts) {
+    return `${ing.count}× ${ing.sizes.join("/")} ${name}`;
+  }
+  const flex = muts ? " · any size" : " · any size/mutation";
+  return `${ing.count}× ${mut}${name}${flex}`;
+}
+
+export function getCraftIngredientIconKey(ing: BobberCraftIngredient): string {
+  if (ing.iconKey) return ing.iconKey;
+  return ITEMS[ing.itemId].textureKey;
+}
+
+/** Fit a forge ingredient thumbnail (uses texture size for custom icons). */
+export function fitCraftIngredientIconSize(
+  scene: Phaser.Scene,
+  ing: BobberCraftIngredient,
+  maxW: number,
+  maxH: number
+): [number, number] {
+  const key = getCraftIngredientIconKey(ing);
+  if (ing.iconKey && scene.textures.exists(key)) {
+    const src = scene.textures.get(key).getSourceImage() as {
+      width?: number;
+      height?: number;
+    };
+    const iw = Math.max(1, src.width ?? maxW);
+    const ih = Math.max(1, src.height ?? maxH);
+    const fit = Math.min(maxW / iw, maxH / ih);
+    return [Math.round(iw * fit), Math.round(ih * fit)];
+  }
+  return fitItemDisplaySize(ITEMS[ing.itemId], maxW, maxH);
 }
 
 export interface ItemDef {
@@ -391,15 +538,32 @@ export interface ItemDef {
   craftCost?: { coins: number; ingredients: BobberCraftIngredient[] };
   /** Mutation this rod can apply on a successful catch. */
   rodMutation?: RodMutationGrant;
+  /** Multiple tone-filtered rod mutations (Recoil Rod). */
+  rodMutations?: RodMutationGrant[];
+  /** Natural body color for tone-based rod mutations. */
+  bodyTones?: FishBodyTone[];
   /**
    * On catch, roll world mutations at normal rates if the fish has none
    * (excludes amber / bloom / thunder — same pool as swimming fish).
    */
   grantsWorldMutations?: boolean;
   /** Catch-minigame special ability (Crystal Rod burst, etc.). */
-  rodMinigamePower?: "crystal_burst";
+  rodMinigamePower?:
+    | "crystal_burst"
+    | "tranquil_bubble"
+    | "zeus_strike"
+    | "recoil_kick"
+    | "portal_pull"
+    | "forge_strike"
+    | "birthday_party";
   /** Quest item — never sold by merchants. */
   isQuestItem?: boolean;
+  /** Quest catchable that has no sell price (e.g. anvil shard). */
+  isCatchable?: boolean;
+  /** Only rolls in Ashencast-adjacent ocean via special chance. */
+  ashencastExclusive?: boolean;
+  /** On failed catch, stay as this species (don't re-roll / despawn). */
+  persistOnFail?: boolean;
   rarity?: FishRarity;
   /** Relative chance to spawn in water (among fish species). */
   spawnWeight?: number;
@@ -482,6 +646,8 @@ export function preferredDepthBand(rarity: FishRarity): {
     case "mythical":
       // Same — sunfish may appear near the surface
       return { min: 28, max: 158 };
+    case "mystical":
+      return { min: 28, max: 120 };
   }
 }
 
@@ -501,7 +667,8 @@ export function rollSpawnDepthOffset(
     rarity === "rare" ||
     rarity === "epic" ||
     rarity === "legendary" ||
-    rarity === "mythical";
+    rarity === "mythical" ||
+    rarity === "mystical";
 
   if (rainy && rarePlus) {
     // Bias toward the upper half of the band
@@ -510,7 +677,7 @@ export function rollSpawnDepthOffset(
     return Math.floor(band.min + Math.random() * (highMax - band.min + 1));
   }
 
-  if (rarity === "legendary" || rarity === "mythical" || canShallow) {
+  if (rarity === "legendary" || rarity === "mythical" || rarity === "mystical" || canShallow) {
     if (Math.random() < 0.4) {
       const shallowMax = Math.min(
         Math.max(band.min + 12, (band.min + band.max) / 2),
@@ -532,6 +699,7 @@ export const RARITY_COLOR: Record<FishRarity, string> = {
   epic: "#9b5de5",
   legendary: "#ffd54a",
   mythical: "#ff69b4",
+  mystical: "#7a8cff",
 };
 
 export const RARITY_LABEL: Record<FishRarity, string> = {
@@ -541,6 +709,7 @@ export const RARITY_LABEL: Record<FishRarity, string> = {
   epic: "Epic! ",
   legendary: "Legendary! ",
   mythical: "Mythical! ",
+  mystical: "Mystical! ",
 };
 
 export const ITEMS: Record<ItemId, ItemDef> = {
@@ -631,12 +800,13 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "zeus_rod",
     name: "Zeus Rod",
     description:
-      "Forged in storm clouds — 5% Thunder (5×). +15% stats in Thunderstorms (not depth).",
+      "Forged in storm clouds — 5% Thunder (5×). +15% stats in Thunderstorms (not depth). In the catch minigame: lightning zones start at 25%/s then halve each strike — fish struck = instant catch; your bar struck = electrified (slows fish in zone, guarantees Thunder).",
     stackable: false,
     textureKey: "rod_zeus",
     isRod: true,
     buyPrice: 60000,
     shop: "cloud",
+    rodMinigamePower: "zeus_strike",
     rodStats: {
       luck: 85,
       resilience: 10,
@@ -681,11 +851,36 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       lineDepth: 2,
     },
   },
+  tranquil_rod: {
+    id: "tranquil_rod",
+    name: "Tranquil Rod",
+    description:
+      "A calm blue rod. 40% chance to cast 1m deeper, 15% chance for 2m deeper, bubble minigame every 2 catches, and its bubble can insta-catch at 25% progress.",
+    stackable: false,
+    textureKey: "rod_tranquil",
+    isRod: true,
+    rodMinigamePower: "tranquil_bubble",
+    craftCost: {
+      coins: 70000,
+      ingredients: [
+        { itemId: "chilled_clownfish", count: 20 },
+        { itemId: "driftwood", count: 3, mutation: "bloom" },
+        { itemId: "angelfish", count: 1, mutations: ["glowing", "albino"] },
+      ],
+    },
+    rodStats: {
+      luck: 80,
+      resilience: 20,
+      control: 5,
+      progressSpeed: 0,
+      lineDepth: 3,
+    },
+  },
   crystal_rod: {
     id: "crystal_rod",
     name: "Crystal Rod",
     description:
-      "Restored vault crystal. Every 0.5s while fighting a fish, 15% chance to burst — stun and +10% progress.",
+      "Restored vault crystal. Every 0.5s while fighting a fish, 15% chance to burst — stun and +5% progress.",
     stackable: false,
     textureKey: "rod_crystal",
     isRod: true,
@@ -695,6 +890,129 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       resilience: 5,
       control: 15,
       progressSpeed: 15,
+      lineDepth: 4,
+    },
+  },
+  recoil_rod: {
+    id: "recoil_rod",
+    name: "Recoil Rod",
+    description:
+      "A sawed-off shotgun rigged for fishing. After the fish moves 4 times: warning beep, then a blast slings your bar to the far side (+22.5% catch progress). Ash 10% on black fish (0.8×); Blasted 10% on orange/red fish (3×).",
+    stackable: false,
+    textureKey: "rod_recoil",
+    isRod: true,
+    rodMinigamePower: "recoil_kick",
+    rodMutations: [
+      { mutation: "ash", chance: 0.1, fishTones: ["black"] },
+      { mutation: "blasted", chance: 0.1, fishTones: ["orange", "red"] },
+    ],
+    craftCost: {
+      coins: 30000,
+      ingredients: [
+        {
+          itemId: "phantom_eel",
+          itemIds: ["phantom_eel", "serpent_eel"],
+          count: 10,
+        },
+        { itemId: "mushroom_cluster", count: 2, mutation: "bloom" },
+        {
+          itemId: "alligator",
+          count: 1,
+          anyMutation: true,
+          sizes: ["big", "giant"],
+        },
+      ],
+    },
+    rodStats: {
+      luck: 65,
+      resilience: 10,
+      control: 10,
+      progressSpeed: 0,
+      lineDepth: 3,
+    },
+  },
+  portal_rod: {
+    id: "portal_rod",
+    name: "Portal Rod",
+    description:
+      "A purple-black rod with a void portal at its tip. While your line is out, the rarest fish within 400px warps straight to your bobber.",
+    stackable: false,
+    textureKey: "rod_portal",
+    isRod: true,
+    rodMinigamePower: "portal_pull",
+    craftCost: {
+      coins: 19000,
+      ingredients: [
+        {
+          itemId: "sockeye_salmon",
+          iconKey: "craft_starlight_fish",
+          count: 1,
+          anyFish: true,
+          minRarity: "uncommon",
+          mutation: "starlight",
+        },
+        { itemId: "arapaima", count: 2 },
+        { itemId: "bluefin_tuna", count: 15 },
+        { itemId: "driftwood", count: 6 },
+        { itemId: "mushroom_cluster", count: 3 },
+      ],
+    },
+    rodStats: {
+      luck: 50,
+      resilience: 0,
+      control: 15,
+      progressSpeed: 10,
+      lineDepth: 2,
+    },
+  },
+  forge_rod: {
+    id: "forge_rod",
+    name: "Forge Rod",
+    description:
+      "A thick iron rod rigged with a travelling furnace. After the fish moves 3 times, swords and axes erupt above your hotbar — swords speed progress, axes slam it forward. A rare orange sword (2.5%) guarantees Ashencast (5× sell). Cannot retrigger for 9 more fish moves.",
+    stackable: false,
+    textureKey: "rod_forge",
+    isRod: true,
+    rodMinigamePower: "forge_strike",
+    craftCost: {
+      coins: 210000,
+      ingredients: [
+        { itemId: "serpent_eel", count: 5, mutation: "blasted" },
+        { itemId: "driftwood", count: 5, mutation: "ash" },
+        { itemId: "alligator", count: 3, anyMutation: true },
+        {
+          itemId: "sockeye_salmon",
+          iconKey: "craft_starlight_fish",
+          count: 2,
+          anyFish: true,
+          minRarity: "uncommon",
+          mutation: "starlight",
+        },
+      ],
+    },
+    rodStats: {
+      luck: 100,
+      resilience: 15,
+      control: 20,
+      progressSpeed: 0,
+      lineDepth: 5,
+    },
+  },
+  birthday_rod: {
+    id: "birthday_rod",
+    name: "Birthday Rod",
+    description:
+      "A curved pink party rod. 15% instant catch with confetti, balloons from the minigame bar to the top of the screen (right-click to pop), and +1% progress speed in the white zone on an accelerating timer (0.5s, then 0.4s, 0.3s… resets when the fish leaves).",
+    stackable: false,
+    textureKey: "rod_birthday",
+    isRod: true,
+    rodMinigamePower: "birthday_party",
+    rodMutations: [{ mutation: "wrapped", chance: 0.2 }],
+    rodStats: {
+      luck: 60,
+      resilience: 30,
+      control: 20,
+      progressSpeed: 0,
       lineDepth: 4,
     },
   },
@@ -885,13 +1203,117 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       ingredients: [{ itemId: "mushroom_cluster", count: 3 }],
     },
   },
+  bobber_inflated: {
+    id: "bobber_inflated",
+    name: "Inflated Bobber",
+    description:
+      "A buoyant teal float. Always casts at the surface — 0m depth on any rod.",
+    stackable: false,
+    textureKey: "bobber_inflated",
+    isBobber: true,
+    bobberShop: true,
+    bobberStats: { hooks: 1, lineDepthOverride: 0 },
+    craftCost: {
+      coins: 5000,
+      ingredients: [{ itemId: "pufferfish", count: 5 }],
+    },
+  },
+  ashencast_trout: {
+    id: "ashencast_trout",
+    name: "Ashencast Trout",
+    description:
+      "A mystical grey trout marked with ember runes. Rare near Ashencast Isle.",
+    stackable: true,
+    textureKey: "ashencast_trout",
+    sellPrice: 9000,
+    rarity: "mystical",
+    habitat: "ocean",
+    spawnWeight: 0,
+    ashencastExclusive: true,
+    facesLeft: true,
+    minigameSpeed: 2.05,
+    minigameJerky: true,
+    minigameChaos: 0.5,
+    minigamePauseChance: 0.18,
+    catchProgress: -25,
+    depthBand: { min: 36, max: 90 },
+    displayWidth: 72,
+    displayHeight: 22,
+    bodyTones: ["black"],
+  },
+  driftwood: {
+    id: "driftwood",
+    name: "Driftwood",
+    description:
+      "A common forked stick adrift on the ocean surface. Used at the Ashencast Forge.",
+    stackable: true,
+    textureKey: "driftwood",
+    sellPrice: 8,
+    isCatchable: true,
+    rarity: "common",
+    habitat: "ocean",
+    spawnWeight: 9,
+    ignoresBobber: true,
+    minigameSpeed: 0.55,
+    minigamePauseChance: 0.55,
+    depthBand: { min: 10, max: 28 },
+    displayWidth: 36,
+    displayHeight: 52,
+  },
+  anvil_piece_curio: {
+    id: "anvil_piece_curio",
+    name: "Anvil Shard (Curio)",
+    description: "A cracked anvil fragment. Sold by the Curio Trader.",
+    stackable: false,
+    textureKey: "anvil_piece_curio",
+    isQuestItem: true,
+    buyPrice: 5600,
+    displayWidth: 40,
+    displayHeight: 40,
+  },
+  anvil_piece_ocean: {
+    id: "anvil_piece_ocean",
+    name: "Anvil Shard (Ocean)",
+    description:
+      "A mythical shard adrift on the surface. Unsellable — bring it to the forge.",
+    stackable: false,
+    textureKey: "anvil_piece_ocean",
+    isQuestItem: true,
+    isCatchable: true,
+    rarity: "mythical",
+    habitat: "ocean",
+    spawnWeight: 0,
+    abundanceOnly: true,
+    ignoresBobber: true,
+    persistOnFail: true,
+    minigameSpeed: 1.9,
+    minigameJerky: true,
+    minigameChaos: 0.55,
+    catchProgress: -40,
+    drainMult: 1.45,
+    unstoppableJerky: true,
+    depthBand: { min: 18, max: 36 },
+    displayWidth: 44,
+    displayHeight: 40,
+  },
+  anvil_piece_cave: {
+    id: "anvil_piece_cave",
+    name: "Anvil Shard (Cave)",
+    description: "A forge fragment stocked in the amulet cavern.",
+    stackable: false,
+    textureKey: "anvil_piece_cave",
+    isQuestItem: true,
+    buyPrice: 5000,
+    displayWidth: 40,
+    displayHeight: 40,
+  },
   amulet_celestial: {
     id: "amulet_celestial",
     name: "Celestial Amulet",
     description: "Spins the heavens — races time to the next day or night.",
     stackable: true,
     textureKey: "amulet_celestial",
-    buyPrice: 20000,
+    buyPrice: 5000,
     isAmulet: true,
     amuletEffect: "celestial",
   },
@@ -1000,6 +1422,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     minigameSpeed: 1,
     displayWidth: 48,
     displayHeight: 16,
+    bodyTones: ["red"],
   },
   flounder: {
     id: "flounder",
@@ -1044,6 +1467,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     catchProgress: -20,
     displayWidth: 64,
     displayHeight: 24,
+    bodyTones: ["black"],
   },
   phantom_eel: {
     id: "phantom_eel",
@@ -1059,6 +1483,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     minigameJerky: true,
     displayWidth: 64,
     displayHeight: 14,
+    bodyTones: ["black"],
   },
   sunfish: {
     id: "sunfish",
@@ -1109,6 +1534,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     minigameSpeed: 1.28,
     displayWidth: 56,
     displayHeight: 28,
+    bodyTones: ["black"],
   },
   white_perch: {
     id: "white_perch",
@@ -1179,6 +1605,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     // Native art 314×59 — keep ~same thickness, correct aspect (was squished)
     displayWidth: 117,
     displayHeight: 22,
+    bodyTones: ["black"],
   },
   clownfish: {
     id: "clownfish",
@@ -1194,6 +1621,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     depthBand: { min: 72, max: 118 },
     displayWidth: 36,
     displayHeight: 22,
+    bodyTones: ["orange"],
   },
   angelfish: {
     id: "angelfish",
@@ -1228,6 +1656,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     // Near clownfish size (36×22), keep puffer aspect
     displayWidth: 38,
     displayHeight: 26,
+    bodyTones: ["orange"],
   },
   nurse_shark: {
     id: "nurse_shark",
@@ -1247,6 +1676,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     depthBand: { min: 88, max: 140 },
     displayWidth: 90,
     displayHeight: 34,
+    bodyTones: ["black"],
   },
   surgeon_fish: {
     id: "surgeon_fish",
@@ -1304,6 +1734,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     depthBand: { min: 28, max: 170 },
     displayWidth: 42,
     displayHeight: 30,
+    bodyTones: ["orange"],
   },
   crystal_frog: {
     id: "crystal_frog",
@@ -1372,6 +1803,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     depthBand: { min: 50, max: 280 },
     displayWidth: 110,
     displayHeight: 22,
+    bodyTones: ["black"],
   },
   cave_whale: {
     id: "cave_whale",
@@ -1404,7 +1836,9 @@ export const ITEMS: Record<ItemId, ItemDef> = {
 
 export const FISH_ITEM_IDS: ItemId[] = (
   Object.keys(ITEMS) as ItemId[]
-).filter((id) => ITEMS[id].sellPrice != null);
+).filter(
+  (id) => ITEMS[id].sellPrice != null || !!ITEMS[id].isCatchable
+);
 
 /** Coins claimed the first time a fish is unlocked in the bestiary. */
 export const BESTIARY_CLAIM_REWARD: Record<FishRarity, number> = {
@@ -1414,6 +1848,7 @@ export const BESTIARY_CLAIM_REWARD: Record<FishRarity, number> = {
   epic: 350,
   legendary: 650,
   mythical: 1000,
+  mystical: 1500,
 };
 
 export interface BestiaryArea {
@@ -1430,13 +1865,29 @@ const RARITY_SORT_ORDER: Record<FishRarity, number> = {
   epic: 3,
   legendary: 4,
   mythical: 5,
+  mystical: 6,
 };
+
+/** Higher = rarer fish species. */
+export function fishRarityRank(speciesId: ItemId): number {
+  return RARITY_SORT_ORDER[ITEMS[speciesId]?.rarity ?? "common"] ?? 0;
+}
+
+export function fishMeetsMinRarity(
+  speciesId: ItemId,
+  minRarity: FishRarity
+): boolean {
+  return fishRarityRank(speciesId) >= RARITY_SORT_ORDER[minRarity];
+}
+
+export const PORTAL_PULL_RADIUS_PX = 400;
 
 function fishIdsByHabitat(habitat: FishHabitat): ItemId[] {
   return FISH_ITEM_IDS.filter((id) =>
-    habitat === "ocean"
+    !ITEMS[id].isQuestItem &&
+    (habitat === "ocean"
       ? (ITEMS[id].habitat ?? "ocean") === "ocean"
-      : ITEMS[id].habitat === habitat
+      : ITEMS[id].habitat === habitat)
   ).sort(
     (a, b) =>
       RARITY_SORT_ORDER[ITEMS[a].rarity ?? "common"] -
@@ -1592,6 +2043,8 @@ export function rollFishSpecies(
     (id) =>
       (ITEMS[id].habitat ?? "ocean") === habitat &&
       !ITEMS[id].abundanceOnly &&
+      !ITEMS[id].ashencastExclusive &&
+      !ITEMS[id].isQuestItem &&
       !excluded.has(id)
   );
   if (fish.length === 0) {
@@ -1669,6 +2122,42 @@ export function rollFishSpecies(
   return fish[0];
 }
 
+/**
+ * Ashencast Trout spawn near Ashencast Isle (quest stage 2+).
+ * During stage 2 (need a trout): ~8% base, +3% per +25% luck before first catch.
+ * Otherwise (rare mystical): 0.15% base; +0.5%/+0.1% per +25% luck.
+ */
+export function ashencastTroutChance(
+  luckPercent: number,
+  alreadyCaught: boolean,
+  questNeedsTrout = false
+): number {
+  if (questNeedsTrout) {
+    const perTier = alreadyCaught ? 0.01 : 0.03;
+    return Math.max(0, 0.08 + (luckPercent / 25) * perTier);
+  }
+  const perTier = alreadyCaught ? 0.001 : 0.005;
+  return Math.max(0, 0.0015 + (luckPercent / 25) * perTier);
+}
+
+/** Ocean roll near Ashencast — may yield Ashencast Trout when quest allows. */
+export function rollAshencastOceanSpecies(
+  luckPercent = 0,
+  alreadyCaughtTrout: boolean,
+  exclude: readonly ItemId[] = [],
+  allowTrout = false,
+  questNeedsTrout = false
+): ItemId {
+  if (
+    allowTrout &&
+    Math.random() <
+      ashencastTroutChance(luckPercent, alreadyCaughtTrout, questNeedsTrout)
+  ) {
+    return "ashencast_trout";
+  }
+  return rollFishSpecies(luckPercent, "ocean", exclude);
+}
+
 export function mutationSellMult(mutation?: FishMutationId | null): number {
   if (!mutation) return 1;
   return MUTATIONS[mutation]?.sellMult ?? 1;
@@ -1700,6 +2189,20 @@ export function sizeScale(size?: FishSizeId | null): number {
   return FISH_SIZES[size]?.scale ?? 1;
 }
 
+/** Fit an item sprite into a box while preserving display aspect. */
+export function fitItemDisplaySize(
+  def: ItemDef,
+  maxW: number,
+  maxH: number,
+  size: FishSizeId | null = null
+): [number, number] {
+  const s = sizeScale(size);
+  const dw = (def.displayWidth ?? 32) * s;
+  const dh = (def.displayHeight ?? 32) * s;
+  const fit = Math.min(maxW / dw, maxH / dh);
+  return [Math.round(dw * fit), Math.round(dh * fit)];
+}
+
 /** Roll Big / Giant when a fish appears in the world. */
 export function rollFishSize(chanceMult = 1): FishSizeId {
   const m = Math.max(0, chanceMult);
@@ -1719,6 +2222,11 @@ const ROD_ONLY_MUTATIONS = new Set<FishMutationId>([
   "moonlight",
   "lunar",
   "tanned",
+  "ash",
+  "blasted",
+  "ashencast",
+  "wrapped",
+  "confetti",
 ]);
 
 /** Full moon catch odds (mutually exclusive; lunar checked first). */
@@ -1782,16 +2290,57 @@ export function rollWorldMutation(chanceMult = 1): FishMutationId | null {
   return null;
 }
 
-/** Rod mutation only (Bloom / Amber / Thunder). Does not roll world mutations. */
+/** Rod mutation grants for a rod (single or multi). */
+export function getRodMutationGrants(rodId: ItemId): RodMutationGrant[] {
+  const def = ITEMS[rodId];
+  if (!def) return [];
+  if (def.rodMutations?.length) return def.rodMutations;
+  if (def.rodMutation) return [def.rodMutation];
+  return [];
+}
+
+function fishMatchesRodGrant(
+  speciesId: ItemId,
+  grant: RodMutationGrant
+): boolean {
+  if (!grant.fishTones?.length) return true;
+  const tones = ITEMS[speciesId]?.bodyTones;
+  if (!tones?.length) return false;
+  return tones.some((t) => grant.fishTones!.includes(t));
+}
+
+function formatRodMutationGrantLine(grant: RodMutationGrant): string {
+  const m = MUTATIONS[grant.mutation];
+  if (!m) return "";
+  let line = `${m.name}  ${Math.round(grant.chance * 100)}%  ·  ${m.sellMult}× sell`;
+  if (grant.fishTones?.length) {
+    line += `  (${grant.fishTones.join("/")} fish)`;
+  }
+  return line;
+}
+
+export function formatRodMutationLines(def: ItemDef): string {
+  return getRodMutationGrants(def.id)
+    .map(formatRodMutationGrantLine)
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Rod mutation only. Does not roll world mutations. */
 export function rollRodMutation(
   rodId: ItemId,
+  speciesId: ItemId,
   chanceBonus = 0,
   chanceMult = 1
 ): FishMutationId | null {
-  const grant = ITEMS[rodId]?.rodMutation;
-  if (!grant) return null;
-  const chance = (grant.chance + chanceBonus) * Math.max(0, chanceMult);
-  if (Math.random() < chance) return grant.mutation;
+  const grants = getRodMutationGrants(rodId);
+  if (!grants.length) return null;
+
+  for (const grant of grants) {
+    if (!fishMatchesRodGrant(speciesId, grant)) continue;
+    const chance = (grant.chance + chanceBonus) * Math.max(0, chanceMult);
+    if (Math.random() < chance) return grant.mutation;
+  }
   return null;
 }
 
@@ -1808,6 +2357,7 @@ export const CORAL_ROD_OFFER_AMOUNT = 43000;
  */
 export function resolveCatchMutation(
   rodId: ItemId,
+  speciesId: ItemId,
   worldMutation: FishMutationId | null | undefined,
   mutationChanceMult = 1,
   rodChanceBonus = 0,
@@ -1822,7 +2372,7 @@ export function resolveCatchMutation(
     const fromRod = rollWorldMutation(speciesMutMult);
     if (fromRod) return fromRod;
   }
-  return rollRodMutation(rodId, rodChanceBonus, speciesMutMult);
+  return rollRodMutation(rodId, speciesId, rodChanceBonus, speciesMutMult);
 }
 
 /**
@@ -1831,9 +2381,10 @@ export function resolveCatchMutation(
  */
 export function rollCatchMutation(
   rodId: ItemId,
-  worldMutation?: FishMutationId | null
+  worldMutation?: FishMutationId | null,
+  speciesId: ItemId = "white_perch"
 ): FishMutationId | null {
-  return resolveCatchMutation(rodId, worldMutation ?? null, 1);
+  return resolveCatchMutation(rodId, speciesId, worldMutation ?? null, 1);
 }
 
 export const BASE_ATTRACT_RADIUS = 340;
@@ -1845,7 +2396,11 @@ export function formatBobberStats(def: ItemDef): string {
   if (s.luck) lines.push(`Luck  +${s.luck}%`);
   if (s.control) lines.push(`Control  +${s.control}%`);
   if (s.progressSpeed) lines.push(`Progress  +${s.progressSpeed}%`);
-  if (s.lineDepth) lines.push(`Line Depth  +${s.lineDepth}m`);
+  if (s.lineDepthOverride != null) {
+    lines.push(`Line Depth  fixed at ${s.lineDepthOverride}m`);
+  } else if (s.lineDepth) {
+    lines.push(`Line Depth  +${s.lineDepth}m`);
+  }
   if (s.attractBonus) lines.push(`Attract range  +${s.attractBonus}px`);
   if (s.mutationChanceMult && s.mutationChanceMult > 1) {
     lines.push(`World mutations  ×${s.mutationChanceMult} on catch`);
@@ -1880,6 +2435,8 @@ export function luckApproachSpeedMult(
   } else if (rarity === "mythical") {
     // Peak at +100%
     boost = Math.max(0, 1 - Math.abs(L - 100) / 55) * 1.1;
+  } else if (rarity === "mystical") {
+    boost = Math.max(0, 1 - Math.abs(L - 80) / 50) * 1.0;
   }
 
   return 1 + boost;
@@ -1911,11 +2468,9 @@ export function formatRodExtras(def: ItemDef): string {
   if (def.id === "augment_rod") {
     lines.push("7.5% chance to upgrade a stat on catch");
   }
-  if (def.rodMutation) {
-    const m = MUTATIONS[def.rodMutation.mutation];
-    lines.push(
-      `${m.name}  ${Math.round(def.rodMutation.chance * 100)}%  ·  ${m.sellMult}× sell`
-    );
+  for (const grant of getRodMutationGrants(def.id)) {
+    const line = formatRodMutationGrantLine(grant);
+    if (line) lines.push(line);
   }
   return lines.join("\n");
 }

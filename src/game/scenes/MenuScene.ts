@@ -129,7 +129,7 @@ export class MenuScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xc4a86a);
 
     const title = this.add
-      .text(0, -panelH / 2 + 28, "Frostpeak Cave Update", {
+      .text(0, -panelH / 2 + 28, "Ashencast Update", {
         fontFamily: "Georgia, serif",
         fontSize: "24px",
         color: "#f0e6d2",
@@ -137,7 +137,7 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const subtitle = this.add
-      .text(0, -panelH / 2 + 56, "Update Log · Scroll for more", {
+      .text(0, -panelH / 2 + 56, "What's New · Changes & Fixes", {
         fontFamily: "Arial",
         fontSize: "13px",
         color: "#9aaa9a",
@@ -161,32 +161,26 @@ export class MenuScene extends Phaser.Scene {
 
     const bodyText =
       "WHAT'S NEW\n\n" +
-      "• Frostpeak Cave — explore the mountain depths:\n" +
-      "  merchants, Shell Seeker, vault gems, and a\n" +
-      "  crystal gallery memory challenge\n" +
-      "• Crystal Rod skin — unlock from the gallery;\n" +
-      "  equip it for a crystal look and white burst FX\n" +
-      "• Hats & accessories — Hats tab in the Equipment\n" +
-      "  Bag and Accessories in the menu\n" +
-      "• Starter hats — Top Hat, Banana, and Straw Hat\n" +
-      "• Shell Hat — Shell Seeker quest (turn in 1\n" +
-      "  nautilus in the Entrance Hall)\n" +
-      "• Yellowfin Hat — catch a yellowfin to unlock\n" +
-      "• Gem Halo — claim the Coral Rod to unlock\n" +
-      "• Fish Quests — talk to Fish Quest NPCs on each\n" +
-      "  island; one active quest at a time; coin and\n" +
-      "  rare amulet rewards (no mythicals as targets)\n" +
-      "• Quest tracker HUD for your active fish quest\n\n" +
-      "CHANGES\n\n" +
-      "• Vault Keeper — needs 5 bestiary discoveries\n" +
-      "  (not the full bestiary)\n" +
-      "• Cave water runs deeper so long casts stay in\n" +
-      "  the abyss; cave fish stay in the upper depths\n" +
-      "• Nautilus spawn chance raised in the cave\n" +
-      "• Frostpeak Cave fish pay more than surface\n" +
-      "  catches (ocean / pond / reef prices unchanged)\n" +
-      "• Collector's Harbor bargainers, day/night, and\n" +
-      "  Crystal Rod still in play from earlier builds";
+      "• Ashencast Isle — a volcanic island past the reef:\n" +
+      "  forge quest, anvil repair, local fish, and merchant\n" +
+      "• Ashencast Forge — after the quest, craft four rods:\n" +
+      "  Tranquil Rod, Recoil Rod, Portal Rod, and Forge Rod\n" +
+      "• Code Guy — on starter island between the green and\n" +
+      "  blue cottages; type promo codes for rewards:\n" +
+      "  FreeBirthdayGift1 → $10,000\n" +
+      "  FreeBirthdayGift2 → Sprout Angelfish\n\n" +
+      "CHANGES & FIXES\n\n" +
+      "• Zeus Rod — lightning zones in the catch minigame;\n" +
+      "  warning beeps, then a strike can instant-catch the\n" +
+      "  fish or electrify your bar (guarantees Thunder)\n" +
+      "• Tranquil Rod — random extra cast depth; bubble\n" +
+      "  minigame every 2 catches (fail resets streak)\n" +
+      "• Recoil Rod — shotgun kick after the fish dashes\n" +
+      "• Portal Rod — rarest nearby fish warps to your bobber\n" +
+      "• Forge Rod — swords and axes erupt above the hotbar\n" +
+      "  during the fight for progress bursts\n" +
+      "• Special rod cast animations fixed — no more missing\n" +
+      "  texture freeze when casting crafted rods";
 
     const body = this.add
       .text(0, 0, bodyText, {

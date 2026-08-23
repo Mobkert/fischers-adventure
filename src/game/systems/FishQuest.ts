@@ -48,7 +48,7 @@ export const FISH_QUEST_HABITAT_LABEL: Record<FishHabitat, string> = {
   cave: "cave",
 };
 
-const COIN_REWARD: Record<Exclude<FishRarity, "mythical">, number> = {
+const COIN_REWARD: Record<Exclude<FishRarity, "mythical" | "mystical">, number> = {
   common: 75,
   uncommon: 180,
   rare: 450,
@@ -62,7 +62,9 @@ export function fishQuestCandidates(habitat: FishHabitat): ItemId[] {
     const def = ITEMS[id];
     if (!def || def.sellPrice == null) return false;
     if ((def.rarity ?? "common") === "mythical") return false;
+    if ((def.rarity ?? "common") === "mystical") return false;
     if (def.abundanceOnly) return false;
+    if (def.ashencastExclusive) return false;
     const h = def.habitat ?? "ocean";
     return h === habitat;
   });
@@ -88,8 +90,8 @@ export function rollFishQuestTarget(islandId: FishQuestIslandId): ItemId | null 
 
 export function fishQuestCoinReward(speciesId: ItemId): number {
   const rarity = (ITEMS[speciesId]?.rarity ?? "common") as FishRarity;
-  if (rarity === "mythical") return COIN_REWARD.legendary;
-  return COIN_REWARD[rarity] ?? COIN_REWARD.common;
+  if (rarity === "mythical" || rarity === "mystical") return COIN_REWARD.legendary;
+  return COIN_REWARD[rarity as Exclude<FishRarity, "mythical" | "mystical">] ?? COIN_REWARD.common;
 }
 
 /** Amulets that can drop from epic/legendary turn-ins (thunder rolled separately). */

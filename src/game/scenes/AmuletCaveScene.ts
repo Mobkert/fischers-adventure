@@ -267,6 +267,48 @@ export class AmuletCaveScene extends Phaser.Scene {
         .setDepth(7);
       this.shelfItems.push({ id, x, img, label });
     });
+
+    // Anvil shard — sold beside the amulet shelf
+    const shardId: ItemId = "anvil_piece_cave";
+    const shardDef = ITEMS[shardId];
+    const shardX = startX + AMULET_SHOP_IDS.length * gap + 20;
+    const shardGlow = this.add
+      .circle(shardX, shelfY - 42, 28, 0xff8855, 0.14)
+      .setDepth(6);
+    this.tweens.add({
+      targets: shardGlow,
+      alpha: 0.05,
+      scale: 1.15,
+      duration: 900,
+      yoyo: true,
+      repeat: -1,
+    });
+    const shardImg = this.add
+      .image(shardX, shelfY - 48, shardDef.textureKey)
+      .setDisplaySize(48, 48)
+      .setDepth(8);
+    const shardLabel = this.add
+      .text(
+        shardX,
+        shelfY + 16,
+        `Anvil Shard\n$${shardDef.buyPrice!.toLocaleString("en-US")}`,
+        {
+          fontFamily: "Arial",
+          fontSize: "12px",
+          color: "#f0e6d2",
+          align: "center",
+          stroke: "#000000",
+          strokeThickness: 3,
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(7);
+    this.shelfItems.push({
+      id: shardId,
+      x: shardX,
+      img: shardImg,
+      label: shardLabel,
+    });
   }
 
   private nearAmulet(): ItemId | null {
@@ -291,7 +333,10 @@ export class AmuletCaveScene extends Phaser.Scene {
   private tryBuyNear(): void {
     const id = this.nearAmulet();
     if (!id) return;
-    const result = this.inventory.buyAmulet(id);
+    const result =
+      id === "anvil_piece_cave"
+        ? this.inventory.buyCaveShelfItem(id)
+        : this.inventory.buyAmulet(id);
     this.showToast(result.message, result.ok ? "#7CFC00" : "#ffaa66");
     this.coinText.setText(`$${this.inventory.coins}`);
     if (result.ok) this.persistSave?.();

@@ -1,10 +1,12 @@
 import Phaser from "phaser";
 import {
   CAST_RELEASE_FRAME,
+  ensurePlayerRodArt,
   FISH_FRAME_TIPS,
   HEAD_TOP_LOCAL,
   PLAYER_FRAME_H,
   PLAYER_FRAME_W,
+  PLAYER_FRAME_PAD_TOP,
   ROD_TIP_LOCAL,
   RodDrawStyle,
   rodStyleFromItemId,
@@ -139,11 +141,11 @@ export class Player {
       // Hand sits toward the torso from the tip
       return {
         x: Phaser.Math.Linear(28, tip.x, 0.15),
-        y: Phaser.Math.Linear(40, tip.y, 0.15),
+        y: Phaser.Math.Linear(40 + PLAYER_FRAME_PAD_TOP, tip.y, 0.15),
       };
     }
     // Shoulder-carry grip (idle / walk / boat sit)
-    return { x: 30, y: 42 };
+    return { x: 30, y: 42 + PLAYER_FRAME_PAD_TOP };
   }
 
   private updateSkinSprite(): void {
@@ -324,10 +326,30 @@ export class Player {
     return style;
   }
 
+  /** Fall back to starter if cast/carry anims were not baked (stale session). */
+  private resolvedCastStyle(style: RodDrawStyle): RodDrawStyle {
+    const animStyle = this.animRodStyle(style) ?? style;
+    const castKey = `player-fish-cast-${animStyle}`;
+    if (this.sprite.scene.anims.exists(castKey)) return animStyle;
+    ensurePlayerRodArt(this.sprite.scene);
+    if (this.sprite.scene.anims.exists(castKey)) return animStyle;
+    return "starter";
+  }
+
+  private resolvedCarryStyle(style: RodDrawStyle): RodDrawStyle {
+    const animStyle = this.animRodStyle(style) ?? style;
+    const idleKey = `player-idle-rod-${animStyle}`;
+    if (this.sprite.scene.anims.exists(idleKey)) return animStyle;
+    ensurePlayerRodArt(this.sprite.scene);
+    if (this.sprite.scene.anims.exists(idleKey)) return animStyle;
+    return "starter";
+  }
+
   private moveAnimKey(kind: "idle" | "walk" | "jump"): string {
     const style = this.animRodStyle();
     if (style) {
-      return `player-${kind}-rod-${style}`;
+      const carryStyle = this.resolvedCarryStyle(style);
+      return `player-${kind}-rod-${carryStyle}`;
     }
     return `player-${kind}`;
   }
@@ -342,7 +364,8 @@ export class Player {
   private applyBoatTexture(): void {
     const style = this.animRodStyle();
     if (style) {
-      this.sprite.setTexture(`player_sit_rod_${style}`);
+      const carryStyle = this.resolvedCarryStyle(style);
+      this.sprite.setTexture(`player_sit_rod_${carryStyle}`);
     } else {
       this.sprite.setTexture("player_sit_0");
     }
@@ -373,13 +396,20 @@ export class Player {
     );
   }
 
+  /** Forge ember VFX — only when the forge rod is visibly held (hotbar or fishing). */
+  isForgeRodInHand(): boolean {
+    if (this.isFishingAnim()) {
+      return this.fishingRodStyle === "forge";
+    }
+    return this.carriedRodStyle === "forge";
+  }
+
   playFishCast(
     rodItemId: ItemId = "starter_rod",
     onRelease?: () => void
   ): void {
     this.fishingRodStyle = rodStyleFromItemId(rodItemId);
-    // Hidden frames keep tip timing; skin sprite is the visible rod
-    const castStyle = this.animRodStyle(this.fishingRodStyle) ?? this.fishingRodStyle;
+    const castStyle = this.resolvedCastStyle(this.fishingRodStyle);
     const castKey = `player-fish-cast-${castStyle}`;
     this.animMode = "fishing-cast";
     this.updateSkinSprite();
@@ -426,8 +456,7 @@ export class Player {
   }
 
   playFishWait(): void {
-    const waitStyle =
-      this.animRodStyle(this.fishingRodStyle) ?? this.fishingRodStyle;
+    const waitStyle = this.resolvedCastStyle(this.fishingRodStyle);
     const waitKey = `player-fish-wait-${waitStyle}`;
     this.animMode = "fishing-wait";
     this.updateSkinSprite();
@@ -488,11 +517,17 @@ export class Player {
       return this.getSkinFistWorld();
     }
     const tipLocal = this.currentRodTipLocal();
-    const localX = tipLocal.x - PLAYER_FRAME_W / 2;
-    const localY = tipLocal.y - PLAYER_FRAME_H / 2;
+    return this.localToWorld(tipLocal);
+  }
+
+  /** Forge Rod embers — mid-shaft furnace, follows carry & cast poses. */
+  getForgeFurnaceWorld(): { x: number; y: number } {
+    const hand = this.localToWorld(this.currentRodHandLocal());
+    const tip = this.localToWorld(this.currentRodTipLocalForSkin());
+    const t = 0.38;
     return {
-      x: this.sprite.x + (this.facing === "left" ? -localX : localX),
-      y: this.sprite.y + localY,
+      x: hand.x + (tip.x - hand.x) * t,
+      y: hand.y + (tip.y - hand.y) * t,
     };
   }
 

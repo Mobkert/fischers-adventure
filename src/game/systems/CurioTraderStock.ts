@@ -34,6 +34,13 @@ export type CurioStockEntry =
       label: string;
       /** Short ingredient summary shown in the list. */
       needsLabel: string;
+    }
+  | {
+      id: string;
+      kind: "misc";
+      itemId: ItemId;
+      fair: number;
+      label: string;
     };
 
 const RESTOCK_MS = 3 * 60 * 1000;
@@ -68,6 +75,7 @@ const STALL_MUTATIONS: Array<{ id: FishMutationId | null; weight: number }> = [
  * Curio Trader inventory — restocks every 3 minutes.
  * Earthly Yellowfin ~10%, Earthly Angelfish ~20%,
  * Augment Rod ~30%, craft bobbers ~8%.
+ * Anvil Shard is always stocked while the Ashencast quest needs it.
  */
 export class CurioTraderStock {
   private entries: CurioStockEntry[] = [];
@@ -75,6 +83,9 @@ export class CurioTraderStock {
   private seq = 0;
   private ownsRod: (id: ItemId) => boolean = () => false;
   private ownsBobber: (id: ItemId) => boolean = () => false;
+  private hasItem: (id: ItemId) => boolean = () => false;
+  /** True while the Ashencast quest needs the Curio anvil shard. */
+  private needsAnvilCurio: () => boolean = () => false;
 
   setOwnsRod(fn: (id: ItemId) => boolean): void {
     this.ownsRod = fn;
@@ -82,6 +93,19 @@ export class CurioTraderStock {
 
   setOwnsBobber(fn: (id: ItemId) => boolean): void {
     this.ownsBobber = fn;
+  }
+
+  setHasItem(fn: (id: ItemId) => boolean): void {
+    this.hasItem = fn;
+  }
+
+  setNeedsAnvilCurio(fn: () => boolean): void {
+    this.needsAnvilCurio = fn;
+  }
+
+  /** Force an immediate restock (e.g. when the anvil quest starts). */
+  forceRestock(nowMs: number): void {
+    this.restock(nowMs);
   }
 
   /** Call once when the scene starts. */
@@ -121,6 +145,20 @@ export class CurioTraderStock {
   private restock(nowMs: number): void {
     this.entries = [];
     this.nextRestockAt = nowMs + RESTOCK_MS;
+
+    // Quest shard first so it always appears in the 6-item stall list
+    if (
+      this.needsAnvilCurio() &&
+      !this.hasItem("anvil_piece_curio")
+    ) {
+      this.entries.push({
+        id: this.nextId(),
+        kind: "misc",
+        itemId: "anvil_piece_curio",
+        fair: 5600,
+        label: ITEMS.anvil_piece_curio.name,
+      });
+    }
 
     const count = 2 + Math.floor(Math.random() * 2); // 2–3
     for (let i = 0; i < count; i++) {

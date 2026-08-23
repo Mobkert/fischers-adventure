@@ -1,23 +1,35 @@
 import Phaser from "phaser";
 import {
+  drawRecoilShotgun,
+  RECOIL_ROD_ICON_HAND,
+  RECOIL_ROD_ICON_TIP,
+} from "../art/RecoilRodArt";
+import { drawPortalRodIcon } from "../art/PortalRodArt";
+import { drawForgeRodIcon } from "../art/ForgeRodArt";
+import { drawBirthdayRodIcon } from "../art/BirthdayRodArt";
+import { generateCraftStarlightFishIcon } from "../art/CraftIngredientArt";
+import {
   generateHouseTextures,
   generateTerrainTextures,
 } from "../world/WorldDecor";
+import { generateAshencastTreeTextures, generateAshencastHouseTextures } from "../world/AshencastIsland";
 import { generatePlayerArt } from "../entities/PlayerArt";
 import { generateBoatArt } from "../entities/BoatArt";
-import { generateMerchantTexture } from "../entities/FishMerchant";
+import { generateMerchantTexture, generateCodeGuyTexture } from "../entities/FishMerchant";
 import { generateHatTextures } from "./hatTextures";
 
 /** Detailed fishing-rod icons (handle bottom-left → tip top-right). */
-function generateRodTextures(scene: Phaser.Scene): void {
+export function generateRodTextures(scene: Phaser.Scene): void {
   const g = scene.make.graphics({ x: 0, y: 0 });
   g.setVisible(false);
-  const S = 64;
+  /** Padded canvas — tip ornaments (clover, portal, bolts) need headroom. */
+  const S = 72;
+  const IPY = 8;
 
   // —— Starter rod: cork grip, wood blank, simple guide ——
   g.clear();
   g.fillStyle(0x000000, 0.18);
-  g.fillEllipse(22, 56, 28, 8);
+  g.fillEllipse(22, 56 + IPY, 28, 8);
   // blank
   g.lineStyle(5, 0x6b4423);
   g.lineBetween(12, 52, 52, 12);
@@ -44,7 +56,7 @@ function generateRodTextures(scene: Phaser.Scene): void {
   // —— Lucky rod: gold wraps + clover at tip ——
   g.clear();
   g.fillStyle(0x000000, 0.18);
-  g.fillEllipse(22, 56, 28, 8);
+  g.fillEllipse(22, 56 + IPY, 28, 8);
   g.lineStyle(5, 0x5c3a21);
   g.lineBetween(12, 52, 48, 14);
   g.lineStyle(3, 0x7a5230);
@@ -69,7 +81,7 @@ function generateRodTextures(scene: Phaser.Scene): void {
   g.strokeCircle(48, 14, 3.5);
   // four-leaf clover at tip
   const cx = 54;
-  const cy = 8;
+  const cy = 8 + IPY;
   g.fillStyle(0x2d8a3e);
   g.fillCircle(cx - 3, cy, 3.2);
   g.fillCircle(cx + 3, cy, 3.2);
@@ -88,7 +100,7 @@ function generateRodTextures(scene: Phaser.Scene): void {
   // —— Firm rod: thick graphite blank, metal seat, steel tip ——
   g.clear();
   g.fillStyle(0x000000, 0.18);
-  g.fillEllipse(22, 56, 30, 8);
+  g.fillEllipse(22, 56 + IPY, 30, 8);
   g.lineStyle(7, 0x1a1a22);
   g.lineBetween(11, 52, 50, 12);
   g.lineStyle(4, 0x2a2a35);
@@ -118,7 +130,7 @@ function generateRodTextures(scene: Phaser.Scene): void {
   // —— Amber rod: yellow blank, warm wraps, balanced ——
   g.clear();
   g.fillStyle(0x000000, 0.18);
-  g.fillEllipse(22, 56, 28, 8);
+  g.fillEllipse(22, 56 + IPY, 28, 8);
   g.lineStyle(5, 0xc9a227);
   g.lineBetween(12, 52, 50, 12);
   g.lineStyle(3, 0xe8c547);
@@ -146,15 +158,15 @@ function generateRodTextures(scene: Phaser.Scene): void {
   g.fillCircle(50, 12, 1.2);
   // small amber gem at tip
   g.fillStyle(0xffb020);
-  g.fillCircle(56, 7, 3.2);
+  g.fillCircle(56, 7 + IPY, 3.2);
   g.fillStyle(0xffe066);
-  g.fillCircle(55, 6, 1.4);
+  g.fillCircle(55, 6 + IPY, 1.4);
   g.generateTexture("rod_amber", S, S);
 
   // —— Wildflower rod: orange blank, pink wraps, blossom tip ——
   g.clear();
   g.fillStyle(0x000000, 0.18);
-  g.fillEllipse(22, 56, 28, 8);
+  g.fillEllipse(22, 56 + IPY, 28, 8);
   g.lineStyle(5, 0xc45a12);
   g.lineBetween(12, 52, 50, 12);
   g.lineStyle(3, 0xe87830);
@@ -182,7 +194,7 @@ function generateRodTextures(scene: Phaser.Scene): void {
   g.fillCircle(50, 12, 1.2);
   // wildflower at tip
   const fx = 56;
-  const fy = 7;
+  const fy = 7 + IPY;
   g.fillStyle(0xf472b6);
   for (let i = 0; i < 5; i++) {
     const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
@@ -195,7 +207,7 @@ function generateRodTextures(scene: Phaser.Scene): void {
   // —— Zeus rod: storm blue blank, gold lightning wraps ——
   g.clear();
   g.fillStyle(0x000000, 0.18);
-  g.fillEllipse(22, 56, 28, 8);
+  g.fillEllipse(22, 56 + IPY, 28, 8);
   g.lineStyle(5, 0x2a5080);
   g.lineBetween(12, 52, 50, 12);
   g.lineStyle(3, 0x4da6ff);
@@ -218,15 +230,15 @@ function generateRodTextures(scene: Phaser.Scene): void {
   g.fillCircle(50, 12, 1.2);
   // bolt tip
   g.lineStyle(2, 0xffe066);
-  g.lineBetween(54, 4, 58, 10);
-  g.lineBetween(58, 10, 56, 10);
-  g.lineBetween(56, 10, 60, 16);
+  g.lineBetween(54, 4 + IPY, 58, 10 + IPY);
+  g.lineBetween(58, 10 + IPY, 56, 10 + IPY);
+  g.lineBetween(56, 10 + IPY, 60, 16 + IPY);
   g.generateTexture("rod_zeus", S, S);
 
   // —— Coral rod: pink-teal blank, coral wraps ——
   g.clear();
   g.fillStyle(0x000000, 0.18);
-  g.fillEllipse(22, 56, 28, 8);
+  g.fillEllipse(22, 56 + IPY, 28, 8);
   g.lineStyle(5, 0x2a6b6b);
   g.lineBetween(12, 52, 50, 12);
   g.lineStyle(3, 0x5ec4b8);
@@ -249,17 +261,17 @@ function generateRodTextures(scene: Phaser.Scene): void {
   g.fillCircle(50, 12, 1.2);
   // small coral tip
   g.fillStyle(0xff6b9d);
-  g.fillCircle(56, 7, 2.8);
+  g.fillCircle(56, 7 + IPY, 2.8);
   g.fillStyle(0x5ec4b8);
-  g.fillCircle(58, 10, 2.2);
+  g.fillCircle(58, 10 + IPY, 2.2);
   g.fillStyle(0xffb6d9);
-  g.fillCircle(54, 11, 1.8);
+  g.fillCircle(54, 11 + IPY, 1.8);
   g.generateTexture("rod_coral", S, S);
 
   // —— Augment rod: grey blank, cool grey star tip ——
   g.clear();
   g.fillStyle(0x000000, 0.18);
-  g.fillEllipse(22, 56, 28, 8);
+  g.fillEllipse(22, 56 + IPY, 28, 8);
   g.lineStyle(5, 0x4a5058);
   g.lineBetween(12, 52, 50, 12);
   g.lineStyle(3, 0x8a929c);
@@ -282,7 +294,7 @@ function generateRodTextures(scene: Phaser.Scene): void {
   g.fillCircle(50, 12, 1.2);
   // cool grey star at tip
   const sx = 56;
-  const sy = 7;
+  const sy = 7 + IPY;
   g.fillStyle(0xa8b0b8);
   g.fillCircle(sx, sy, 5);
   g.fillStyle(0xd0d8e0);
@@ -295,10 +307,44 @@ function generateRodTextures(scene: Phaser.Scene): void {
   g.fillCircle(sx, sy, 1.8);
   g.generateTexture("rod_augment", S, S);
 
+  // —— Tranquil rod: deep blue blank, silver wraps, bubble-glass tip ——
+  g.clear();
+  g.fillStyle(0x000000, 0.18);
+  g.fillEllipse(22, 56 + IPY, 28, 8);
+  g.lineStyle(5, 0x2d5f8e);
+  g.lineBetween(12, 52, 50, 12);
+  g.lineStyle(3, 0x63b4d9);
+  g.lineBetween(14, 50, 48, 14);
+  g.lineStyle(1.5, 0xd7f4ff, 0.85);
+  g.lineBetween(18, 46, 46, 16);
+  g.lineStyle(2, 0xa8c9d8);
+  g.lineBetween(20, 44, 24, 40);
+  g.lineBetween(28, 36, 32, 32);
+  g.lineBetween(36, 28, 40, 24);
+  g.fillStyle(0xc4a574);
+  g.fillRoundedRect(8, 44, 14, 12, 3);
+  g.fillStyle(0x5ea7d4);
+  g.fillRect(8, 54, 14, 3);
+  g.fillStyle(0x9dd8f0);
+  g.fillRect(18, 40, 5, 6);
+  g.lineStyle(2, 0xe7fbff);
+  g.strokeCircle(50, 12, 3.5);
+  g.fillStyle(0xffffff);
+  g.fillCircle(50, 12, 1.2);
+  g.fillStyle(0x8fe9ff, 0.95);
+  g.fillCircle(56, 7 + IPY, 4.8);
+  g.lineStyle(1.5, 0xeaffff, 0.95);
+  g.strokeCircle(56, 7 + IPY, 4.8);
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(54.5, 5.3 + IPY, 1.3);
+  g.fillStyle(0xbcefff, 0.55);
+  g.fillCircle(57.8, 8.3 + IPY, 1.8);
+  g.generateTexture("rod_tranquil", S, S);
+
   // —— Crystal rod: icy blank, rainbow gem tip ——
   g.clear();
   g.fillStyle(0x000000, 0.18);
-  g.fillEllipse(22, 56, 28, 8);
+  g.fillEllipse(22, 56 + IPY, 28, 8);
   g.lineStyle(5, 0x3a6078);
   g.lineBetween(12, 52, 50, 12);
   g.lineStyle(3, 0x7ec8e8);
@@ -322,10 +368,36 @@ function generateRodTextures(scene: Phaser.Scene): void {
   g.fillStyle(0xffffff);
   g.fillCircle(50, 12, 1.2);
   g.fillStyle(0xff6688);
-  g.fillTriangle(56, 2, 52, 10, 60, 10);
+  g.fillTriangle(56, 2 + IPY, 52, 10 + IPY, 60, 10 + IPY);
   g.fillStyle(0xffe0ee);
-  g.fillCircle(56, 6, 1.4);
+  g.fillCircle(56, 6 + IPY, 1.4);
   g.generateTexture("rod_crystal", S, S);
+
+  // —— Recoil rod: same shotgun art as the held weapon ——
+  g.clear();
+  g.fillStyle(0x000000, 0.2);
+  g.fillEllipse(28, 54 + IPY, 30, 8);
+  drawRecoilShotgun(
+    g,
+    RECOIL_ROD_ICON_HAND.x,
+    RECOIL_ROD_ICON_HAND.y,
+    RECOIL_ROD_ICON_TIP.x,
+    RECOIL_ROD_ICON_TIP.y
+  );
+  g.generateTexture("rod_recoil", S, S);
+
+  // —— Portal rod: purple-black blank, void portal tip ——
+  g.clear();
+  drawPortalRodIcon(g);
+  g.generateTexture("rod_portal", S, S);
+
+  g.clear();
+  drawForgeRodIcon(g);
+  g.generateTexture("rod_forge", S, S);
+
+  g.clear();
+  drawBirthdayRodIcon(g);
+  g.generateTexture("rod_birthday", S, S);
 
   g.destroy();
 }
@@ -573,6 +645,23 @@ function generateAmuletTextures(scene: Phaser.Scene): void {
   g.destroy();
 }
 
+/** Regenerate bag icons if any rod icon is missing (hot reload / new rod added). */
+export function ensureRodIconTextures(scene: Phaser.Scene): void {
+  const required = [
+    "rod_tranquil",
+    "rod_birthday",
+    "rod_forge",
+    "rod_portal",
+    "rod_recoil",
+  ];
+  for (const key of required) {
+    if (!scene.textures.exists(key)) {
+      generateRodTextures(scene);
+      return;
+    }
+  }
+}
+
 /** Generate game textures at runtime. */
 function makeTextures(scene: Phaser.Scene): void {
   const g = scene.make.graphics({ x: 0, y: 0 });
@@ -581,6 +670,7 @@ function makeTextures(scene: Phaser.Scene): void {
   generatePlayerArt(scene);
   generateBoatArt(scene);
   generateMerchantTexture(scene);
+  generateCodeGuyTexture(scene);
 
   // Bobber fallback only — real art is loaded in preload (do not overwrite keys)
   g.clear();
@@ -610,6 +700,97 @@ function makeTextures(scene: Phaser.Scene): void {
     g.fillStyle(gem.highlight);
     g.fillTriangle(16, 8, 11, 16, 18, 16);
     g.generateTexture(gem.key, 32, 32);
+  }
+
+  // Ashencast anvil shards — high-detail metallic fragments
+  const shardDefs: {
+    key: string;
+    metal: number;
+    metalDark: number;
+    metalLite: number;
+    accent: number;
+  }[] = [
+    {
+      key: "anvil_piece_curio",
+      metal: 0x9aa2ac,
+      metalDark: 0x5a626c,
+      metalLite: 0xd8dee6,
+      accent: 0xc4a86a,
+    },
+    {
+      key: "anvil_piece_ocean",
+      metal: 0x7a8a98,
+      metalDark: 0x3a4a58,
+      metalLite: 0xb8c8d8,
+      accent: 0x5a9aaa,
+    },
+    {
+      key: "anvil_piece_cave",
+      metal: 0xa89078,
+      metalDark: 0x5a4030,
+      metalLite: 0xe0c8a8,
+      accent: 0xc87848,
+    },
+  ];
+  for (const shard of shardDefs) {
+    g.clear();
+    const S = 48;
+    // Drop shadow
+    g.fillStyle(0x000000, 0.28);
+    g.fillEllipse(S / 2, S - 6, 28, 7);
+
+    // Main irregular plate (broken anvil face)
+    g.fillStyle(shard.metalDark);
+    g.fillTriangle(8, 14, 38, 10, 42, 34);
+    g.fillTriangle(6, 22, 28, 16, 18, 40);
+    g.fillStyle(shard.metal);
+    g.fillTriangle(10, 16, 36, 12, 38, 32);
+    g.fillTriangle(9, 24, 26, 18, 20, 38);
+
+    // Beveled edge highlight
+    g.fillStyle(shard.metalLite, 0.75);
+    g.fillTriangle(12, 17, 30, 14, 22, 20);
+    g.fillStyle(shard.metalLite, 0.4);
+    g.fillTriangle(28, 18, 36, 14, 34, 26);
+
+    // Fracture cracks
+    g.lineStyle(1.5, shard.metalDark, 0.9);
+    g.lineBetween(16, 18, 24, 30);
+    g.lineBetween(24, 22, 32, 28);
+    g.lineBetween(14, 28, 22, 34);
+    g.lineStyle(1, 0x1a1a22, 0.55);
+    g.lineBetween(18, 20, 26, 31);
+    g.lineBetween(26, 24, 33, 29);
+
+    // Rivet / bolt heads
+    g.fillStyle(shard.metalDark);
+    g.fillCircle(15, 22, 2.4);
+    g.fillCircle(30, 20, 2.2);
+    g.fillCircle(22, 32, 2);
+    g.fillStyle(shard.metalLite, 0.85);
+    g.fillCircle(14.4, 21.4, 1);
+    g.fillCircle(29.4, 19.4, 0.9);
+    g.fillCircle(21.4, 31.4, 0.85);
+
+    // Horn stub chip
+    g.fillStyle(shard.metal);
+    g.fillTriangle(6, 18, 12, 16, 10, 24);
+    g.fillStyle(shard.metalLite, 0.5);
+    g.fillTriangle(7, 18, 11, 17, 9, 21);
+
+    // Ember / mineral accent flecks
+    g.fillStyle(shard.accent, 0.7);
+    g.fillCircle(26, 26, 1.4);
+    g.fillCircle(19, 30, 1.1);
+    g.fillCircle(33, 24, 1);
+    g.fillStyle(0xffaa66, 0.35);
+    g.fillCircle(26, 26, 2.4);
+
+    // Outer rim scratch
+    g.lineStyle(1, shard.metalLite, 0.35);
+    g.strokeTriangle(11, 17, 35, 13, 37, 31);
+
+    g.generateTexture(shard.key, S, S);
   }
 
   // Equipment bag
@@ -682,6 +863,8 @@ function makeTextures(scene: Phaser.Scene): void {
 
   generateTerrainTextures(scene);
   generateHouseTextures(scene);
+  generateAshencastTreeTextures(scene);
+  generateAshencastHouseTextures(scene);
 }
 
 export class BootScene extends Phaser.Scene {
@@ -714,11 +897,16 @@ export class BootScene extends Phaser.Scene {
     this.load.image("nautilus", "images/nautilus.png");
     this.load.image("serpent_eel", "images/serpent_eel.png");
     this.load.image("cave_whale", "images/cave_whale.png");
+    this.load.image("ashencast_trout", "images/ashencast_trout.png");
+    this.load.image("driftwood", "images/driftwood.png");
     this.load.image("crystal_rod_skin", "images/crystal_rod_skin.png");
     this.load.image("bobber_red", "images/bobber_red.png");
     this.load.image("bobber_red_double", "images/bobber_red_double.png");
     this.load.image("bobber_yellow", "images/bobber_yellow.png");
     this.load.image("bobber_grey", "images/bobber_grey.png");
+    this.load.image("bobber_inflated", "images/bobber_inflated.png");
+    this.load.image("forge_sword", "images/forge_sword.png");
+    this.load.image("forge_axe", "images/forge_axe.png");
     this.load.image("lure_green_fish", "images/lure_green_fish.png");
     this.load.image("lure_clover", "images/lure_clover.png");
     this.load.image("full_moon_icon", "images/full_moon_icon.png");
@@ -728,12 +916,16 @@ export class BootScene extends Phaser.Scene {
     this.load.audio("music_jungle", "audio/music_jungle.wav");
     this.load.audio("music_reef", "audio/music_reef.wav");
     this.load.audio("music_collectors", "audio/music_collectors.wav");
+    this.load.audio("music_ashencast", "audio/music_ashencast.wav");
+    this.load.audio("music_frostpeak", "audio/music_frostpeak.wav");
+    this.load.audio("music_frostpeak_cave", "audio/music_frostpeak_cave.wav");
     this.load.audio("sfx_ding", "audio/sfx_ding.wav");
     this.load.audio("sfx_ding_triple", "audio/sfx_ding_triple.wav");
   }
 
   create(): void {
     makeTextures(this);
+    generateCraftStarlightFishIcon(this);
     this.createSaveFolderIcon();
     this.scene.start("MenuScene");
   }

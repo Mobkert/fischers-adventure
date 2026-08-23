@@ -234,3 +234,57 @@ export function generateMerchantTexture(scene: Phaser.Scene): void {
   g.generateTexture("npc_merchant", w, h);
   g.destroy();
 }
+
+/** Merchant-style NPC in a black suit (Code Guy). */
+export function generateCodeGuyTexture(scene: Phaser.Scene): void {
+  if (scene.textures.exists("npc_code_guy")) return;
+
+  const g = scene.make.graphics({ x: 0, y: 0 });
+  g.setVisible(false);
+  const w = 36;
+  const h = 56;
+
+  g.fillStyle(0x000000, 0.15);
+  g.fillEllipse(w / 2, h - 2, 20, 5);
+
+  // legs / shoes
+  g.fillStyle(0x141414);
+  g.fillRect(10, 38, 7, 16);
+  g.fillRect(19, 38, 7, 16);
+  g.fillStyle(0x0a0a0a);
+  g.fillRect(10, 50, 8, 4);
+  g.fillRect(19, 50, 8, 4);
+
+  // black suit jacket
+  g.fillStyle(0x1e1e1e);
+  g.fillRect(8, 20, 20, 20);
+  g.fillStyle(0xe8e0d0);
+  g.fillRect(10, 28, 16, 12);
+  g.fillStyle(0x8b2020);
+  g.fillRect(17, 28, 2, 10);
+
+  // arms
+  g.fillStyle(0xc4a484);
+  g.fillRect(4, 22, 6, 12);
+  g.fillRect(26, 22, 6, 12);
+  g.fillStyle(0x1e1e1e);
+  g.fillRect(4, 28, 6, 8);
+  g.fillRect(26, 28, 6, 8);
+
+  // head
+  g.fillStyle(0xc4a484);
+  g.fillRect(10, 4, 16, 16);
+  g.fillStyle(0xb8956e);
+  g.fillRect(10, 4, 4, 16);
+
+  // dark hat
+  g.fillStyle(0x141414);
+  g.fillRect(8, 2, 20, 6);
+  g.fillRect(12, 0, 12, 4);
+
+  g.fillStyle(0x1a1a1a);
+  g.fillRect(20, 10, 2, 2);
+
+  g.generateTexture("npc_code_guy", w, h);
+  g.destroy();
+}

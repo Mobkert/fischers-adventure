@@ -11,7 +11,8 @@ export function playCatchSfx(
     !!mutation ||
     rarity === "epic" ||
     rarity === "legendary" ||
-    rarity === "mythical";
+    rarity === "mythical" ||
+    rarity === "mystical";
 
   const key = fancy ? "sfx_ding_triple" : "sfx_ding";
   if (!scene.cache.audio.exists(key)) return;

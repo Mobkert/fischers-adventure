@@ -1,33 +1,40 @@
 import Phaser from "phaser";
+import { drawRecoilShotgun } from "../art/RecoilRodArt";
+import { drawPortalRod } from "../art/PortalRodArt";
+import { drawForgeRod } from "../art/ForgeRodArt";
+import { drawBirthdayRod } from "../art/BirthdayRodArt";
 
-export const PLAYER_FRAME_W = 64;
-export const PLAYER_FRAME_H = 64;
+/** Logical playable area — displayed size stays ~64px via setDisplaySize on the sprite. */
+export const PLAYER_FRAME_PAD_TOP = 12;
+export const PLAYER_FRAME_PAD_RIGHT = 18;
+export const PLAYER_FRAME_W = 64 + PLAYER_FRAME_PAD_RIGHT;
+export const PLAYER_FRAME_H = 64 + PLAYER_FRAME_PAD_TOP;
 
 /**
  * Top-center of the head hair strip in frame pixels (idle, lean 0, bob 0).
  * Matches drawPlayerFrame: ox=22, hx=ox-6, hair at hy-1.
  */
-export const HEAD_TOP_LOCAL = { x: 23, y: 10 };
+export const HEAD_TOP_LOCAL = { x: 23, y: 10 + PLAYER_FRAME_PAD_TOP };
 
 /**
  * Rod tip pixel in the fishing-wait frames (top-left origin of the frame).
  * Used so the cast line attaches exactly to the drawn tip.
  */
-export const ROD_TIP_LOCAL = { x: 58, y: 18 };
+export const ROD_TIP_LOCAL = { x: 58, y: 18 + PLAYER_FRAME_PAD_TOP };
 
 /**
  * Tip positions for each `player_fish_*_N` frame (must match `fish` poses).
  * Windup swings the tip left/up behind the back, then whips forward.
  */
 export const FISH_FRAME_TIPS: ReadonlyArray<{ x: number; y: number }> = [
-  { x: 50, y: 12 }, // ready — tip still ahead
-  { x: 38, y: 2 }, // lift
-  { x: 22, y: 0 }, // over the shoulder
-  { x: 4, y: 8 }, // peak — fully behind the back
-  { x: 34, y: 0 }, // mid-swing forward
-  { x: 60, y: 14 }, // snap / release
-  { x: ROD_TIP_LOCAL.x, y: ROD_TIP_LOCAL.y }, // wait
-  { x: ROD_TIP_LOCAL.x, y: ROD_TIP_LOCAL.y }, // wait bob
+  { x: 50, y: 12 + PLAYER_FRAME_PAD_TOP },
+  { x: 38, y: 2 + PLAYER_FRAME_PAD_TOP },
+  { x: 22, y: 0 + PLAYER_FRAME_PAD_TOP },
+  { x: 4, y: 8 + PLAYER_FRAME_PAD_TOP },
+  { x: 34, y: 0 + PLAYER_FRAME_PAD_TOP },
+  { x: 60, y: 14 + PLAYER_FRAME_PAD_TOP },
+  { x: ROD_TIP_LOCAL.x, y: ROD_TIP_LOCAL.y },
+  { x: ROD_TIP_LOCAL.x, y: ROD_TIP_LOCAL.y },
 ];
 
 /** Cast-anim frame index when the bobber should leave the tip. */
@@ -45,9 +52,47 @@ export type RodDrawStyle =
   | "zeus"
   | "coral"
   | "augment"
+  | "tranquil"
   | "crystal"
+  | "recoil"
+  | "portal"
+  | "forge"
+  | "birthday"
   /** Same poses/tips as other rods, but no baked rod art (skin overlay only). */
   | "hidden";
+
+/** Every rod that gets carry + cast player frames and anims — keep in sync with new rods. */
+export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
+  "starter",
+  "lucky",
+  "firm",
+  "amber",
+  "wildflower",
+  "zeus",
+  "coral",
+  "augment",
+  "tranquil",
+  "crystal",
+  "recoil",
+  "portal",
+  "forge",
+  "birthday",
+  "hidden",
+];
+
+export function rodAnimStyleReady(scene: Phaser.Scene, style: RodDrawStyle): boolean {
+  return scene.textures.exists(`player_fish_${style}_0`);
+}
+
+/** Regenerate rod player art if a style is missing (e.g. after hot reload). */
+export function ensurePlayerRodArt(scene: Phaser.Scene): void {
+  for (const style of ROD_ANIM_STYLES) {
+    if (!rodAnimStyleReady(scene, style)) {
+      generatePlayerArt(scene);
+      return;
+    }
+  }
+}
 
 export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "lucky_rod") return "lucky";
@@ -57,7 +102,12 @@ export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "zeus_rod") return "zeus";
   if (itemId === "coral_rod") return "coral";
   if (itemId === "augment_rod") return "augment";
+  if (itemId === "tranquil_rod") return "tranquil";
   if (itemId === "crystal_rod") return "crystal";
+  if (itemId === "recoil_rod") return "recoil";
+  if (itemId === "portal_rod") return "portal";
+  if (itemId === "forge_rod") return "forge";
+  if (itemId === "birthday_rod") return "birthday";
   return "starter";
 }
 
@@ -251,18 +301,7 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
   });
 
   // Idle / walk / jump with rod resting over the shoulder (hotbar selected)
-  const rodStyles: RodDrawStyle[] = [
-    "starter",
-    "lucky",
-    "firm",
-    "amber",
-    "wildflower",
-    "zeus",
-    "coral",
-    "augment",
-    "crystal",
-    "hidden",
-  ];
+  const rodStyles: RodDrawStyle[] = [...ROD_ANIM_STYLES];
   const withCarry = (pose: PlayerPose): PlayerPose => ({
     ...pose,
     rod: true,
@@ -355,13 +394,13 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
 }
 
 function drawPlayerFrame(g: Phaser.GameObjects.Graphics, pose: PlayerPose): void {
-  // Keep the body on the left so the rod has room on the right
+  // Keep the body on the left so the rod has room on the right; pad top/right in canvas.
   const ox = 22 + pose.bodyLean;
-  const oy = 8 + pose.bob;
+  const oy = 8 + pose.bob + PLAYER_FRAME_PAD_TOP;
 
   // Soft contact shadow
   g.fillStyle(0x000000, 0.12);
-  g.fillEllipse(ox, 60, 18, 5);
+  g.fillEllipse(ox, 60 + PLAYER_FRAME_PAD_TOP, 18, 5);
 
   const carrying = pose.rod && pose.rodPose === "carry";
   const tipX = pose.tipX ?? ROD_TIP_LOCAL.x;
@@ -608,6 +647,37 @@ function drawHeldRod(
     return;
   }
 
+  if (style === "tranquil") {
+    g.lineStyle(5, 0x2d5f8e, 1);
+    g.lineBetween(handX, handY, tipX, tipY);
+    g.lineStyle(3, 0x63b4d9, 1);
+    g.lineBetween(handX, handY, tipX, tipY);
+    g.lineStyle(1.5, 0xd7f4ff, 0.78);
+    g.lineBetween(handX, handY - 1, tipX, tipY - 1);
+    const mx = (handX + tipX) / 2;
+    const my = (handY + tipY) / 2;
+    g.lineStyle(2, 0xa8c9d8, 1);
+    g.lineBetween(handX + 3, handY - 3, handX + 7, handY - 6);
+    g.lineBetween(mx - 2, my + 1, mx + 2, my - 2);
+    g.fillStyle(0xc4a574);
+    g.fillRect(handX - 3, handY - 2, 8, 8);
+    g.fillStyle(0x5ea7d4);
+    g.fillRect(handX - 3, handY + 5, 8, 3);
+    g.fillStyle(0x9dd8f0);
+    g.fillCircle(handX + 1, handY + 6, 3.5);
+    g.fillStyle(0xeaffff);
+    g.fillCircle(handX + 1, handY + 6, 1.5);
+    g.lineStyle(2, 0xe7fbff);
+    g.strokeCircle(tipX, tipY, 2.8);
+    g.fillStyle(0x8fe9ff, 0.95);
+    g.fillCircle(tipX + 4, tipY - 3, 3.2);
+    g.lineStyle(1.2, 0xf7ffff, 0.95);
+    g.strokeCircle(tipX + 4, tipY - 3, 3.2);
+    g.fillStyle(0xffffff);
+    g.fillCircle(tipX + 2.8, tipY - 4.2, 1);
+    return;
+  }
+
   if (style === "coral") {
     g.lineStyle(5, 0x2a6b6b, 1);
     g.lineBetween(handX, handY, tipX, tipY);
@@ -671,6 +741,26 @@ function drawHeldRod(
     g.fillTriangle(sx + 5, sy, sx + 0.5, sy - 1.8, sx + 0.5, sy + 1.8);
     g.fillStyle(0xf0f4f8);
     g.fillCircle(sx, sy, 1.4);
+    return;
+  }
+
+  if (style === "recoil") {
+    drawRecoilShotgun(g, handX, handY, tipX, tipY);
+    return;
+  }
+
+  if (style === "portal") {
+    drawPortalRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+
+  if (style === "forge") {
+    drawForgeRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+
+  if (style === "birthday") {
+    drawBirthdayRod(g, handX, handY, tipX, tipY);
     return;
   }
 
@@ -757,18 +847,7 @@ function createPlayerAnimations(scene: Phaser.Scene): void {
     });
   }
 
-  const rodStyles: RodDrawStyle[] = [
-    "starter",
-    "lucky",
-    "firm",
-    "amber",
-    "wildflower",
-    "zeus",
-    "coral",
-    "augment",
-    "crystal",
-    "hidden",
-  ];
+  const rodStyles: RodDrawStyle[] = [...ROD_ANIM_STYLES];
   for (const style of rodStyles) {
     const idleKey = `player-idle-rod-${style}`;
     const walkKey = `player-walk-rod-${style}`;
