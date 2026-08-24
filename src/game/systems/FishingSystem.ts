@@ -709,7 +709,6 @@ export class FishingSystem {
     this.lastCaughtFish = [];
     if (success && hooked.length > 0) {
       for (const fish of hooked) {
-        fish.markCaught();
         const mutation = meta?.guaranteeThunder
           ? ("thunder" as const)
           : meta?.guaranteeAshencast
@@ -718,12 +717,26 @@ export class FishingSystem {
               ? ("confetti" as const)
               : this.resolveMutationFor(fish);
         const size = fish.size;
-        this.inventory.addItem(fish.speciesId, 1, mutation, size);
-        this.lastCaughtFish.push({
-          speciesId: fish.speciesId,
+        const added = this.inventory.addItem(
+          fish.speciesId,
+          1,
           mutation,
-          size,
-        });
+          size
+        );
+        const persist = !!ITEMS[fish.speciesId].persistOnFail;
+        if (!added && persist) {
+          // Bag full / already owned — keep the world floater alive.
+          fish.resetIdle();
+          continue;
+        }
+        fish.markCaught();
+        if (added) {
+          this.lastCaughtFish.push({
+            speciesId: fish.speciesId,
+            mutation,
+            size,
+          });
+        }
         this.scene.time.delayedCall(2500, () => {
           if (
             ITEMS[fish.speciesId].abundanceOnly ||
@@ -744,9 +757,13 @@ export class FishingSystem {
       this.lastCatchMutation = null;
       this.lastCatchSize = null;
       for (const fish of hooked) {
+        // Quest / persist floaters always stay in the water on a failed fight.
+        if (ITEMS[fish.speciesId].persistOnFail) {
+          fish.resetIdle();
+          continue;
+        }
         if (
           ITEMS[fish.speciesId].abundanceOnly &&
-          !ITEMS[fish.speciesId].persistOnFail &&
           !this.isAbundanceActive?.()
         ) {
           const idx = this.fishList.indexOf(fish);

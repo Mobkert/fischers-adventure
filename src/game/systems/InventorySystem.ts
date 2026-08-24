@@ -300,6 +300,16 @@ export class InventorySystem {
     return this.backpackId;
   }
 
+  /** Empty bag slots still available under the current backpack capacity. */
+  countEmptyBagSlots(): number {
+    const cap = this.getBagCapacity();
+    let n = 0;
+    for (let i = 0; i < cap; i++) {
+      if (this.bag[i]?.itemId == null) n++;
+    }
+    return n;
+  }
+
   /** Usable bag slots for the current backpack. */
   getBagCapacity(): number {
     return backpackSlotCount(this.backpackId);

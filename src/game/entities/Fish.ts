@@ -441,6 +441,16 @@ export class Fish {
     if (x !== undefined && y !== undefined) {
       this.sprite.setPosition(x, y);
       this.baseY = y;
+    } else if (
+      ITEMS[this.speciesId].persistOnFail &&
+      ITEMS[this.speciesId].ignoresBobber
+    ) {
+      // Surface quest floaters (ocean anvil shard) stay on the surface.
+      this.baseY = this.surfaceY + 24;
+      this.sprite.setPosition(
+        Phaser.Math.Between(this.idleMinX, this.idleMaxX),
+        this.baseY
+      );
     } else {
       this.baseY = this.depthForSpecies();
       this.sprite.setPosition(

@@ -308,6 +308,10 @@ export class UIScene extends Phaser.Scene {
         this.equipmentBag.refresh();
         this.inventoryPanel.refresh();
         this.persistSave();
+        const game = this.scene.get("GameScene") as {
+          refreshAnvilOceanFloater?: () => void;
+        };
+        game.refreshAnvilOceanFloater?.();
       },
       (msg, color) => this.showToast(msg, color)
     );
@@ -688,11 +692,15 @@ export class UIScene extends Phaser.Scene {
 
     this.fishing.onFishingEnd = (success) => {
       this.hotbar.refresh();
+      const game = this.scene.get("GameScene") as {
+        onCatchCompleteForQuests?: (caught?: CaughtFishResult[]) => void;
+        refreshAnvilOceanFloater?: () => void;
+      };
       if (success) {
-        const game = this.scene.get("GameScene") as {
-          onCatchCompleteForQuests?: (caught?: CaughtFishResult[]) => void;
-        };
         game.onCatchCompleteForQuests?.(this.fishing.lastCaughtFish);
+      } else {
+        // Failed fight — respawn ocean anvil shard if it vanished.
+        game.refreshAnvilOceanFloater?.();
       }
       this.questTracker.refresh();
     };

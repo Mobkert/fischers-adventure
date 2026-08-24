@@ -451,6 +451,9 @@ export class GameScene extends Phaser.Scene {
     this.fishing.onAbundanceFishRemoved = (fish) => {
       this.dolphinAbundance.notifyFishRemoved(fish);
       this.whaleAbundance?.notifyFishRemoved(fish);
+      if (fish === this.anvilOceanFish) {
+        this.anvilOceanFish = undefined;
+      }
     };
     this.fishing.isAbundanceActive = () =>
       this.dolphinAbundance.isActive() || this.whaleAbundance?.isActive();
@@ -3086,23 +3089,42 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  /** Keep one surface anvil shard floating while the quest needs it. */
-  private refreshAnvilOceanFloater(): void {
+  /**
+   * Keep one surface anvil shard floating while the quest needs it.
+   * Safe to call after failed catches — recreates the floater if it vanished.
+   */
+  refreshAnvilOceanFloater(): void {
     const need =
       this.inventory.ashencastQuestStage === 1 &&
       !this.inventory.hasItem("anvil_piece_ocean");
+    const alive =
+      !!this.anvilOceanFish &&
+      this.fishList.includes(this.anvilOceanFish) &&
+      !!this.anvilOceanFish.sprite?.active;
+
     if (!need) {
       if (this.anvilOceanFish) {
         const idx = this.fishList.indexOf(this.anvilOceanFish);
         if (idx >= 0) this.fishList.splice(idx, 1);
-        this.anvilOceanFish.destroy();
+        if (this.anvilOceanFish.sprite?.active) {
+          this.anvilOceanFish.destroy();
+        }
         this.anvilOceanFish = undefined;
       }
       return;
     }
-    if (this.anvilOceanFish && this.fishList.includes(this.anvilOceanFish)) {
-      return;
+    if (alive) return;
+
+    // Stale ref after a bad fight / destroy — clear and respawn.
+    if (this.anvilOceanFish) {
+      const idx = this.fishList.indexOf(this.anvilOceanFish);
+      if (idx >= 0) this.fishList.splice(idx, 1);
+      if (this.anvilOceanFish.sprite?.active) {
+        this.anvilOceanFish.destroy();
+      }
+      this.anvilOceanFish = undefined;
     }
+
     const mid = (this.ashenRight + this.collectorLeft) / 2;
     const fish = new Fish(
       this,
@@ -3119,6 +3141,8 @@ export class GameScene extends Phaser.Scene {
       { lockSpecies: true, noDespawn: true },
       () => this.weather?.weather === "sunny"
     );
+    // Force surface float (Fish constructor uses depthBand otherwise).
+    fish.resetIdle(mid, this.waterSurfaceY + 24);
     this.anvilOceanFish = fish;
     this.fishList.push(fish);
   }

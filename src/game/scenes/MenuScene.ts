@@ -168,8 +168,12 @@ export class MenuScene extends Phaser.Scene {
       "• Code Guy — on starter island between the green and\n" +
       "  blue cottages; type promo codes for rewards:\n" +
       "  FreeBirthdayGift1 → $10,000\n" +
-      "  FreeBirthdayGift2 → Sprout Angelfish\n\n" +
+      "  FreeBirthdayGift2 → Sprout Angelfish\n" +
+      "  SORRYFORBUGS → $10,000, Starlight Crystalfin Tuna,\n" +
+      "  Celestial Amulet, and Ocean Anvil Shard (if needed)\n\n" +
       "CHANGES & FIXES\n\n" +
+      "• Ocean Anvil Shard — stays in the water if you fail\n" +
+      "  the catch minigame (no more permanent disappear)\n" +
       "• Zeus Rod — lightning zones in the catch minigame;\n" +
       "  warning beeps, then a strike can instant-catch the\n" +
       "  fish or electrify your bar (guarantees Thunder)\n" +

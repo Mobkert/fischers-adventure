@@ -286,6 +286,7 @@ function normalizePromoCodes(raw: unknown): PromoCodeId[] {
     "birthday_rod",
     "free_coins_10k",
     "free_fish_gift_3",
+    "sorry_for_bugs",
   ];
   if (!Array.isArray(raw)) return [];
   return raw.filter(
