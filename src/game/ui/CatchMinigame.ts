@@ -13,6 +13,8 @@ export type CatchMinigameResultMeta = {
   guaranteeThunder?: boolean;
   guaranteeAshencast?: boolean;
   guaranteeConfetti?: boolean;
+  /** How many Recoil shotgun kicks fired during this fight. */
+  recoilKicks?: number;
 };
 
 type BirthdayBalloonKind = "blue" | "red" | "green";
@@ -27,6 +29,35 @@ export class CatchMinigame {
   private root: Phaser.GameObjects.Container;
   private greyBar!: Phaser.GameObjects.Rectangle;
   private whiteBar!: Phaser.GameObjects.Rectangle;
+  /** Optional skin replacement for the control bar (e.g. Pufferfirm). */
+  private whiteBarSkin?: Phaser.GameObjects.Image;
+  private poisonVines?: Phaser.GameObjects.Graphics;
+  private poisonVinePhase = 0;
+  private panel!: Phaser.GameObjects.Rectangle;
+  private title!: Phaser.GameObjects.Text;
+  /** Deep-space backdrop + stars for Laser skin UI. */
+  private laserSpaceGfx?: Phaser.GameObjects.Graphics;
+  private laserSparkGfx?: Phaser.GameObjects.Graphics;
+  private laserSpacePhase = 0;
+  private laserSparkSpawnTimer = 0;
+  private laserStars: Array<{
+    x: number;
+    y: number;
+    size: number;
+    phase: number;
+    bright: number;
+  }> = [];
+  private laserSparks: Array<{
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    life: number;
+    maxLife: number;
+    size: number;
+    color: number;
+    forks: number;
+  }> = [];
   private fishIcon!: Phaser.GameObjects.Image;
   private fishGlow!: Phaser.GameObjects.Image;
   private fishIcon2!: Phaser.GameObjects.Image;
@@ -87,6 +118,9 @@ export class CatchMinigame {
   private readonly tranquilRushFillRate = 1.25;
   /** Zeus Rod: periodic lightning zones on the catch bar. */
   private zeusStrike = false;
+  /** Active rod skin id for visual overrides. */
+  private rodSkinId: string | null = null;
+  private laserElectrifyTween?: Phaser.Tweens.Tween;
   private zeusRollTimer = 0;
   /** Chance per second to telegraph; halves after each strike (25% → 12.5% → …). */
   private zeusStrikeChance = 0.25;
@@ -104,7 +138,9 @@ export class CatchMinigame {
   /** Recoil Rod: after 4 fish moves, warn then blast the bar across. */
   private recoilKick = false;
   private recoilFishMoves = 0;
-  private recoilPhase: "idle" | "warn" | "kick" = "idle";
+  /** Total shotgun kicks fired during this fight (for mutation boost). */
+  private recoilKickCount = 0;
+  private recoilPhase: "idle" | "warn" | "kick" | "burst" = "idle";
   private recoilWarnTimer = 0;
   private recoilWarnRoot!: Phaser.GameObjects.Container;
   private recoilWarnIcon!: Phaser.GameObjects.Text;
@@ -113,6 +149,17 @@ export class CatchMinigame {
   private recoilKickActive = false;
   private recoilKickTarget = 0;
   private readonly recoilKickSpeed = 1350;
+  /** Testing: 3rd kick becomes a rapid burst instead of a normal shot. */
+  private recoilBurstActive = false;
+  private recoilBurstElapsed = 0;
+  private recoilBurstShotTimer = 0;
+  private readonly recoilBurstDuration = 2;
+  private readonly recoilBurstInterval = 0.2;
+  /** Burst shots only nudge progress (testing). */
+  private readonly recoilBurstProgressGain = 0.1;
+  /** Only one burst per fight (on the 3rd kick) when mastery is unlocked. */
+  private recoilBurstUsed = false;
+  private recoilBurstMastery = false;
   /** Forge Rod: swords/axes after 3 fish moves. */
   private forgeStrike = false;
   private forgeFishMoves = 0;
@@ -179,10 +226,10 @@ export class CatchMinigame {
     this.root = scene.add.container(cx, cy).setDepth(150).setVisible(false);
     this.root.setScrollFactor(0);
 
-    const panel = scene.add
+    this.panel = scene.add
       .rectangle(0, 0, 560, 132, 0x111118, 0.92)
       .setStrokeStyle(2, 0xffffff);
-    const title = scene.add
+    this.title = scene.add
       .text(0, -48, "Keep the fish in the white zone!", {
         fontFamily: "Arial",
         fontSize: "16px",
@@ -285,8 +332,8 @@ export class CatchMinigame {
       .setVisible(false);
 
     this.root.add([
-      panel,
-      title,
+      this.panel,
+      this.title,
       this.greyBar,
       this.zeusZoneRect,
       this.whiteBar,
@@ -355,10 +402,14 @@ export class CatchMinigame {
       zeusStrike?: boolean;
       /** Recoil Rod shotgun kick after fish moves. */
       recoilKick?: boolean;
+      /** Unlocked Recoil mastery — 3rd kick becomes a rapid burst. */
+      recoilBurstMastery?: boolean;
       /** Forge Rod sword/axe volley after fish moves. */
       forgeStrike?: boolean;
       /** Birthday Rod party abilities. */
       birthdayParty?: boolean;
+      /** Active rod skin id (crate / gallery) for VFX overrides. */
+      rodSkinId?: string | null;
       /** Fired when the tranquil bubble pops (sync in-world fish). */
       onTranquilBubblePop?: () => void;
       /** Second hooked fish (twin-hook bobber). */
@@ -408,10 +459,16 @@ export class CatchMinigame {
     for (const s of this.elecSparks) s.setVisible(false);
     this.recoilKick = !!options?.recoilKick;
     this.recoilFishMoves = 0;
+    this.recoilKickCount = 0;
     this.recoilPhase = "idle";
     this.recoilWarnTimer = 0;
     this.recoilKickActive = false;
     this.recoilKickTarget = 0;
+    this.recoilBurstActive = false;
+    this.recoilBurstElapsed = 0;
+    this.recoilBurstShotTimer = 0;
+    this.recoilBurstUsed = false;
+    this.recoilBurstMastery = !!options?.recoilBurstMastery;
     this.recoilWarnRoot.setVisible(false).setAlpha(1).setScale(1);
     this.recoilWarnIcon.setAlpha(1).setScale(1);
     this.forgeStrike = !!options?.forgeStrike;
@@ -424,6 +481,9 @@ export class CatchMinigame {
     this.forgeHadEmberWeapon = false;
     this.clearForgeWeapons();
     this.birthdayParty = !!options?.birthdayParty;
+    this.rodSkinId = options?.rodSkinId ?? null;
+    this.laserElectrifyTween?.stop();
+    this.laserElectrifyTween = undefined;
     this.birthdayBalloonSpeedAdd = 0;
     this.birthdayZoneSpeedAdd = 0;
     this.birthdayBarSizeMult = 1;
@@ -440,6 +500,14 @@ export class CatchMinigame {
     this.birthdayBalloonLayer.setVisible(this.birthdayParty);
     this.whiteBar.setFillStyle(0xffffff, 0.95);
     this.whiteBar.setStrokeStyle(1, 0xcccccc);
+    this.whiteBar.setVisible(true);
+    this.whiteBarSkin?.destroy();
+    this.whiteBarSkin = undefined;
+    this.poisonVines?.destroy();
+    this.poisonVines = undefined;
+    this.poisonVinePhase = 0;
+    this.clearLaserSpaceUi();
+    this.applyRodSkinVisuals();
     this.facesLeft2 = !!options?.second?.facesLeft;
     this.glowColor2 = options?.second?.glowColor ?? null;
 
@@ -461,6 +529,7 @@ export class CatchMinigame {
     this.progressBg.setFillStyle(this.bubbleActive ? 0x163f62 : 0x333333);
     this.progressBg.setStrokeStyle(1, this.bubbleActive ? 0x7ddfff : 0x222222);
     this.progressFill.setFillStyle(this.bubbleActive ? 0x59bfff : 0x4caf50);
+    this.applyRodSkinThemeColors();
     this.bubbleMarker
       .setVisible(this.bubbleActive)
       .setAlpha(1)
@@ -582,8 +651,23 @@ export class CatchMinigame {
           return;
         }
       }
+      if (this.rodSkinId === "poisoned") {
+        this.poisonVinePhase += dt;
+        this.redrawPoisonVines();
+      }
+      if (this.rodSkinId === "laser") {
+        this.updateLaserSpaceUi(dt);
+      }
       this.syncVisuals();
       return;
+    }
+
+    if (this.rodSkinId === "poisoned") {
+      this.poisonVinePhase += dt;
+      this.redrawPoisonVines();
+    }
+    if (this.rodSkinId === "laser") {
+      this.updateLaserSpaceUi(dt);
     }
 
     this.updateWhiteBarPhysics(dt, pointerDown || this.holdKey.isDown);
@@ -678,6 +762,28 @@ export class CatchMinigame {
 
   private updateRecoilKick(dt: number): void {
     if (!this.recoilKick || !this.ready) return;
+
+    if (this.recoilBurstActive) {
+      this.recoilBurstElapsed += dt;
+      this.recoilBurstShotTimer += dt;
+      while (
+        this.recoilBurstShotTimer >= this.recoilBurstInterval &&
+        this.recoilBurstElapsed < this.recoilBurstDuration
+      ) {
+        this.recoilBurstShotTimer -= this.recoilBurstInterval;
+        this.fireRecoilShot(this.recoilBurstProgressGain);
+      }
+      if (this.recoilBurstElapsed >= this.recoilBurstDuration) {
+        this.recoilBurstActive = false;
+        this.recoilBurstElapsed = 0;
+        this.recoilBurstShotTimer = 0;
+        if (!this.recoilKickActive) this.recoilPhase = "idle";
+        else this.recoilPhase = "kick";
+        this.recoilFishMoves = 0;
+      }
+      return;
+    }
+
     if (this.recoilPhase === "warn") {
       this.recoilWarnTimer -= dt;
       if (this.recoilWarnTimer <= 0) {
@@ -687,6 +793,7 @@ export class CatchMinigame {
   }
 
   private beginRecoilWarning(): void {
+    if (this.recoilBurstActive) return;
     this.recoilPhase = "warn";
     this.recoilWarnTimer = 0.55;
     this.recoilWarnRoot.setVisible(true).setAlpha(1).setScale(1);
@@ -710,10 +817,38 @@ export class CatchMinigame {
   }
 
   private triggerRecoilKick(): void {
+    // Mastery: 3rd kick of the fight → rapid-fire burst.
+    if (
+      this.recoilBurstMastery &&
+      !this.recoilBurstUsed &&
+      this.recoilKickCount === 2
+    ) {
+      this.startRecoilBurst();
+      return;
+    }
+    this.fireRecoilShot();
     this.recoilPhase = "kick";
+    this.recoilFishMoves = 0;
+  }
+
+  private startRecoilBurst(): void {
+    this.recoilBurstUsed = true;
+    this.recoilBurstActive = true;
+    this.recoilBurstElapsed = 0;
+    this.recoilBurstShotTimer = 0;
+    this.recoilPhase = "burst";
     this.recoilWarnRoot.setVisible(false);
     this.root.scene.tweens.killTweensOf(this.recoilWarnRoot);
-    playRecoilShot(this.root.scene);
+    // Immediate first blast, then every 0.2s for 2s (+10% each).
+    this.fireRecoilShot(this.recoilBurstProgressGain);
+  }
+
+  /** One shotgun blast: sling bar + progress + SFX. */
+  private fireRecoilShot(progressGain = this.recoilProgressGain): void {
+    const scene = this.root.scene;
+    this.recoilWarnRoot.setVisible(false);
+    this.root.scene.tweens.killTweensOf(this.recoilWarnRoot);
+    playRecoilShot(scene);
 
     const whiteMin = -this.barWidth / 2 + this.whiteWidth / 2;
     const whiteMax = this.barWidth / 2 - this.whiteWidth / 2;
@@ -723,9 +858,23 @@ export class CatchMinigame {
     this.recoilKickActive = true;
     this.whiteVel = onLeft ? this.recoilKickSpeed : -this.recoilKickSpeed;
 
-    this.progress = Math.min(1, this.progress + this.recoilProgressGain);
+    this.progress = Math.min(1, this.progress + progressGain);
+    this.recoilKickCount += 1;
+
+    // Little kick punch — world + HUD cameras
+    scene.cameras.main.shake(110, 0.0035);
+    const game = scene.scene.get("GameScene") as Phaser.Scene | undefined;
+    game?.cameras.main.shake(130, 0.0045);
+
     this.whiteBar.setFillStyle(0xff8866, 0.98);
     this.whiteBar.setStrokeStyle(2, 0xffcc44);
+    const flashColor = this.rodSkinId === "pistol" ? 0xa8b0b8 : 0xffaa66;
+    if (this.rodSkinId === "pistol") {
+      this.whiteBar.setFillStyle(0x9aa0a8, 0.98);
+      this.whiteBar.setStrokeStyle(2, 0xd0d4d8);
+    }
+    this.root.scene.tweens.killTweensOf(this.whiteBar);
+    this.whiteBar.setScale(1, 1);
     this.root.scene.tweens.add({
       targets: this.whiteBar,
       scaleX: 1.28,
@@ -742,11 +891,10 @@ export class CatchMinigame {
       },
     });
 
-    const scene = this.root.scene;
     const cx = this.root.x + this.whiteX;
     const cy = this.root.y;
     const flash = scene.add
-      .rectangle(cx, cy, this.whiteWidth + 40, this.barHeight + 30, 0xffaa66, 0.75)
+      .rectangle(cx, cy, this.whiteWidth + 40, this.barHeight + 30, flashColor, 0.75)
       .setDepth(255)
       .setScrollFactor(0)
       .setBlendMode(Phaser.BlendModes.ADD);
@@ -757,8 +905,6 @@ export class CatchMinigame {
       duration: 280,
       onComplete: () => flash.destroy(),
     });
-
-    this.recoilFishMoves = 0;
   }
 
   private clearRecoilTelegraph(): void {
@@ -767,6 +913,9 @@ export class CatchMinigame {
     this.recoilPhase = "idle";
     this.recoilWarnTimer = 0;
     this.recoilKickActive = false;
+    this.recoilBurstActive = false;
+    this.recoilBurstElapsed = 0;
+    this.recoilBurstShotTimer = 0;
   }
 
   private updateForgeStrike(dt: number): void {
@@ -1053,10 +1202,41 @@ export class CatchMinigame {
 
   private setElectrified(on: boolean): void {
     this.electrified = on;
+    this.laserElectrifyTween?.stop();
+    this.laserElectrifyTween = undefined;
     if (on) {
-      this.whiteBar.setFillStyle(0xc8f0ff, 0.95);
-      this.whiteBar.setStrokeStyle(2, 0xffe066);
-      for (const s of this.elecSparks) s.setVisible(true);
+      if (this.rodSkinId === "laser") {
+        this.whiteBar.setFillStyle(0xffffff, 0.95);
+        this.whiteBar.setStrokeStyle(2, 0xf9a8d4);
+        for (const s of this.elecSparks) {
+          s.setVisible(true);
+          s.setFillStyle(0xf472b6, 0.9);
+        }
+        // Fade white → pink → purple
+        const state = { t: 0 };
+        this.laserElectrifyTween = this.root.scene.tweens.add({
+          targets: state,
+          t: 1,
+          duration: 900,
+          ease: "Sine.easeInOut",
+          onUpdate: () => {
+            const t = state.t;
+            const r = Math.round(255 + (168 - 255) * t);
+            const g = Math.round(255 + (85 - 255) * Math.min(1, t * 1.2));
+            const b = Math.round(255 + (247 - 255) * t);
+            const color = (r << 16) | (g << 8) | b;
+            this.whiteBar.setFillStyle(color, 0.95);
+            this.whiteBar.setStrokeStyle(2, t > 0.5 ? 0xa855f7 : 0xec4899);
+          },
+        });
+      } else {
+        this.whiteBar.setFillStyle(0xc8f0ff, 0.95);
+        this.whiteBar.setStrokeStyle(2, 0xffe066);
+        for (const s of this.elecSparks) {
+          s.setVisible(true);
+          s.setFillStyle(0xa8e8ff, 0.85);
+        }
+      }
     } else {
       this.whiteBar.setFillStyle(0xffffff, 0.95);
       this.whiteBar.setStrokeStyle(1, 0xcccccc);
@@ -1078,6 +1258,10 @@ export class CatchMinigame {
   }
 
   private playZeusLightningFx(): void {
+    if (this.rodSkinId === "laser") {
+      this.playLaserBeamFx();
+      return;
+    }
     const scene = this.root.scene;
     const cx = this.root.x + this.zeusZoneX;
     const cy = this.root.y - 8;
@@ -1147,17 +1331,75 @@ export class CatchMinigame {
     }
   }
 
+  private playLaserBeamFx(): void {
+    const scene = this.root.scene;
+    const cx = this.root.x + this.zeusZoneX;
+    const cy = this.root.y - 8;
+    const beam = scene.add.graphics().setDepth(220).setScrollFactor(0);
+    // Outer glow
+    beam.fillStyle(0xec4899, 0.35);
+    beam.fillRect(cx - 10, cy - 90, 20, 110);
+    beam.fillStyle(0xa855f7, 0.55);
+    beam.fillRect(cx - 5, cy - 90, 10, 110);
+    beam.fillStyle(0xffffff, 0.95);
+    beam.fillRect(cx - 2, cy - 90, 4, 110);
+    // Impact bloom
+    beam.fillStyle(0xf9a8d4, 0.7);
+    beam.fillCircle(cx, cy + 6, 18);
+    beam.fillStyle(0xffffff, 0.9);
+    beam.fillCircle(cx, cy + 6, 8);
+
+    const flash = scene.add
+      .rectangle(cx, cy, this.zeusZoneW + 24, this.barHeight + 28, 0xf472b6, 0.8)
+      .setDepth(219)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    scene.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 280,
+      onComplete: () => flash.destroy(),
+    });
+    scene.tweens.add({
+      targets: beam,
+      alpha: 0,
+      duration: 340,
+      onComplete: () => beam.destroy(),
+    });
+
+    for (let i = 0; i < 12; i++) {
+      const spark = scene.add
+        .circle(cx, cy, 2.2, i % 2 === 0 ? 0xffffff : 0xd946ef, 1)
+        .setDepth(222)
+        .setScrollFactor(0);
+      const ang = (i / 12) * Math.PI * 2;
+      scene.tweens.add({
+        targets: spark,
+        x: cx + Math.cos(ang) * Phaser.Math.Between(24, 52),
+        y: cy + Math.sin(ang) * Phaser.Math.Between(12, 30),
+        alpha: 0,
+        duration: 360,
+        ease: "Cubic.easeOut",
+        onComplete: () => spark.destroy(),
+      });
+    }
+  }
+
   private playCrystalBurstFx(): void {
     const scene = this.root.scene;
     const bx = this.root.x + this.whiteX;
     const by = this.root.y;
+    const poisoned = this.rodSkinId === "poisoned";
+    const ringCol = poisoned ? 0x39ff14 : 0xffffff;
+    const sparkCol = poisoned ? 0x7cfc00 : 0xffffff;
     const ring = scene.add
-      .circle(bx, by, 8, 0xffffff, 0.9)
+      .circle(bx, by, 8, ringCol, 0.9)
       .setDepth(200)
       .setScrollFactor(0)
       .setBlendMode(Phaser.BlendModes.ADD);
     const flash = scene.add
-      .circle(bx, by, 6, 0xffffff, 1)
+      .circle(bx, by, 6, poisoned ? 0x98fb98 : 0xffffff, 1)
       .setDepth(201)
       .setScrollFactor(0);
     scene.tweens.add({
@@ -1178,20 +1420,356 @@ export class CatchMinigame {
     });
     for (let i = 0; i < 8; i++) {
       const ang = (i / 8) * Math.PI * 2;
-      const spark = scene.add
-        .circle(bx, by, 3, 0xffffff, 0.95)
-        .setDepth(202)
-        .setScrollFactor(0);
-      scene.tweens.add({
-        targets: spark,
-        x: bx + Math.cos(ang) * 48,
-        y: by + Math.sin(ang) * 28,
-        alpha: 0,
-        scale: 0.2,
-        duration: 380,
-        ease: "Cubic.easeOut",
-        onComplete: () => spark.destroy(),
+      if (poisoned) {
+        // Gloop blobs
+        const blob = scene.add
+          .circle(bx, by, 4, sparkCol, 0.95)
+          .setDepth(202)
+          .setScrollFactor(0);
+        scene.tweens.add({
+          targets: blob,
+          x: bx + Math.cos(ang) * 40,
+          y: by + Math.sin(ang) * 22 + 18,
+          alpha: 0,
+          scale: 1.6,
+          duration: 480,
+          ease: "Cubic.easeOut",
+          onComplete: () => blob.destroy(),
+        });
+      } else {
+        const spark = scene.add
+          .circle(bx, by, 3, sparkCol, 0.95)
+          .setDepth(202)
+          .setScrollFactor(0);
+        scene.tweens.add({
+          targets: spark,
+          x: bx + Math.cos(ang) * 48,
+          y: by + Math.sin(ang) * 28,
+          alpha: 0,
+          scale: 0.2,
+          duration: 380,
+          ease: "Cubic.easeOut",
+          onComplete: () => spark.destroy(),
+        });
+      }
+    }
+  }
+
+  /**
+   * Poisoned skin — vine clusters only in the top UI corners, hanging down.
+   */
+  private redrawPoisonVines(): void {
+    const g = this.poisonVines;
+    if (!g) return;
+    g.clear();
+
+    const hw = this.barWidth / 2 + 16;
+    const corners: Array<{ x: number; dirX: number }> = [
+      { x: -hw, dirX: 1 },
+      { x: hw, dirX: -1 },
+    ];
+
+    for (let c = 0; c < corners.length; c++) {
+      const corner = corners[c]!;
+      // 4 vines per cluster, hanging downward from the top corner
+      for (let v = 0; v < 4; v++) {
+        const basePhase =
+          this.poisonVinePhase * (1.1 + v * 0.18) + c * 0.9 + v * 0.55;
+        const wave = Math.sin(basePhase) * 5.5;
+        const wave2 = Math.cos(basePhase * 1.35) * 3.2;
+        // Spread vines horizontally across each corner cluster
+        const ox = corner.x + corner.dirX * (v * 14 + 6);
+        const oy = -52 + v * 3;
+
+        g.lineStyle(2.6 + (v % 2), v % 2 === 0 ? 0x2d5a2d : 0x1a4a22, 0.95);
+        g.beginPath();
+        g.moveTo(ox, oy);
+        let x = ox;
+        let y = oy;
+        const segs = 6;
+        for (let i = 1; i <= segs; i++) {
+          const t = i / segs;
+          const sway = wave * t + wave2 * t * t;
+          // Grow downward; sway sideways — fan outward as they hang
+          x = ox + corner.dirX * (8 + i * 5) + sway * corner.dirX * 0.85;
+          y = oy + 8 + i * 12 + Math.abs(sway) * 0.25;
+          x += Math.sin(basePhase + i * 0.8) * 6.5 * t * corner.dirX;
+          g.lineTo(x, y);
+        }
+        g.strokePath();
+
+        // Leaves near the hanging tip
+        const leafSway = Math.sin(basePhase + 1.2) * 2;
+        g.fillStyle(0x3d8b4f, 0.92);
+        g.fillEllipse(x + 3 + leafSway, y + 2, 9, 4.5);
+        g.fillStyle(0x228b22, 0.88);
+        g.fillEllipse(x - 4 - leafSway * 0.5, y + 5, 7, 3.5);
+        g.fillStyle(0x4caf50, 0.75);
+        g.fillEllipse(x + 1, y + 8 + leafSway * 0.3, 5, 2.5);
+      }
+    }
+  }
+
+  private applyRodSkinVisuals(): void {
+    const scene = this.root.scene;
+    // Reset chrome to defaults; themed skins override below
+    this.panel.setFillStyle(0x111118, 0.92).setStrokeStyle(2, 0xffffff);
+    this.title
+      .setText("Keep the fish in the white zone!")
+      .setColor("#ffffff");
+
+    if (this.rodSkinId === "pufferfirm" && scene.textures.exists("pufferfish")) {
+      // Semi-transparent stretched puffer as the control zone — keep fish on top
+      this.whiteBar.setVisible(false);
+      this.whiteBarSkin = scene.add
+        .image(this.whiteX, -8, "pufferfish")
+        .setDisplaySize(this.whiteWidth, Math.max(18, this.barHeight - 18))
+        .setOrigin(0.5)
+        .setAlpha(0.72);
+      // Insert behind fish icons so the hooked fish stays visible
+      const fishIdx = this.root.getIndex(this.fishIcon);
+      if (fishIdx >= 0) this.root.addAt(this.whiteBarSkin, fishIdx);
+      else this.root.add(this.whiteBarSkin);
+      this.root.bringToTop(this.fishGlow);
+      this.root.bringToTop(this.fishIcon);
+      this.root.bringToTop(this.fishGlow2);
+      this.root.bringToTop(this.fishIcon2);
+    }
+
+    if (this.rodSkinId === "poisoned") {
+      // Green-tinted UI + waving vine clusters in the corners only
+      this.greyBar.setFillStyle(0x3a5a3a);
+      this.greyBar.setStrokeStyle(2, 0x1a3a1a);
+      this.poisonVines = scene.add.graphics();
+      this.root.add(this.poisonVines);
+      this.poisonVinePhase = 0;
+      this.redrawPoisonVines();
+    } else {
+      this.greyBar.setFillStyle(0x6e6e6e);
+      this.greyBar.setStrokeStyle(2, 0x333333);
+    }
+
+    if (this.rodSkinId === "laser") {
+      this.setupLaserSpaceUi();
+      this.zeusZoneRect.setFillStyle(0xec4899, 0.28);
+      this.zeusZoneRect.setStrokeStyle(2, 0xa855f7, 0.9);
+      this.zeusWarnIcon.setColor("#f9a8d4");
+    } else {
+      this.zeusZoneRect.setFillStyle(0xffe066, 0.28);
+      this.zeusZoneRect.setStrokeStyle(2, 0xffcc33, 0.9);
+      this.zeusWarnIcon.setColor("#ffe066");
+    }
+
+    this.applyRodSkinThemeColors();
+  }
+
+  /** Progress / panel tints that must win over start() defaults. */
+  private applyRodSkinThemeColors(): void {
+    if (this.rodSkinId === "poisoned" && !this.bubbleActive) {
+      this.progressBg.setFillStyle(0x1a3020);
+      this.progressBg.setStrokeStyle(1, 0x1a3a1a);
+      this.progressFill.setFillStyle(0x4caf50);
+    }
+    if (this.rodSkinId === "laser" && !this.bubbleActive) {
+      // Space backdrop is drawn in laserSpaceGfx — keep panel mostly clear
+      this.panel.setFillStyle(0x060614, 0.15).setStrokeStyle(2, 0xa855f7, 0.85);
+      this.title
+        .setText("Keep the fish in the laser zone!")
+        .setColor("#f9a8d4");
+      this.greyBar.setFillStyle(0x16122a);
+      this.greyBar.setStrokeStyle(2, 0x6b21a8);
+      this.progressBg.setFillStyle(0x0c0618);
+      this.progressBg.setStrokeStyle(1, 0x7c3aed);
+      this.progressFill.setFillStyle(0xec4899);
+      this.hint.setColor("#c4b5fd");
+    }
+  }
+
+  private clearLaserSpaceUi(): void {
+    this.laserSpaceGfx?.destroy();
+    this.laserSpaceGfx = undefined;
+    this.laserSparkGfx?.destroy();
+    this.laserSparkGfx = undefined;
+    this.laserStars = [];
+    this.laserSparks = [];
+    this.laserSpacePhase = 0;
+    this.laserSparkSpawnTimer = 0;
+  }
+
+  private setupLaserSpaceUi(): void {
+    const scene = this.root.scene;
+    this.clearLaserSpaceUi();
+    this.laserSpaceGfx = scene.add.graphics();
+    this.laserSparkGfx = scene.add
+      .graphics()
+      .setBlendMode(Phaser.BlendModes.ADD);
+    // Space behind panel; sparks above chrome but under the fish bar
+    this.root.addAt(this.laserSpaceGfx, 0);
+    const titleIdx = this.root.getIndex(this.title);
+    if (titleIdx >= 0) this.root.addAt(this.laserSparkGfx, titleIdx + 1);
+    else this.root.add(this.laserSparkGfx);
+
+    this.laserStars = [];
+    for (let i = 0; i < 48; i++) {
+      const pos = this.randomLaserChromePoint();
+      this.laserStars.push({
+        x: pos.x,
+        y: pos.y,
+        size: Phaser.Math.FloatBetween(0.6, 2.1),
+        phase: Math.random() * Math.PI * 2,
+        bright: 0.35 + Math.random() * 0.65,
       });
+    }
+    this.laserSparkSpawnTimer = 0.05;
+    this.redrawLaserSpace();
+    this.redrawLaserSparks();
+  }
+
+  /** Points on the UI chrome — never inside the fish movement bar. */
+  private randomLaserChromePoint(): { x: number; y: number } {
+    const barHalfW = this.barWidth / 2 + 6;
+    const barTop = -8 - this.barHeight / 2 - 4;
+    const barBot = -8 + this.barHeight / 2 + 4;
+    const band = Phaser.Math.Between(0, 3);
+    if (band === 0) {
+      return {
+        x: Phaser.Math.FloatBetween(-268, 268),
+        y: Phaser.Math.FloatBetween(-62, barTop),
+      };
+    }
+    if (band === 1) {
+      return {
+        x: Phaser.Math.FloatBetween(-268, 268),
+        y: Phaser.Math.FloatBetween(barBot, 60),
+      };
+    }
+    if (band === 2) {
+      return {
+        x: Phaser.Math.FloatBetween(-272, -barHalfW),
+        y: Phaser.Math.FloatBetween(-58, 58),
+      };
+    }
+    return {
+      x: Phaser.Math.FloatBetween(barHalfW, 272),
+      y: Phaser.Math.FloatBetween(-58, 58),
+    };
+  }
+
+  private isInLaserFishBar(x: number, y: number): boolean {
+    const barHalfW = this.barWidth / 2 + 4;
+    const barHalfH = this.barHeight / 2 + 4;
+    return Math.abs(x) <= barHalfW && Math.abs(y - -8) <= barHalfH;
+  }
+
+  private spawnLaserSpark(): void {
+    const pos = this.randomLaserChromePoint();
+    const colors = [0xffffff, 0xf9a8d4, 0xd946ef, 0xc4b5fd, 0xa855f7];
+    this.laserSparks.push({
+      x: pos.x,
+      y: pos.y,
+      vx: Phaser.Math.FloatBetween(-28, 28),
+      vy: Phaser.Math.FloatBetween(-22, 22),
+      life: 0,
+      maxLife: Phaser.Math.FloatBetween(0.22, 0.55),
+      size: Phaser.Math.FloatBetween(1.2, 2.8),
+      color: colors[Phaser.Math.Between(0, colors.length - 1)]!,
+      forks: Phaser.Math.Between(2, 4),
+    });
+  }
+
+  private updateLaserSpaceUi(dt: number): void {
+    this.laserSpacePhase += dt;
+    this.redrawLaserSpace();
+
+    this.laserSparkSpawnTimer -= dt;
+    while (this.laserSparkSpawnTimer <= 0) {
+      this.spawnLaserSpark();
+      if (Math.random() < 0.45) this.spawnLaserSpark();
+      this.laserSparkSpawnTimer += Phaser.Math.FloatBetween(0.04, 0.12);
+    }
+
+    for (let i = this.laserSparks.length - 1; i >= 0; i--) {
+      const s = this.laserSparks[i]!;
+      s.life += dt;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      if (s.life >= s.maxLife || this.isInLaserFishBar(s.x, s.y)) {
+        this.laserSparks.splice(i, 1);
+      }
+    }
+    this.redrawLaserSparks();
+  }
+
+  private redrawLaserSpace(): void {
+    const g = this.laserSpaceGfx;
+    if (!g) return;
+    g.clear();
+    const t = this.laserSpacePhase;
+
+    // Deep space panel fill (panel rect is mostly transparent for laser)
+    g.fillStyle(0x050512, 0.94);
+    g.fillRoundedRect(-280, -66, 560, 132, 8);
+
+    // Soft nebula wash
+    g.fillStyle(0x4c1d95, 0.28 + Math.sin(t * 0.7) * 0.08);
+    g.fillEllipse(-120, -10, 220, 90);
+    g.fillStyle(0x9d174d, 0.2 + Math.cos(t * 0.55) * 0.06);
+    g.fillEllipse(130, 8, 200, 80);
+    g.fillStyle(0x312e81, 0.24);
+    g.fillEllipse(20, -28, 160, 50);
+    g.fillStyle(0x7e22ce, 0.14);
+    g.fillEllipse(-40, 30, 280, 40);
+
+    // Starfield (chrome only — not on the fish track)
+    for (let i = 0; i < this.laserStars.length; i++) {
+      const s = this.laserStars[i]!;
+      const twinkle =
+        0.45 +
+        0.55 * (0.5 + 0.5 * Math.sin(t * (2.2 + (i % 5) * 0.35) + s.phase));
+      const a = s.bright * twinkle;
+      const col = i % 5 === 0 ? 0xf9a8d4 : i % 5 === 1 ? 0xc4b5fd : 0xffffff;
+      g.fillStyle(col, a);
+      g.fillCircle(s.x, s.y, s.size * (0.85 + twinkle * 0.25));
+      if (s.size > 1.4) {
+        g.fillStyle(col, a * 0.35);
+        g.fillCircle(s.x, s.y, s.size * 2.2);
+      }
+    }
+
+    // Thin cosmic rim
+    g.lineStyle(1.5, 0xec4899, 0.35 + Math.sin(t * 1.4) * 0.15);
+    g.strokeRoundedRect(-282, -68, 564, 136, 10);
+    g.lineStyle(1, 0xa855f7, 0.55);
+    g.strokeRoundedRect(-278, -64, 556, 128, 8);
+  }
+
+  private redrawLaserSparks(): void {
+    const g = this.laserSparkGfx;
+    if (!g) return;
+    g.clear();
+    for (const s of this.laserSparks) {
+      const u = s.life / s.maxLife;
+      const a = (1 - u) * (u < 0.15 ? u / 0.15 : 1);
+      g.fillStyle(s.color, a);
+      g.fillCircle(s.x, s.y, s.size * (1 - u * 0.35));
+      g.fillStyle(0xffffff, a * 0.85);
+      g.fillCircle(s.x, s.y, s.size * 0.35);
+      g.lineStyle(1.1, s.color, a * 0.9);
+      for (let f = 0; f < s.forks; f++) {
+        const ang = (f / s.forks) * Math.PI * 2 + s.life * 9 + f;
+        const len = 4 + s.size * 2.2 * (1 - u);
+        const x2 = s.x + Math.cos(ang) * len;
+        const y2 = s.y + Math.sin(ang) * len;
+        if (this.isInLaserFishBar(x2, y2)) continue;
+        g.beginPath();
+        g.moveTo(s.x, s.y);
+        g.lineTo(
+          s.x + Math.cos(ang) * len * 0.55 + Math.cos(ang + 0.8) * 2,
+          s.y + Math.sin(ang) * len * 0.55 + Math.sin(ang + 0.8) * 2
+        );
+        g.lineTo(x2, y2);
+        g.strokePath();
+      }
     }
   }
 
@@ -1291,7 +1869,7 @@ export class CatchMinigame {
         this.whiteX = this.recoilKickTarget;
         this.whiteVel = dir * 160;
         this.recoilKickActive = false;
-        this.recoilPhase = "idle";
+        if (!this.recoilBurstActive) this.recoilPhase = "idle";
       } else {
         this.whiteX += dir * step;
         this.whiteVel = dir * this.recoilKickSpeed;
@@ -1429,6 +2007,7 @@ export class CatchMinigame {
     if (
       this.recoilKick &&
       this.recoilPhase === "idle" &&
+      !this.recoilBurstActive &&
       this.ready
     ) {
       this.recoilFishMoves += 1;
@@ -1539,6 +2118,7 @@ export class CatchMinigame {
 
   private syncVisuals(): void {
     this.whiteBar.setX(this.whiteX);
+    this.whiteBarSkin?.setX(this.whiteX);
     if (this.zeusPhase !== "idle") {
       this.zeusZoneRect.setX(this.zeusZoneX);
       this.zeusWarnIcon.setX(this.zeusZoneX);
@@ -1624,6 +2204,7 @@ export class CatchMinigame {
       this.whiteWidth = target;
       this.whiteBar.setSize(this.whiteWidth, this.barHeight - 10);
       this.whiteBar.updateDisplayOrigin();
+      this.whiteBarSkin?.setDisplaySize(this.whiteWidth, this.barHeight - 6);
       return;
     }
     const scene = this.root.scene;
@@ -1637,6 +2218,7 @@ export class CatchMinigame {
         this.whiteWidth = state.w;
         this.whiteBar.setSize(this.whiteWidth, this.barHeight - 10);
         this.whiteBar.updateDisplayOrigin();
+        this.whiteBarSkin?.setDisplaySize(this.whiteWidth, this.barHeight - 6);
       },
       onComplete: () => {
         this.whiteBarWidthTween = undefined;
@@ -1876,14 +2458,21 @@ export class CatchMinigame {
     this.forgePhase = "idle";
     this.setElectrified(false);
     this.zeusPhase = "idle";
+    this.clearLaserSpaceUi();
     this.root.setVisible(false);
     const cb = this.onResult;
     const meta: CatchMinigameResultMeta | undefined =
-      this.guaranteeThunder || this.forgeHadEmberWeapon || this.guaranteeConfetti
+      this.guaranteeThunder ||
+      this.forgeHadEmberWeapon ||
+      this.guaranteeConfetti ||
+      this.recoilKickCount > 0
         ? {
             ...(this.guaranteeThunder ? { guaranteeThunder: true } : {}),
             ...(this.forgeHadEmberWeapon ? { guaranteeAshencast: true } : {}),
             ...(this.guaranteeConfetti ? { guaranteeConfetti: true } : {}),
+            ...(this.recoilKickCount > 0
+              ? { recoilKicks: this.recoilKickCount }
+              : {}),
           }
         : undefined;
     this.onResult = undefined;
@@ -1891,6 +2480,7 @@ export class CatchMinigame {
     this.guaranteeThunder = false;
     this.forgeHadEmberWeapon = false;
     this.guaranteeConfetti = false;
+    this.recoilKickCount = 0;
     this.birthdayInstaPending = false;
     cb?.(success, meta);
   }

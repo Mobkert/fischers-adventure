@@ -5,7 +5,8 @@ export type PromoCodeId =
   | "birthday_rod"
   | "free_coins_10k"
   | "free_fish_gift_3"
-  | "sorry_for_bugs";
+  | "sorry_for_bugs"
+  | "free_skin_crates";
 
 export type PromoRedeemResult =
   | { ok: true; message: string }
@@ -16,7 +17,15 @@ const CODE_MAP: Record<string, PromoCodeId> = {
   FreeBirthdayGift1: "free_coins_10k",
   FreeBirthdayGift2: "free_fish_gift_3",
   SORRYFORBUGS: "sorry_for_bugs",
+  FREESKINCRATES: "free_skin_crates",
 };
+
+/** Birthday event codes — no longer redeemable. Owned Birthday Rods are kept. */
+const EXPIRED_PROMO_CODES = new Set<PromoCodeId>([
+  "birthday_rod",
+  "free_coins_10k",
+  "free_fish_gift_3",
+]);
 
 export function normalizePromoCodeInput(raw: string): string {
   return raw.trim();
@@ -41,40 +50,17 @@ export function redeemPromoCode(
   if (!codeId) {
     return { ok: false, message: "That code isn't on his list." };
   }
+  if (EXPIRED_PROMO_CODES.has(codeId)) {
+    return {
+      ok: false,
+      message: "That birthday code has expired. Sorry!",
+    };
+  }
   if (hasRedeemedPromo(inventory, codeId)) {
     return { ok: false, message: "You already redeemed that code." };
   }
 
   switch (codeId) {
-    case "birthday_rod": {
-      if (inventory.ownsRod("birthday_rod")) {
-        return { ok: false, message: "You already own the Birthday Rod." };
-      }
-      inventory.ownedRods.push("birthday_rod");
-      inventory.markPromoRedeemed(codeId);
-      return {
-        ok: true,
-        message: "Ho ho ho! The Birthday Rod is yours — check your Equipment Bag.",
-      };
-    }
-    case "free_coins_10k": {
-      inventory.coins += 10000;
-      inventory.markPromoRedeemed(codeId);
-      return {
-        ok: true,
-        message: "Code Guy slips you $10,000!",
-      };
-    }
-    case "free_fish_gift_3": {
-      if (!inventory.addItem("angelfish", 1, "sprout")) {
-        return { ok: false, message: "Your bag is full!" };
-      }
-      inventory.markPromoRedeemed(codeId);
-      return {
-        ok: true,
-        message: `Code Guy gives you a ${MUTATIONS.sprout.label}${ITEMS.angelfish.name}!`,
-      };
-    }
     case "sorry_for_bugs": {
       // Need room for the tuna (+ optional ocean anvil shard).
       const giveAnvil =
@@ -105,6 +91,21 @@ export function redeemPromoCode(
       return {
         ok: true,
         message: `Sorry about the bugs! Code Guy gives you ${parts.join(", ")}.`,
+      };
+    }
+    case "free_skin_crates": {
+      // Stack onto an existing crate stack, or need 1 empty slot
+      if (!inventory.hasItem("skin_crate") && inventory.countEmptyBagSlots() < 1) {
+        return { ok: false, message: "Need 1 free bag slot for Skin Crates." };
+      }
+      if (!inventory.addItem("skin_crate", 3)) {
+        return { ok: false, message: "Your bag is full!" };
+      }
+      inventory.coins += 5000;
+      inventory.markPromoRedeemed(codeId);
+      return {
+        ok: true,
+        message: "Code Guy hands you $5,000 and 3 Skin Crates!",
       };
     }
     default:

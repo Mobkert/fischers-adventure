@@ -2,6 +2,8 @@ import Phaser from "phaser";
 import { Hotbar } from "../ui/Hotbar";
 import { InventoryPanel } from "../ui/InventoryPanel";
 import { CatchMinigame } from "../ui/CatchMinigame";
+import { SkinCrateReveal } from "../ui/SkinCrateReveal";
+import { SkinCrateMenu } from "../ui/SkinCrateMenu";
 import { EquipmentBag } from "../ui/EquipmentBag";
 import { BestiaryPanel } from "../ui/BestiaryPanel";
 import { FishingTutorial } from "../ui/FishingTutorial";
@@ -65,6 +67,7 @@ interface UISceneData {
   tryEnterShop: () => boolean;
   tryEnterBobberShop: () => boolean;
   tryEnterBackpackShop: () => boolean;
+  tryEnterSkinShop: () => boolean;
   tryEnterWhirlpoolCloud: () => boolean;
   tryEnterAmuletCave: () => boolean;
   tryEnterFrostpeakCave: () => boolean;
@@ -78,6 +81,7 @@ interface UISceneData {
   isNearBlueHouse: () => boolean;
   isNearRedHouse: () => boolean;
   isNearGreenHouse: () => boolean;
+  isNearCollectorSkinHouse: () => boolean;
   getMusicVolume: () => number;
   setMusicVolume: (v: number) => void;
   isTutorialDone: () => boolean;
@@ -114,6 +118,7 @@ export class UIScene extends Phaser.Scene {
   private tryEnterShop!: () => boolean;
   private tryEnterBobberShop!: () => boolean;
   private tryEnterBackpackShop!: () => boolean;
+  private tryEnterSkinShop!: () => boolean;
   private tryEnterWhirlpoolCloud!: () => boolean;
   private tryEnterAmuletCave!: () => boolean;
   private tryEnterFrostpeakCave!: () => boolean;
@@ -125,6 +130,7 @@ export class UIScene extends Phaser.Scene {
   private isNearBlueHouse!: () => boolean;
   private isNearRedHouse!: () => boolean;
   private isNearGreenHouse!: () => boolean;
+  private isNearCollectorSkinHouse!: () => boolean;
   private getMusicVolume!: () => number;
   private setMusicVolume!: (v: number) => void;
   private isTutorialDone!: () => boolean;
@@ -133,6 +139,8 @@ export class UIScene extends Phaser.Scene {
   private persistSave!: () => void;
   private hotbar!: Hotbar;
   private inventoryPanel!: InventoryPanel;
+  private skinCrateReveal!: SkinCrateReveal;
+  private skinCrateMenu!: SkinCrateMenu;
   private equipmentBag!: EquipmentBag;
   private bestiaryPanel!: BestiaryPanel;
   private tutorial!: FishingTutorial;
@@ -185,6 +193,7 @@ export class UIScene extends Phaser.Scene {
     this.tryEnterShop = data.tryEnterShop;
     this.tryEnterBobberShop = data.tryEnterBobberShop;
     this.tryEnterBackpackShop = data.tryEnterBackpackShop;
+    this.tryEnterSkinShop = data.tryEnterSkinShop;
     this.tryEnterWhirlpoolCloud = data.tryEnterWhirlpoolCloud;
     this.tryEnterAmuletCave = data.tryEnterAmuletCave;
     this.tryEnterFrostpeakCave = data.tryEnterFrostpeakCave;
@@ -196,6 +205,7 @@ export class UIScene extends Phaser.Scene {
     this.isNearBlueHouse = data.isNearBlueHouse;
     this.isNearRedHouse = data.isNearRedHouse;
     this.isNearGreenHouse = data.isNearGreenHouse;
+    this.isNearCollectorSkinHouse = data.isNearCollectorSkinHouse;
     this.getMusicVolume = data.getMusicVolume;
     this.setMusicVolume = data.setMusicVolume;
     this.isTutorialDone = data.isTutorialDone;
@@ -210,11 +220,48 @@ export class UIScene extends Phaser.Scene {
     this.inventoryPanel.setOnChanged(() => {
       this.persistSave();
     });
+    this.skinCrateReveal = new SkinCrateReveal(this, this.inventory);
+    this.skinCrateReveal.setOnDone((message) => {
+      this.inventoryPanel.refresh();
+      this.hotbar.refresh();
+      this.coins.refresh();
+      this.equipmentBag.refresh();
+      this.showToast(message, "#ffe066");
+      this.persistSave();
+      const game = this.scene.get("GameScene") as
+        | { syncPlayerCarriedRod?: () => void }
+        | undefined;
+      game?.syncPlayerCarriedRod?.();
+    });
+    this.skinCrateMenu = new SkinCrateMenu(this, this.inventory);
+    this.skinCrateMenu.setOnOpen((count) => {
+      this.skinCrateMenu.close();
+      if (!this.skinCrateReveal.open(count)) {
+        this.showToast("Couldn't open Skin Crate.", "#ff8866");
+        return;
+      }
+      this.inventoryPanel.refresh();
+      this.hotbar.refresh();
+      this.persistSave();
+    });
+    this.inventoryPanel.setOnOpenSkinCrate(() => {
+      if (this.skinCrateReveal.isBusy() || this.skinCrateMenu.isBusy()) return;
+      if (this.inventory.countItem("skin_crate") <= 0) {
+        this.showToast("No Skin Crates.", "#ff8866");
+        return;
+      }
+      this.inventoryPanel.setOpen(false);
+      this.skinCrateMenu.open();
+    });
     this.equipmentBag = new EquipmentBag(this, this.inventory);
     this.equipmentBag.setOnChanged((message) => {
       this.hotbar.refresh();
       this.showToast(message, "#ffe066");
       this.persistSave();
+      const game = this.scene.get("GameScene") as
+        | { syncPlayerCarriedRod?: () => void }
+        | undefined;
+      game?.syncPlayerCarriedRod?.();
     });
     this.equipmentBag.setOnAmuletUsed((amuletId) => {
       this.equipmentBag.setOpen(false);
@@ -439,10 +486,12 @@ export class UIScene extends Phaser.Scene {
       if (this.tryEnterShop()) return;
       if (this.tryEnterBobberShop()) return;
       if (this.tryEnterBackpackShop()) return;
+      if (this.tryEnterSkinShop()) return;
       if (
         this.isNearBlueHouse() ||
         this.isNearRedHouse() ||
-        this.isNearGreenHouse()
+        this.isNearGreenHouse() ||
+        this.isNearCollectorSkinHouse()
       ) {
         this.showToast("Can't enter right now.", "#ffaa66");
       }
@@ -658,12 +707,19 @@ export class UIScene extends Phaser.Scene {
           recoilKick:
             ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
             "recoil_kick",
+          recoilBurstMastery: this.inventory.isRecoilBurstMasteryUnlocked(),
           forgeStrike:
             ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
             "forge_strike",
           birthdayParty:
             ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
             "birthday_party",
+          rodSkinId: (() => {
+            const sid = this.inventory.getActiveRodSkinId(
+              this.inventory.getEquippedRodId()
+            );
+            return sid === "default" ? null : sid;
+          })(),
           tranquilBubble: this.fishing.getTranquilBubbleProc(),
           onTranquilBubblePop: () => this.fishing.popTargetTranquilBubble(),
           second:
@@ -859,7 +915,7 @@ export class UIScene extends Phaser.Scene {
 
   /** Code Guy panel — block game hotkeys so letters go into the code field. */
   private isTextEntryOpen(): boolean {
-    return this.codeGuyPanel.isOpen();
+    return this.codeGuyPanel.isOpen() || this.skinCrateReveal?.isBusy() || this.skinCrateMenu?.isBusy();
   }
 
   openForge(onClose?: () => void): void {

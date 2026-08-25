@@ -7,6 +7,7 @@ import { UIScene } from "./game/scenes/UIScene";
 import { ShopScene } from "./game/scenes/ShopScene";
 import { BobberShopScene } from "./game/scenes/BobberShopScene";
 import { BackpackShopScene } from "./game/scenes/BackpackShopScene";
+import { SkinShopScene } from "./game/scenes/SkinShopScene";
 import { CloudShopScene } from "./game/scenes/CloudShopScene";
 import { AmuletCaveScene } from "./game/scenes/AmuletCaveScene";
 
@@ -36,7 +37,7 @@ const config: Phaser.Types.Core.GameConfig = {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BootScene, MenuScene, SavesScene, GameScene, UIScene, ShopScene, BobberShopScene, BackpackShopScene, CloudShopScene, AmuletCaveScene],
+  scene: [BootScene, MenuScene, SavesScene, GameScene, UIScene, ShopScene, BobberShopScene, BackpackShopScene, SkinShopScene, CloudShopScene, AmuletCaveScene],
 };
 
 new Phaser.Game(config);

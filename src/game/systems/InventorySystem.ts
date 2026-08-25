@@ -44,6 +44,15 @@ import {
 } from "./AshencastQuest";
 import type { PromoCodeId } from "./PromoCodes";
 import {
+  isRodSkinId,
+  ROD_SKINS,
+  RodSkinId,
+  rollSkinCrate,
+  SKIN_CRATE_DUPLICATE_REFUND,
+  SKIN_CRATE_PRICE,
+  skinsForRod,
+} from "../data/rodSkins";
+import {
   VaultGemId,
   VAULT_GEM_IDS,
   VAULT_GREEN_SELL_THRESHOLD,
@@ -107,12 +116,20 @@ export class InventorySystem {
   crystalGalleryChallengeDone = false;
   crystalRodSkinOwned = false;
   crystalRodSkinActive = false;
+  ownedRodSkins: string[] = [];
+  activeRodSkins: Record<string, string> = {};
   ownedHats: ItemId[] = [...STARTER_HAT_IDS];
   equippedHatId: ItemId | null = null;
   nautilusQuestDone = false;
   activeFishQuest: ActiveFishQuest | null = null;
   ashencastQuestStage: AshencastQuestStage = 0;
   redeemedPromoCodes: PromoCodeId[] = [];
+  /**
+   * Recoil mastery progress (archived — set RECOIL_MASTERY_ENABLED to re-ship).
+   * Kept in saves so progress isn't wiped when the feature returns.
+   */
+  recoilMasteryCatches = 0;
+  recoilMasteryAshSold = 0;
   backpackId: ItemId = "backpack_starter";
 
   selectedHotbarIndex = 0;
@@ -168,6 +185,29 @@ export class InventorySystem {
     this.crystalGalleryChallengeDone = save.crystalGalleryChallengeDone;
     this.crystalRodSkinOwned = save.crystalRodSkinOwned;
     this.crystalRodSkinActive = save.crystalRodSkinActive;
+    this.ownedRodSkins = [...save.ownedRodSkins];
+    this.activeRodSkins = { ...save.activeRodSkins };
+    // Keep legacy crystal flags in sync with unified skin lists
+    if (this.ownedRodSkins.includes("gallery")) this.crystalRodSkinOwned = true;
+    if (this.activeRodSkins["crystal_rod"] === "gallery") {
+      this.crystalRodSkinActive = true;
+    } else if (this.crystalRodSkinOwned && this.crystalRodSkinActive) {
+      if (!this.ownedRodSkins.includes("gallery")) {
+        this.ownedRodSkins.push("gallery");
+      }
+      this.activeRodSkins["crystal_rod"] = "gallery";
+    }
+    // Skins are kept even without the rod — restore pending finishes on load
+    for (const skinId of this.ownedRodSkins) {
+      if (!isRodSkinId(skinId)) continue;
+      const def = ROD_SKINS[skinId];
+      if (!this.activeRodSkins[def.rodId]) {
+        this.activeRodSkins[def.rodId] = skinId;
+      }
+    }
+    for (const rodId of this.ownedRods) {
+      this.applyPendingSkinsForRod(rodId);
+    }
     this.ownedHats = [...save.ownedHats];
     this.equippedHatId = save.equippedHatId;
     this.nautilusQuestDone = save.nautilusQuestDone;
@@ -176,6 +216,8 @@ export class InventorySystem {
       : null;
     this.ashencastQuestStage = save.ashencastQuestStage;
     this.redeemedPromoCodes = [...save.redeemedPromoCodes];
+    this.recoilMasteryCatches = save.recoilMasteryCatches;
+    this.recoilMasteryAshSold = save.recoilMasteryAshSold;
     this.backpackId = save.backpackId;
     this.selectedHotbarIndex = save.selectedHotbarIndex;
     this.hotbar = save.hotbar.map((s) => ({ ...s }));
@@ -258,8 +300,13 @@ export class InventorySystem {
       vaultGemsPlaced: [...this.vaultGemsPlaced],
       caveMerchantEarned: this.caveMerchantEarned,
       crystalGalleryChallengeDone: this.crystalGalleryChallengeDone,
-      crystalRodSkinOwned: this.crystalRodSkinOwned,
-      crystalRodSkinActive: this.crystalRodSkinActive,
+      crystalRodSkinOwned:
+        this.crystalRodSkinOwned || this.ownedRodSkins.includes("gallery"),
+      crystalRodSkinActive:
+        this.activeRodSkins["crystal_rod"] === "gallery" ||
+        this.crystalRodSkinActive,
+      ownedRodSkins: [...this.ownedRodSkins],
+      activeRodSkins: { ...this.activeRodSkins },
       ownedHats: [...this.ownedHats],
       equippedHatId: this.equippedHatId,
       nautilusQuestDone: this.nautilusQuestDone,
@@ -268,6 +315,8 @@ export class InventorySystem {
         : null,
       ashencastQuestStage: this.ashencastQuestStage,
       redeemedPromoCodes: [...this.redeemedPromoCodes],
+      recoilMasteryCatches: this.recoilMasteryCatches,
+      recoilMasteryAshSold: this.recoilMasteryAshSold,
       updatedAt: Date.now(),
     });
   }
@@ -276,6 +325,32 @@ export class InventorySystem {
     if (!this.redeemedPromoCodes.includes(codeId)) {
       this.redeemedPromoCodes.push(codeId);
     }
+  }
+
+  /**
+   * Recoil Rod mastery (rapid 3rd-kick burst).
+   * Archived for now — flip to true when shipping the feature.
+   */
+  static readonly RECOIL_MASTERY_ENABLED = false;
+  static readonly RECOIL_MASTERY_CATCH_GOAL = 50;
+  static readonly RECOIL_MASTERY_ASH_SELL_GOAL = 30;
+
+  isRecoilBurstMasteryUnlocked(): boolean {
+    if (!InventorySystem.RECOIL_MASTERY_ENABLED) return false;
+    return (
+      this.recoilMasteryCatches >= InventorySystem.RECOIL_MASTERY_CATCH_GOAL &&
+      this.recoilMasteryAshSold >= InventorySystem.RECOIL_MASTERY_ASH_SELL_GOAL
+    );
+  }
+
+  recordRecoilMasteryCatch(count = 1): void {
+    if (!InventorySystem.RECOIL_MASTERY_ENABLED || count <= 0) return;
+    this.recoilMasteryCatches += count;
+  }
+
+  recordAshFishSold(count = 1): void {
+    if (!InventorySystem.RECOIL_MASTERY_ENABLED || count <= 0) return;
+    this.recoilMasteryAshSold += count;
   }
 
   getSelectedItem(): ItemId | null {
@@ -409,7 +484,7 @@ export class InventorySystem {
         return { ok: false, message: `You already own the ${def.name}.` };
       }
       this.coins -= cost;
-      this.ownedRods.push(entry.itemId);
+      this.registerOwnedRod(entry.itemId);
       return { ok: true, message: `Bought ${def.name} for $${cost}!` };
     }
     if (entry.kind === "bobber") {
@@ -523,7 +598,7 @@ export class InventorySystem {
       };
     }
     this.coins -= def.buyPrice;
-    this.ownedRods.push(rodId);
+    this.registerOwnedRod(rodId);
     return { ok: true, message: `Purchased ${def.name}!` };
   }
 
@@ -544,7 +619,7 @@ export class InventorySystem {
       };
     }
     this.coins -= gift;
-    this.ownedRods.push("coral_rod");
+    this.registerOwnedRod("coral_rod");
     this.unlockHat("hat_gem");
     return { ok: true, message: "The Coral Rod accepts your gift…" };
   }
@@ -868,7 +943,7 @@ export class InventorySystem {
     for (const ing of cost.ingredients) {
       this.removeIngredientMatching(ing);
     }
-    this.ownedRods.push(rodId);
+    this.registerOwnedRod(rodId);
     this.equipRod(rodId);
     return { ok: true, message: `Forged the ${def.name}!` };
   }
@@ -957,7 +1032,7 @@ export class InventorySystem {
   ): boolean {
     if (ITEMS[itemId].isRod) {
       if (this.ownsRod(itemId)) return false;
-      this.ownedRods.push(itemId);
+      this.registerOwnedRod(itemId);
       return true;
     }
 
@@ -991,6 +1066,13 @@ export class InventorySystem {
     return [...this.bag, ...this.hotbar].some(
       (s) => s.itemId === itemId && s.count > 0
     );
+  }
+
+  /** Total count of an item across bag + hotbar. */
+  countItem(itemId: ItemId): number {
+    return [...this.bag, ...this.hotbar]
+      .filter((s) => s.itemId === itemId)
+      .reduce((sum, s) => sum + s.count, 0);
   }
 
   /** Remove one unit of a bag/hotbar item (not rods/amulets). */
@@ -1079,35 +1161,203 @@ export class InventorySystem {
     };
   }
 
-  /** Texture for UI / hotbar — gallery skin when active. */
+  /** Texture for UI / hotbar — active skin when equipped. */
   getRodTextureKey(rodId: ItemId): string {
+    const skin = this.getActiveRodSkin(rodId);
+    if (skin) return skin.textureKey;
+    return ITEMS[rodId]?.textureKey ?? "rod";
+  }
+
+  ownsRodSkin(skinId: string): boolean {
+    if (skinId === "gallery") {
+      return this.crystalRodSkinOwned || this.ownedRodSkins.includes("gallery");
+    }
+    return this.ownedRodSkins.includes(skinId);
+  }
+
+  /**
+   * Register a newly obtained rod and apply any skins already unlocked for it
+   * (e.g. from a Skin Crate opened before owning the rod).
+   */
+  private registerOwnedRod(rodId: ItemId): void {
+    if (!this.ownedRods.includes(rodId)) {
+      this.ownedRods.push(rodId);
+    }
+    this.applyPendingSkinsForRod(rodId);
+  }
+
+  /**
+   * Keep crate skins independent of rod ownership: if the player already owns a
+   * skin for this rod, make sure it becomes (or stays) the active finish.
+   */
+  private applyPendingSkinsForRod(rodId: ItemId): void {
+    const active = this.activeRodSkins[rodId];
+    if (active && active !== "default" && this.ownsRodSkin(active)) {
+      const def = isRodSkinId(active) ? ROD_SKINS[active] : null;
+      if (!def || def.rodId === rodId) return;
+    }
+    const pending = skinsForRod(rodId).find((s) => this.ownsRodSkin(s.id));
+    if (pending) {
+      this.activeRodSkins[rodId] = pending.id;
+      if (rodId === "crystal_rod") {
+        this.crystalRodSkinActive = pending.id === "gallery";
+      }
+    }
+  }
+
+  /**
+   * Unlock a rod skin permanently. Does NOT require owning the matching rod —
+   * the finish is saved and auto-applies when the rod is obtained later.
+   */
+  private unlockRodSkin(skinId: RodSkinId): {
+    duplicate: boolean;
+    refund: number;
+    message: string;
+  } {
+    const def = ROD_SKINS[skinId];
+    const rodName = ITEMS[def.rodId]?.name ?? "rod";
+    if (this.ownsRodSkin(skinId)) {
+      this.coins += SKIN_CRATE_DUPLICATE_REFUND;
+      return {
+        duplicate: true,
+        refund: SKIN_CRATE_DUPLICATE_REFUND,
+        message: `Duplicate ${def.label} — $${SKIN_CRATE_DUPLICATE_REFUND.toLocaleString()} refunded.`,
+      };
+    }
+    if (!this.ownedRodSkins.includes(skinId)) {
+      this.ownedRodSkins.push(skinId);
+    }
+    // Always remember the finish for this rod, even if the rod isn't owned yet
+    this.activeRodSkins[def.rodId] = skinId;
+    if (skinId === "poisoned") {
+      this.crystalRodSkinActive = false;
+    } else if (skinId === "gallery") {
+      this.crystalRodSkinOwned = true;
+      this.crystalRodSkinActive = true;
+    }
+    const haveRod = this.ownsRod(def.rodId);
+    return {
+      duplicate: false,
+      refund: 0,
+      message: haveRod
+        ? `Unlocked ${def.label} for the ${rodName}!`
+        : `Unlocked ${def.label}! It'll equip when you get the ${rodName}.`,
+    };
+  }
+
+  /**
+   * Skins owned / selectable for a rod.
+   * Every rod has Default; extra skins come from gallery / crates.
+   */
+  getRodSkinOptions(rodId: ItemId): Array<{
+    id: string;
+    label: string;
+    textureKey: string;
+    owned: boolean;
+  }> {
+    const def = ITEMS[rodId];
+    const baseTex = def?.textureKey ?? "rod";
+    const options: Array<{
+      id: string;
+      label: string;
+      textureKey: string;
+      owned: boolean;
+    }> = [
+      {
+        id: "default",
+        label: "Default",
+        textureKey: baseTex,
+        owned: true,
+      },
+    ];
+    for (const skin of skinsForRod(rodId)) {
+      options.push({
+        id: skin.id,
+        label: skin.label,
+        textureKey: skin.textureKey,
+        owned: this.ownsRodSkin(skin.id),
+      });
+    }
+    return options;
+  }
+
+  getActiveRodSkinId(rodId: ItemId): string {
+    const active = this.activeRodSkins[rodId];
+    if (active && active !== "default" && this.ownsRodSkin(active)) {
+      return active;
+    }
+    // Legacy crystal gallery
     if (
       rodId === "crystal_rod" &&
-      this.crystalRodSkinOwned &&
-      this.crystalRodSkinActive
+      this.ownsRodSkin("gallery") &&
+      this.crystalRodSkinActive &&
+      !active
     ) {
-      return "crystal_rod_skin";
+      return "gallery";
     }
-    return ITEMS[rodId]?.textureKey ?? "rod";
+    return "default";
+  }
+
+  getActiveRodSkin(
+    rodId: ItemId
+  ): { id: string; label: string; textureKey: string } | null {
+    const id = this.getActiveRodSkinId(rodId);
+    const opt = this.getRodSkinOptions(rodId).find((s) => s.id === id);
+    if (!opt || !opt.owned) return null;
+    if (id === "default") return null;
+    return opt;
+  }
+
+  setRodSkin(
+    rodId: ItemId,
+    skinId: string
+  ): { ok: boolean; message: string } {
+    if (!this.ownsRod(rodId)) {
+      return { ok: false, message: "You don't own that rod." };
+    }
+    const opt = this.getRodSkinOptions(rodId).find((s) => s.id === skinId);
+    if (!opt) {
+      return { ok: false, message: "That skin doesn't exist." };
+    }
+    if (!opt.owned) {
+      return { ok: false, message: "You don't own that skin yet." };
+    }
+
+    if (skinId === "default") {
+      delete this.activeRodSkins[rodId];
+      if (rodId === "crystal_rod") this.crystalRodSkinActive = false;
+    } else {
+      this.activeRodSkins[rodId] = skinId;
+      if (rodId === "crystal_rod") {
+        this.crystalRodSkinActive = skinId === "gallery";
+      }
+    }
+
+    const rodName = ITEMS[rodId]?.name ?? "Rod";
+    return {
+      ok: true,
+      message:
+        skinId === "default"
+          ? `${rodName} Default skin applied.`
+          : `${rodName} ${opt.label} skin applied.`,
+    };
   }
 
   toggleCrystalRodSkin(): { ok: boolean; message: string } {
     if (!this.ownsRod("crystal_rod")) {
       return { ok: false, message: "You need the Crystal Rod first." };
     }
-    if (!this.crystalRodSkinOwned) {
+    if (!this.ownsRodSkin("gallery")) {
       return {
         ok: false,
         message: "No skin yet — visit the Crystal Gallery.",
       };
     }
-    this.crystalRodSkinActive = !this.crystalRodSkinActive;
-    return {
-      ok: true,
-      message: this.crystalRodSkinActive
-        ? "Crystal Rod skin applied."
-        : "Crystal Rod skin removed.",
-    };
+    const next =
+      this.getActiveRodSkinId("crystal_rod") === "gallery"
+        ? "default"
+        : "gallery";
+    return this.setRodSkin("crystal_rod", next);
   }
 
   markCrystalGalleryChallengeDone(): void {
@@ -1118,15 +1368,84 @@ export class InventorySystem {
     if (!this.crystalGalleryChallengeDone) {
       return { ok: false, message: "Complete the crystal memory challenge first." };
     }
-    if (this.crystalRodSkinOwned) {
+    if (this.ownsRodSkin("gallery")) {
       return { ok: false, message: "You already have the Crystal Rod skin." };
     }
     this.crystalRodSkinOwned = true;
     this.crystalRodSkinActive = true;
+    if (!this.ownedRodSkins.includes("gallery")) {
+      this.ownedRodSkins.push("gallery");
+    }
+    this.activeRodSkins["crystal_rod"] = "gallery";
     return {
       ok: true,
       message: "Crystal Rod skin unlocked!",
     };
+  }
+
+  buySkinCrate(): { ok: boolean; message: string } {
+    if (this.coins < SKIN_CRATE_PRICE) {
+      return {
+        ok: false,
+        message: `Need $${SKIN_CRATE_PRICE.toLocaleString()} for a Skin Crate.`,
+      };
+    }
+    if (!this.addItem("skin_crate")) {
+      return { ok: false, message: "Bag is full — free a slot first." };
+    }
+    this.coins -= SKIN_CRATE_PRICE;
+    return {
+      ok: true,
+      message: "Skin Crate purchased! Open it from your inventory.",
+    };
+  }
+
+  /**
+   * Consume one crate and resolve a skin roll.
+   * Duplicates refund coins; new skins are granted and auto-equipped.
+   */
+  openSkinCrate(): {
+    ok: boolean;
+    message: string;
+    skinId?: RodSkinId;
+    duplicate?: boolean;
+    refund?: number;
+  } {
+    if (!this.hasItem("skin_crate")) {
+      return { ok: false, message: "You don't have a Skin Crate." };
+    }
+    if (!this.removeOneItem("skin_crate")) {
+      return { ok: false, message: "Couldn't open the crate." };
+    }
+
+    const skinId = rollSkinCrate();
+    return {
+      ok: true,
+      skinId,
+      ...this.unlockRodSkin(skinId),
+    };
+  }
+
+  /** Peek a crate roll without consuming (for reveal UI). Prefer openSkinCrate. */
+  peekSkinCrateRoll(): RodSkinId {
+    return rollSkinCrate();
+  }
+
+  /** Grant a rolled skin after the reveal animation (crate already consumed).
+   *  Call once per roll in order for multi-opens — first new unlock keeps the
+   *  skin; later copies of the same skin in the batch refund as duplicates.
+   */
+  resolveSkinCrateRoll(skinId: RodSkinId): {
+    duplicate: boolean;
+    refund: number;
+    message: string;
+  } {
+    return this.unlockRodSkin(skinId);
+  }
+
+  /** Consume crate only — used before reveal animation. */
+  consumeSkinCrate(): boolean {
+    return this.removeOneItem("skin_crate");
   }
 
   isBestiaryFound(itemId: ItemId): boolean {
@@ -1447,6 +1766,7 @@ export class InventorySystem {
   sellAllFish(): { sold: number; earned: number } {
     let sold = 0;
     let earned = 0;
+    let ashSold = 0;
     for (const slot of [...this.bag, ...this.hotbar]) {
       if (
         !slot.itemId ||
@@ -1460,6 +1780,7 @@ export class InventorySystem {
       }
       const price = ITEMS[slot.itemId].sellPrice ?? 0;
       const mult = mutationSellMult(slot.mutation) * sizeSellMult(slot.size);
+      if (slot.mutation === "ash") ashSold += slot.count;
       sold += slot.count;
       earned += slot.count * price * mult;
       slot.itemId = null;
@@ -1469,6 +1790,7 @@ export class InventorySystem {
       slot.keep = false;
     }
     this.coins += earned;
+    this.recordAshFishSold(ashSold);
     return { sold, earned };
   }
 
@@ -1521,6 +1843,7 @@ export class InventorySystem {
           s.count > 0
       ) ?? null;
     if (!live) return { ok: false, message: "That fish is gone." };
+    if (mut === "ash") this.recordAshFishSold(1);
     live.count -= 1;
     if (live.count <= 0) {
       live.itemId = null;

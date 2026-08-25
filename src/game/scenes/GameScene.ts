@@ -32,6 +32,7 @@ import { applyDevInventoryBootstrap } from "../dev/DevGrants";
 import { ensurePlayerRodArt } from "../entities/PlayerArt";
 import { ensureRodIconTextures } from "./BootScene";
 import { ForgeRodTipVfx } from "../fx/ForgeRodFx";
+import { LaserRodHeldVfx } from "../fx/LaserRodFx";
 import { WorldZoneLoader } from "../world/WorldZoneLoader";
 import {
   placeFrostpeakCave,
@@ -49,6 +50,7 @@ import { BargainerNpc } from "../entities/BargainerNpc";
 import { CurioTraderStock, formatCurioRestock } from "../systems/CurioTraderStock";
 import { loadActiveSave, saveActiveSave } from "../save/SaveBank";
 import { ItemId, ITEMS, FishHabitat, rollAshencastOceanSpecies } from "../data/items";
+import { ROD_SKINS } from "../data/rodSkins";
 import { BoatId } from "../data/boats";
 import { CaveWhaleAbundance } from "../systems/CaveWhaleAbundance";
 import { CrystalGalleryChallenge } from "../systems/CrystalGalleryChallenge";
@@ -126,6 +128,7 @@ export class GameScene extends Phaser.Scene {
   /** Ocean stretches between islands — spawn once when either end loads. */
   private spawnedFishCorridors = new Set<string>();
   private forgeRodVfx: ForgeRodTipVfx | null = null;
+  private laserRodVfx: LaserRodHeldVfx | null = null;
   private music!: AmbientMusic;
   private tutorialDone = false;
   private autosaveTimer?: Phaser.Time.TimerEvent;
@@ -215,6 +218,8 @@ export class GameScene extends Phaser.Scene {
   readonly caveCrackX = this.pondRight + 230;
   /** Green cottage — backpack shop entrance. */
   readonly greenHouseX = 640 + 480;
+  /** Collectors red brick house — skin boutique (between curio & fish stands). */
+  readonly collectorSkinHouseX = (-5600 + -3200) / 2 + 40;
   /** Code Guy — between green and blue cottages. */
   readonly codeGuyX = (640 + 480 + 640 + 720) / 2;
 
@@ -268,6 +273,7 @@ export class GameScene extends Phaser.Scene {
     this.jungleMerchant = undefined;
     this.fishQuestNpcs = {};
     this.forgeRodVfx = null;
+    this.laserRodVfx = null;
     this.vaultPedestalGems = [];
     this.worldGemRoots = {};
     this.redGemBob = 0;
@@ -521,6 +527,7 @@ export class GameScene extends Phaser.Scene {
       tryEnterShop: () => this.tryEnterShop(),
       tryEnterBobberShop: () => this.tryEnterBobberShop(),
       tryEnterBackpackShop: () => this.tryEnterBackpackShop(),
+      tryEnterSkinShop: () => this.tryEnterSkinShop(),
       tryEnterWhirlpoolCloud: () => this.tryEnterWhirlpoolCloud(),
       tryEnterAmuletCave: () => this.tryEnterAmuletCave(),
       tryEnterFrostpeakCave: () => this.tryEnterFrostpeakCave(),
@@ -534,6 +541,7 @@ export class GameScene extends Phaser.Scene {
       isNearBlueHouse: () => this.isNearBlueHouse(),
       isNearRedHouse: () => this.isNearRedHouse(),
       isNearGreenHouse: () => this.isNearGreenHouse(),
+      isNearCollectorSkinHouse: () => this.isNearCollectorSkinHouse(),
       getMusicVolume: () => this.music.getVolume(),
       setMusicVolume: (v: number) => this.music.setVolume(v),
       isTutorialDone: () => this.tutorialDone,
@@ -2328,6 +2336,11 @@ export class GameScene extends Phaser.Scene {
     return Math.abs(this.player.sprite.x - this.greenHouseX) < 70;
   }
 
+  isNearCollectorSkinHouse(): boolean {
+    if (this.player.isOnBoat()) return false;
+    return Math.abs(this.player.sprite.x - this.collectorSkinHouseX) < 70;
+  }
+
   tryEnterShop(): boolean {
     if (!this.isNearBlueHouse()) return false;
     if (this.fishing.isBusy()) return false;
@@ -2355,6 +2368,16 @@ export class GameScene extends Phaser.Scene {
     this.scene.pause("GameScene");
     this.scene.pause("UIScene");
     this.scene.launch("BackpackShopScene", { inventory: this.inventory });
+    return true;
+  }
+
+  tryEnterSkinShop(): boolean {
+    if (!this.isNearCollectorSkinHouse()) return false;
+    if (this.fishing.isBusy()) return false;
+    if (this.anyFishMerchantTalking()) return false;
+    this.scene.pause("GameScene");
+    this.scene.pause("UIScene");
+    this.scene.launch("SkinShopScene", { inventory: this.inventory });
     return true;
   }
 
@@ -3255,8 +3278,10 @@ export class GameScene extends Phaser.Scene {
     this.updateVaultGemFx(delta);
     this.curioStock?.update(this.time.now);
     this.syncPlayerCarriedRod();
-    this.syncForgeRodVfx();
     this.player.update();
+    // Rod VFX after player move/anim so shaft tip tracks the current frame
+    this.syncForgeRodVfx();
+    this.syncLaserRodVfx();
     if (!this.inFrostpeakCave) {
       if (
         Math.abs(this.player.sprite.x - (this.jungleLeft + this.jungleRight) / 2) <
@@ -3402,6 +3427,8 @@ export class GameScene extends Phaser.Scene {
         ui.setPrompt("W — Enter Bobber Workshop");
       } else if (this.isNearGreenHouse()) {
         ui.setPrompt("W — Enter Pack Outfitter");
+      } else if (this.isNearCollectorSkinHouse()) {
+        ui.setPrompt("W — Enter Collectors Skin Boutique");
       } else if (
         this.sailboat &&
         !this.sailboat.occupied &&
@@ -3839,14 +3866,42 @@ export class GameScene extends Phaser.Scene {
     this.forgeRodVfx.update(furnace.x, furnace.y, this.time.now);
   }
 
-  /** Hotbar rod + optional Crystal Rod gallery skin in-hand. */
-  private syncPlayerCarriedRod(): void {
+  /** Pink/purple energy wrap for Laser Zeus skin while held. */
+  private syncLaserRodVfx(): void {
+    const show = !this.inFrostpeakCave && this.player.isLaserRodInHand();
+    if (!show) {
+      this.laserRodVfx?.setActive(false);
+      return;
+    }
+    if (!this.laserRodVfx) {
+      this.laserRodVfx = new LaserRodHeldVfx(this);
+    }
+    this.laserRodVfx.setActive(true);
+    const hand = this.player.getRodHandWorld();
+    const tip = this.player.getRodTip();
+    this.laserRodVfx.setDepth(this.player.sprite.depth + 2);
+    this.laserRodVfx.update(hand.x, hand.y, tip.x, tip.y, this.time.now);
+  }
+
+  /** Hotbar rod + optional active skin (baked styles; Gallery overlay only). */
+  syncPlayerCarriedRod(): void {
     const selected = this.inventory.getSelectedItem();
+    const skinId =
+      selected && ITEMS[selected]?.isRod
+        ? this.inventory.getActiveRodSkinId(selected)
+        : null;
+    const skin =
+      skinId && skinId !== "default"
+        ? this.inventory.getActiveRodSkin(selected!)
+        : null;
+    const skinDef =
+      skin && skin.id in ROD_SKINS
+        ? ROD_SKINS[skin.id as keyof typeof ROD_SKINS]
+        : null;
     this.player.syncCarriedRod(selected, {
-      crystalSkin:
-        selected === "crystal_rod" &&
-        this.inventory.crystalRodSkinOwned &&
-        this.inventory.crystalRodSkinActive,
+      skinId: skinId === "default" ? null : skinId,
+      skinTextureKey: skinDef?.overlay ? skin?.textureKey ?? null : null,
+      skinLayout: skinDef?.overlay ? skinDef.layout : null,
     });
   }
 
@@ -3889,6 +3944,7 @@ export class GameScene extends Phaser.Scene {
     this.scene.stop("ShopScene");
     this.scene.stop("BobberShopScene");
     this.scene.stop("BackpackShopScene");
+    this.scene.stop("SkinShopScene");
     this.scene.stop("UIScene");
     this.scene.start("MenuScene");
   }

@@ -17,6 +17,7 @@ import { generatePlayerArt } from "../entities/PlayerArt";
 import { generateBoatArt } from "../entities/BoatArt";
 import { generateMerchantTexture, generateCodeGuyTexture } from "../entities/FishMerchant";
 import { generateHatTextures } from "./hatTextures";
+import { generateRodSkinTextures } from "../art/RodSkinArt";
 
 /** Detailed fishing-rod icons (handle bottom-left → tip top-right). */
 export function generateRodTextures(scene: Phaser.Scene): void {
@@ -926,6 +927,7 @@ export class BootScene extends Phaser.Scene {
   create(): void {
     makeTextures(this);
     generateCraftStarlightFishIcon(this);
+    generateRodSkinTextures(this);
     this.createSaveFolderIcon();
     this.scene.start("MenuScene");
   }

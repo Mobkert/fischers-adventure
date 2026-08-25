@@ -43,6 +43,7 @@ export class InventoryPanel {
   private tooltip: Phaser.GameObjects.Text;
   private inventory: InventorySystem;
   private onChanged?: () => void;
+  private onOpenSkinCrate?: () => void;
   visible = false;
   private panelH = 560;
 
@@ -81,11 +82,16 @@ export class InventoryPanel {
       })
       .setOrigin(0.5);
     const hint = scene.add
-      .text(0, h / 2 - 22, "E close · Right-click fish to keep (won't sell)", {
-        fontFamily: "Arial",
-        fontSize: "12px",
-        color: "#aaaaaa",
-      })
+      .text(
+        0,
+        h / 2 - 22,
+        "E close · Left-click Skin Crate to open · Right-click fish to keep",
+        {
+          fontFamily: "Arial",
+          fontSize: "12px",
+          color: "#aaaaaa",
+        }
+      )
       .setOrigin(0.5);
 
     this.root.add([this.bg, title, hotbarLabel, this.bagLabel, hint]);
@@ -118,12 +124,17 @@ export class InventoryPanel {
       this.hotbarTexts.push(text);
       this.hotbarHits.push(hit);
       this.root.add([frame, hit, icon, text]);
-      this.bindSlot(hit, () => this.inventory.hotbar[i], () => {
-        if (this.inventory.toggleKeepHotbar(i) != null) {
-          this.refresh();
-          this.onChanged?.();
-        }
-      });
+      this.bindSlot(
+        hit,
+        () => this.inventory.hotbar[i],
+        () => {
+          if (this.inventory.toggleKeepHotbar(i) != null) {
+            this.refresh();
+            this.onChanged?.();
+          }
+        },
+        () => this.tryOpenCrate(() => this.inventory.hotbar[i])
+      );
     }
 
     const bagStartY = -h / 2 + 188;
@@ -157,13 +168,21 @@ export class InventoryPanel {
       this.slotHits.push(hit);
       this.root.add([frame, hit, icon, text]);
       const slotIndex = i;
-      this.bindSlot(hit, () => this.inventory.bag[slotIndex], () => {
-        if (slotIndex >= this.inventory.getBagCapacity()) return;
-        if (this.inventory.toggleKeepBag(slotIndex) != null) {
-          this.refresh();
-          this.onChanged?.();
+      this.bindSlot(
+        hit,
+        () => this.inventory.bag[slotIndex],
+        () => {
+          if (slotIndex >= this.inventory.getBagCapacity()) return;
+          if (this.inventory.toggleKeepBag(slotIndex) != null) {
+            this.refresh();
+            this.onChanged?.();
+          }
+        },
+        () => {
+          if (slotIndex >= this.inventory.getBagCapacity()) return;
+          this.tryOpenCrate(() => this.inventory.bag[slotIndex]);
         }
-      });
+      );
     }
 
     this.tooltip = scene.add
@@ -190,10 +209,21 @@ export class InventoryPanel {
     this.onChanged = cb;
   }
 
+  setOnOpenSkinCrate(cb: () => void): void {
+    this.onOpenSkinCrate = cb;
+  }
+
+  private tryOpenCrate(getSlot: () => InventorySlot): void {
+    const slot = getSlot();
+    if (slot.itemId !== "skin_crate" || slot.count <= 0) return;
+    this.onOpenSkinCrate?.();
+  }
+
   private bindSlot(
     hit: Phaser.GameObjects.Rectangle,
     getSlot: () => InventorySlot,
-    onRightClick: () => void
+    onRightClick: () => void,
+    onLeftClick?: () => void
   ): void {
     hit.on("pointerover", (p: Phaser.Input.Pointer) => {
       if (!this.visible) return;
@@ -213,12 +243,13 @@ export class InventoryPanel {
       if (!this.visible) return;
       if (p.rightButtonDown()) {
         onRightClick();
-        // Refresh tooltip after toggle
         const text = this.formatTooltip(getSlot());
         if (text) {
           this.tooltip.setText(text);
           this.tooltip.setVisible(true);
         }
+      } else if (onLeftClick) {
+        onLeftClick();
       }
     });
   }
@@ -250,6 +281,9 @@ export class InventoryPanel {
       if (slot.keep) {
         lines.push("Kept — won't sell");
       }
+    } else if (slot.itemId === "skin_crate") {
+      lines.push(def.description);
+      lines.push("Left-click to open");
     } else {
       lines.push(def.description);
     }

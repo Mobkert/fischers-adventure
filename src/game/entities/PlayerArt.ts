@@ -3,6 +3,14 @@ import { drawRecoilShotgun } from "../art/RecoilRodArt";
 import { drawPortalRod } from "../art/PortalRodArt";
 import { drawForgeRod } from "../art/ForgeRodArt";
 import { drawBirthdayRod } from "../art/BirthdayRodArt";
+import {
+  drawGoldenLuckyRod,
+  drawUniversalPortalRod,
+  drawPufferfirmRod,
+  drawPoisonedRod,
+  drawPistolRod,
+  drawLaserRod,
+} from "../art/RodSkinHeldArt";
 
 /** Logical playable area — displayed size stays ~64px via setDisplaySize on the sprite. */
 export const PLAYER_FRAME_PAD_TOP = 12;
@@ -58,8 +66,14 @@ export type RodDrawStyle =
   | "portal"
   | "forge"
   | "birthday"
-  /** Same poses/tips as other rods, but no baked rod art (skin overlay only). */
-  | "hidden";
+  /** Same poses/tips as other rods, but no baked rod art (Gallery overlay only). */
+  | "hidden"
+  | "golden_lucky"
+  | "universal_portal"
+  | "pufferfirm"
+  | "poisoned"
+  | "pistol"
+  | "laser";
 
 /** Every rod that gets carry + cast player frames and anims — keep in sync with new rods. */
 export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
@@ -78,6 +92,12 @@ export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
   "forge",
   "birthday",
   "hidden",
+  "golden_lucky",
+  "universal_portal",
+  "pufferfirm",
+  "poisoned",
+  "pistol",
+  "laser",
 ];
 
 export function rodAnimStyleReady(scene: Phaser.Scene, style: RodDrawStyle): boolean {
@@ -109,6 +129,31 @@ export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "forge_rod") return "forge";
   if (itemId === "birthday_rod") return "birthday";
   return "starter";
+}
+
+/** Resolve baked / overlay style for a rod + optional active skin id. */
+export function rodStyleForSkin(
+  rodItemId: string,
+  skinId: string | null | undefined
+): RodDrawStyle {
+  switch (skinId) {
+    case "golden_lucky":
+      return "golden_lucky";
+    case "universal_portal":
+      return "universal_portal";
+    case "pufferfirm":
+      return "hidden";
+    case "poisoned":
+      return "poisoned";
+    case "pistol":
+      return "pistol";
+    case "laser":
+      return "laser";
+    case "gallery":
+      return "hidden";
+    default:
+      return rodStyleFromItemId(rodItemId);
+  }
 }
 
 export type PlayerPose = {
@@ -793,6 +838,36 @@ function drawHeldRod(
     g.fillTriangle(tipX + 4, tipY - 7, tipX + 1, tipY - 1, tipX + 7, tipY - 1);
     g.fillStyle(0xffe0ee);
     g.fillCircle(tipX + 4, tipY - 4, 1.2);
+    return;
+  }
+
+  if (style === "golden_lucky") {
+    drawGoldenLuckyRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+
+  if (style === "universal_portal") {
+    drawUniversalPortalRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+
+  if (style === "pufferfirm") {
+    drawPufferfirmRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+
+  if (style === "poisoned") {
+    drawPoisonedRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+
+  if (style === "pistol") {
+    drawPistolRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+
+  if (style === "laser") {
+    drawLaserRod(g, handX, handY, tipX, tipY);
     return;
   }
 

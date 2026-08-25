@@ -93,11 +93,14 @@ export class Hotbar {
         if (def.isEquipmentBag || def.isBestiary) {
           this.icons[i].setDisplaySize(34, 34);
         } else if (def.isRod) {
+          // Gallery skin stays wide; crate skins match normal rod icons
           if (tex === "crystal_rod_skin") {
             this.icons[i].setDisplaySize(48, 30);
           } else {
             this.icons[i].setDisplaySize(40, 40);
           }
+        } else if (slotData.itemId === "skin_crate") {
+          this.icons[i].setDisplaySize(34, 34);
         } else {
           this.icons[i].setDisplaySize(28, 28);
         }

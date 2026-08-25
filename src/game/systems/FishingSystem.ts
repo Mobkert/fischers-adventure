@@ -10,6 +10,7 @@ import {
   rodMaxReachPx,
   DEPTH_PX_PER_METER,
   resolveCatchMutation,
+  rollWorldMutation,
   rollFullMoonMutation,
   rollSunnyMutation,
   FishMutationId,
@@ -308,9 +309,14 @@ export class FishingSystem {
     this.bobber.stickTo(tip.x, tip.y, tip.x, tip.y);
     this.onCastCameraFollow?.();
 
-    this.player.playFishCast(this.inventory.getEquippedRodId(), () => {
-      this.releaseBobberCast();
-    });
+    const skinId = this.inventory.getActiveRodSkinId(rodId);
+    this.player.playFishCast(
+      rodId,
+      () => {
+        this.releaseBobberCast();
+      },
+      skinId === "default" ? null : skinId
+    );
 
     return true;
   }
@@ -651,7 +657,15 @@ export class FishingSystem {
     });
   }
 
-  private resolveMutationFor(fish: Fish): FishMutationId | null {
+  private resolveMutationFor(
+    fish: Fish,
+    meta?: {
+      guaranteeThunder?: boolean;
+      guaranteeAshencast?: boolean;
+      guaranteeConfetti?: boolean;
+      recoilKicks?: number;
+    }
+  ): FishMutationId | null {
     // Whirlpool always grants Thunder
     if (
       this.weather?.isInWhirlpool(this.bobber.sprite.x, this.bobber.sprite.y)
@@ -673,11 +687,27 @@ export class FishingSystem {
     const rodId = this.inventory.getEquippedRodId();
     const rodChanceBonus =
       this.weather?.getRodMutationChanceBonus?.(rodId) ?? 0;
+    const mutMult = this.inventory.getMutationChanceMult();
+
+    // 4+ Recoil blasts: always Ash or Blasted on ANY fish (ignores color tags).
+    // 25% Ash / 75% Blasted — mutually exclusive so you always get one.
+    if (
+      (meta?.recoilKicks ?? 0) >= 4 &&
+      rodId === "recoil_rod" &&
+      !fish.mutation
+    ) {
+      if (mutMult > 1) {
+        const boosted = rollWorldMutation(mutMult * dolphinMult);
+        if (boosted) return boosted;
+      }
+      return Math.random() < 0.75 ? "blasted" : "ash";
+    }
+
     return resolveCatchMutation(
       rodId,
       fish.speciesId,
       fish.mutation,
-      this.inventory.getMutationChanceMult(),
+      mutMult,
       rodChanceBonus,
       dolphinMult
     );
@@ -689,6 +719,7 @@ export class FishingSystem {
       guaranteeThunder?: boolean;
       guaranteeAshencast?: boolean;
       guaranteeConfetti?: boolean;
+      recoilKicks?: number;
     }
   ): void {
     this.player.hideExclamation();
@@ -709,13 +740,20 @@ export class FishingSystem {
     this.lastCaughtFish = [];
     if (success && hooked.length > 0) {
       for (const fish of hooked) {
-        const mutation = meta?.guaranteeThunder
-          ? ("thunder" as const)
-          : meta?.guaranteeAshencast
-            ? ("ashencast" as const)
-            : meta?.guaranteeConfetti
-              ? ("confetti" as const)
-              : this.resolveMutationFor(fish);
+        const mutation =
+          meta?.guaranteeThunder && !fish.mutation
+            ? // Electrified Zeus bar: only if fish has no mutation already
+              // 75% Electric (2.5×), 25% Thunder (5×)
+              Math.random() < 0.25
+                ? ("thunder" as const)
+                : ("electric" as const)
+            : meta?.guaranteeThunder && fish.mutation
+              ? fish.mutation
+              : meta?.guaranteeAshencast
+                ? ("ashencast" as const)
+                : meta?.guaranteeConfetti
+                  ? ("confetti" as const)
+                  : this.resolveMutationFor(fish, meta);
         const size = fish.size;
         const added = this.inventory.addItem(
           fish.speciesId,
@@ -736,6 +774,9 @@ export class FishingSystem {
             mutation,
             size,
           });
+          if (this.inventory.getEquippedRodId() === "recoil_rod") {
+            this.inventory.recordRecoilMasteryCatch(1);
+          }
         }
         this.scene.time.delayedCall(2500, () => {
           if (

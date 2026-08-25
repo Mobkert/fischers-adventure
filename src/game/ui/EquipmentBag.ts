@@ -49,6 +49,8 @@ export class EquipmentBag {
   private onHatChanged?: () => void;
   private scrollY = 0;
   private contentH = 0;
+  private masteryPanel: Phaser.GameObjects.Container | null = null;
+  private skinPanel: Phaser.GameObjects.Container | null = null;
   private wheelHandler: (
     pointer: Phaser.Input.Pointer,
     _gos: unknown,
@@ -236,11 +238,14 @@ export class EquipmentBag {
   setOpen(open: boolean): void {
     this.visible = open;
     this.root.setVisible(open);
-    if (open) {
-      this.scrollY = 0;
-      this.redrawMask();
-      this.refresh();
+    if (!open) {
+      this.closeMasteryPanel();
+      this.closeSkinPanel();
+      return;
     }
+    this.scrollY = 0;
+    this.redrawMask();
+    this.refresh();
   }
 
   refresh(): void {
@@ -434,11 +439,16 @@ export class EquipmentBag {
         : "";
     const zeusLine =
       def.rodMinigamePower === "zeus_strike"
-        ? "\nLightning 25%/s then halves each strike — fish hit = instant; bar hit = electrify (slow + Thunder)"
+        ? "\nLightning 25%/s then halves each strike — fish hit = instant; bar hit = electrify (slow · 75% Electric / 25% Thunder on unmutated fish only)"
         : "";
     const recoilLine =
       def.rodMinigamePower === "recoil_kick"
-        ? "\nAfter 4 fish moves: warning → blast bar to far side (+22.5% progress)"
+        ? "\nAfter 4 fish moves: warning → blast (+22.5% progress) · Ash 30% (black) · Blasted 50% (orange/red) · 4 blasts → always 25% Ash / 75% Blasted (any fish)" +
+          (InventorySystem.RECOIL_MASTERY_ENABLED
+            ? this.inventory.isRecoilBurstMasteryUnlocked()
+              ? "\nMastery: 3rd blast → rapid burst (+10% each)"
+              : "\nMastery locked — open Mastery to unlock rapid burst"
+            : "")
         : "";
     const portalLine =
       def.rodMinigamePower === "portal_pull"
@@ -479,57 +489,85 @@ export class EquipmentBag {
     const row = this.scene.add.container(0, 0);
     row.add([card, icon, name, statsText]);
 
-    const hasSkinBtn = rodId === "crystal_rod";
-    const equipY = hasSkinBtn ? y + rowH / 2 + 18 : y + rowH / 2;
+    const hasMasteryBtn =
+      rodId === "recoil_rod" && InventorySystem.RECOIL_MASTERY_ENABLED;
+    const equipW = 100;
+    const equipH = 36;
+    const skinW = equipW / 2;
+    const skinH = equipH / 2;
+    // Equip on the right; Skin half-size above it, right-aligned
+    const equipX = 140;
+    const skinX = equipX + equipW / 2 - skinW / 2;
+    const equipY = y + rowH / 2 + (hasMasteryBtn ? 14 : 8);
+    const skinY = equipY - equipH / 2 - skinH / 2 - 6;
+    const masteryY = skinY - skinH / 2 - 18;
 
-    if (hasSkinBtn) {
-      const owned = this.inventory.crystalRodSkinOwned;
-      const active = this.inventory.crystalRodSkinActive;
+    if (hasMasteryBtn) {
+      const unlocked = this.inventory.isRecoilBurstMasteryUnlocked();
+      const masteryBtn = this.scene.add
+        .rectangle(equipX, masteryY, 100, 30, unlocked ? 0x6b4a28 : 0x3a4a6b)
+        .setStrokeStyle(1, unlocked ? 0xffc878 : 0x7aa0d0)
+        .setInteractive({ useHandCursor: true });
+      const masteryLabel = this.scene.add
+        .text(equipX, masteryY, "Mastery", {
+          fontFamily: "Arial",
+          fontSize: "14px",
+          color: "#ffffff",
+        })
+        .setOrigin(0.5);
+      masteryBtn.on("pointerover", () =>
+        masteryBtn.setFillStyle(unlocked ? 0x805830 : 0x4a5a7b)
+      );
+      masteryBtn.on("pointerout", () =>
+        masteryBtn.setFillStyle(unlocked ? 0x6b4a28 : 0x3a4a6b)
+      );
+      masteryBtn.on("pointerdown", () => this.openRecoilMasteryPanel());
+      row.add([masteryBtn, masteryLabel]);
+    }
+
+    {
+      const activeSkinId = this.inventory.getActiveRodSkinId(rodId);
+      const hasAltSkin = this.inventory
+        .getRodSkinOptions(rodId)
+        .some((s) => s.id !== "default" && s.owned);
       const skinBtn = this.scene.add
         .rectangle(
-          140,
-          y + rowH / 2 - 22,
-          100,
-          30,
-          owned ? (active ? 0x4a3a68 : 0x3a4a6b) : 0x2a2a32
+          skinX,
+          skinY,
+          skinW,
+          skinH,
+          activeSkinId !== "default" ? 0x4a3a68 : 0x3a4a6b
         )
-        .setStrokeStyle(1, owned ? 0xb8a0e0 : 0x555555);
+        .setStrokeStyle(1, hasAltSkin ? 0xb8a0e0 : 0x7aa0d0)
+        .setInteractive({ useHandCursor: true });
       const skinLabel = this.scene.add
-        .text(
-          140,
-          y + rowH / 2 - 22,
-          owned ? (active ? "Skin On" : "Skin") : "Skin ✕",
-          {
-            fontFamily: "Arial",
-            fontSize: "13px",
-            color: owned ? "#ffffff" : "#777777",
-          }
-        )
+        .text(skinX, skinY, "Skin", {
+          fontFamily: "Arial",
+          fontSize: "11px",
+          color: "#ffffff",
+        })
         .setOrigin(0.5);
-      if (owned) {
-        skinBtn.setInteractive({ useHandCursor: true });
-        skinBtn.on("pointerover", () =>
-          skinBtn.setFillStyle(active ? 0x5a4a78 : 0x4a5a7b)
-        );
-        skinBtn.on("pointerout", () =>
-          skinBtn.setFillStyle(active ? 0x4a3a68 : 0x3a4a6b)
-        );
-        skinBtn.on("pointerdown", () => {
-          const result = this.inventory.toggleCrystalRodSkin();
-          this.refresh();
-          this.onChanged?.(result.message);
-        });
-      }
+      skinBtn.on("pointerover", () =>
+        skinBtn.setFillStyle(
+          activeSkinId !== "default" ? 0x5a4a78 : 0x4a5a7b
+        )
+      );
+      skinBtn.on("pointerout", () =>
+        skinBtn.setFillStyle(
+          activeSkinId !== "default" ? 0x4a3a68 : 0x3a4a6b
+        )
+      );
+      skinBtn.on("pointerdown", () => this.openRodSkinPanel(rodId));
       row.add([skinBtn, skinLabel]);
     }
 
     if (!equipped) {
       const btn = this.scene.add
-        .rectangle(140, equipY, 100, 36, 0x3d6b4f)
+        .rectangle(equipX, equipY, equipW, equipH, 0x3d6b4f)
         .setStrokeStyle(1, 0x7dce7a)
         .setInteractive({ useHandCursor: true });
       const label = this.scene.add
-        .text(140, equipY, "Equip", {
+        .text(equipX, equipY, "Equip", {
           fontFamily: "Arial",
           fontSize: "15px",
           color: "#ffffff",
@@ -547,27 +585,268 @@ export class EquipmentBag {
       row.add([btn, label]);
     } else {
       const tag = this.scene.add
-        .text(140, equipY - (hasSkinBtn ? 0 : 8), "Equipped", {
+        .text(equipX, equipY, "Equipped", {
           fontFamily: "Arial",
           fontSize: "14px",
           color: "#ffe066",
         })
         .setOrigin(0.5);
-      if (!hasSkinBtn) {
-        const note = this.scene.add
-          .text(140, equipY + 12, "on hotbar 1", {
-            fontFamily: "Arial",
-            fontSize: "11px",
-            color: "#aaa088",
-          })
-          .setOrigin(0.5);
-        row.add([tag, note]);
-      } else {
-        row.add(tag);
-      }
+      row.add(tag);
     }
 
     return row;
+  }
+
+  private closeSkinPanel(): void {
+    this.skinPanel?.destroy(true);
+    this.skinPanel = null;
+  }
+
+  private openRodSkinPanel(rodId: ItemId): void {
+    this.closeSkinPanel();
+    this.closeMasteryPanel();
+
+    const rodName = ITEMS[rodId]?.name ?? "Rod";
+    const options = this.inventory.getRodSkinOptions(rodId);
+    const activeId = this.inventory.getActiveRodSkinId(rodId);
+    const ownedCount = options.filter((s) => s.owned).length;
+    const boxW = PANEL_W;
+    const boxH = PANEL_H;
+    const rowH = 96;
+    const rowW = boxW - 48;
+    const iconSlot = 72;
+    const textX = -rowW / 2 + iconSlot + 24;
+
+    const panel = this.scene.add.container(0, 0).setDepth(20);
+    const dim = this.scene.add
+      .rectangle(0, 0, PANEL_W + 80, PANEL_H + 80, 0x000000, 0.55)
+      .setInteractive();
+    dim.on("pointerdown", () => this.closeSkinPanel());
+
+    const box = this.scene.add
+      .rectangle(0, 0, boxW, boxH, 0x1a1c22, 0.96)
+      .setStrokeStyle(2, 0xc4a86a);
+
+    const title = this.scene.add
+      .text(0, -boxH / 2 + 36, `${rodName} Skins`, {
+        fontFamily: "Georgia, serif",
+        fontSize: "26px",
+        color: "#f0e6d2",
+      })
+      .setOrigin(0.5);
+
+    const subtitle = this.scene.add
+      .text(
+        0,
+        -boxH / 2 + 68,
+        ownedCount <= 1
+          ? "Default look — unlock more skins in the world"
+          : "Choose a skin you own",
+        {
+          fontFamily: "Arial",
+          fontSize: "14px",
+          color: "#a8b0c0",
+        }
+      )
+      .setOrigin(0.5);
+
+    panel.add([dim, box, title, subtitle]);
+
+    let y = -boxH / 2 + 120;
+    for (const skin of options) {
+      const active = skin.id === activeId;
+      const rowBg = this.scene.add
+        .rectangle(
+          0,
+          y,
+          rowW,
+          rowH - 12,
+          active ? 0x3a3420 : skin.owned ? 0x2a2f3a : 0x22262e,
+          0.95
+        )
+        .setStrokeStyle(
+          2,
+          active ? 0xffe066 : skin.owned ? 0x6a7355 : 0x444444
+        );
+
+      const tex = this.scene.textures.exists(skin.textureKey)
+        ? skin.textureKey
+        : "rod";
+      // Keep icon inside a fixed slot so wide rod art can't cover labels
+      const [iw, ih] = this.fitIcon(tex, iconSlot - 16);
+      const icon = this.scene.add
+        .image(-rowW / 2 + iconSlot / 2 + 8, y, tex)
+        .setDisplaySize(iw, ih)
+        .setAlpha(skin.owned ? 1 : 0.35);
+
+      const label = this.scene.add
+        .text(textX, y - 14, skin.label, {
+          fontFamily: "Georgia, serif",
+          fontSize: "20px",
+          color: skin.owned ? (active ? "#ffe066" : "#ffffff") : "#777777",
+        })
+        .setOrigin(0, 0.5);
+
+      const status = this.scene.add
+        .text(
+          textX,
+          y + 16,
+          !skin.owned ? "Locked" : active ? "Equipped" : "Owned",
+          {
+            fontFamily: "Arial",
+            fontSize: "14px",
+            color: !skin.owned ? "#666666" : active ? "#7dff9a" : "#a8b0c0",
+          }
+        )
+        .setOrigin(0, 0.5);
+
+      panel.add([rowBg, icon, label, status]);
+
+      if (skin.owned && !active) {
+        rowBg.setInteractive({ useHandCursor: true });
+        rowBg.on("pointerover", () => rowBg.setFillStyle(0x3a4555, 0.95));
+        rowBg.on("pointerout", () => rowBg.setFillStyle(0x2a2f3a, 0.95));
+        rowBg.on("pointerdown", () => {
+          const result = this.inventory.setRodSkin(rodId, skin.id);
+          this.closeSkinPanel();
+          this.refresh();
+          this.onChanged?.(result.message);
+        });
+      }
+
+      y += rowH;
+    }
+
+    const closeBtn = this.scene.add
+      .rectangle(0, boxH / 2 - 40, 120, 36, 0x3d6b4f)
+      .setStrokeStyle(1, 0x7dce7a)
+      .setInteractive({ useHandCursor: true });
+    const closeLabel = this.scene.add
+      .text(0, boxH / 2 - 40, "Close", {
+        fontFamily: "Arial",
+        fontSize: "15px",
+        color: "#ffffff",
+      })
+      .setOrigin(0.5);
+    closeBtn.on("pointerover", () => closeBtn.setFillStyle(0x4a8a62));
+    closeBtn.on("pointerout", () => closeBtn.setFillStyle(0x3d6b4f));
+    closeBtn.on("pointerdown", () => this.closeSkinPanel());
+    panel.add([closeBtn, closeLabel]);
+
+    this.root.add(panel);
+    this.skinPanel = panel;
+  }
+
+  private closeMasteryPanel(): void {
+    this.masteryPanel?.destroy(true);
+    this.masteryPanel = null;
+  }
+
+  private openRecoilMasteryPanel(): void {
+    this.closeMasteryPanel();
+    this.closeSkinPanel();
+
+    const catches = this.inventory.recoilMasteryCatches;
+    const ashSold = this.inventory.recoilMasteryAshSold;
+    const catchGoal = InventorySystem.RECOIL_MASTERY_CATCH_GOAL;
+    const ashGoal = InventorySystem.RECOIL_MASTERY_ASH_SELL_GOAL;
+    const catchDone = catches >= catchGoal;
+    const ashDone = ashSold >= ashGoal;
+    const unlocked = catchDone && ashDone;
+
+    const panel = this.scene.add.container(0, 0).setDepth(20);
+    const dim = this.scene.add
+      .rectangle(0, 0, PANEL_W + 40, PANEL_H + 40, 0x000000, 0.55)
+      .setInteractive();
+    dim.on("pointerdown", () => this.closeMasteryPanel());
+
+    const box = this.scene.add
+      .rectangle(0, 0, 360, 280, 0x1c1e26, 0.98)
+      .setStrokeStyle(2, 0xc4a86a);
+
+    const title = this.scene.add
+      .text(0, -112, "Recoil Rod Mastery", {
+        fontFamily: "Georgia, serif",
+        fontSize: "22px",
+        color: "#f0e6d2",
+      })
+      .setOrigin(0.5);
+
+    const subtitle = this.scene.add
+      .text(
+        0,
+        -78,
+        unlocked
+          ? "Unlocked — 3rd blast fires a rapid burst!"
+          : "Complete both tasks to unlock rapid burst\n(3rd recoil → blasts every 0.2s for 2s)",
+        {
+          fontFamily: "Arial",
+          fontSize: "13px",
+          color: unlocked ? "#7dff9a" : "#a8b0c0",
+          align: "center",
+        }
+      )
+      .setOrigin(0.5);
+
+    const catchColor = catchDone ? "#7dff9a" : "#e8e0d0";
+    const ashColor = ashDone ? "#7dff9a" : "#e8e0d0";
+    const task1 = this.scene.add
+      .text(
+        0,
+        -18,
+        `${catchDone ? "✓" : "○"}  Catch ${catchGoal} fish with Recoil Rod\n     ${Math.min(catches, catchGoal)} / ${catchGoal}`,
+        {
+          fontFamily: "Arial",
+          fontSize: "15px",
+          color: catchColor,
+          align: "left",
+          lineSpacing: 4,
+        }
+      )
+      .setOrigin(0.5);
+
+    const task2 = this.scene.add
+      .text(
+        0,
+        48,
+        `${ashDone ? "✓" : "○"}  Sell ${ashGoal} Ash fish\n     ${Math.min(ashSold, ashGoal)} / ${ashGoal}`,
+        {
+          fontFamily: "Arial",
+          fontSize: "15px",
+          color: ashColor,
+          align: "left",
+          lineSpacing: 4,
+        }
+      )
+      .setOrigin(0.5);
+
+    const closeBtn = this.scene.add
+      .rectangle(0, 108, 110, 34, 0x3d6b4f)
+      .setStrokeStyle(1, 0x7dce7a)
+      .setInteractive({ useHandCursor: true });
+    const closeLabel = this.scene.add
+      .text(0, 108, "Close", {
+        fontFamily: "Arial",
+        fontSize: "15px",
+        color: "#ffffff",
+      })
+      .setOrigin(0.5);
+    closeBtn.on("pointerover", () => closeBtn.setFillStyle(0x4a8a62));
+    closeBtn.on("pointerout", () => closeBtn.setFillStyle(0x3d6b4f));
+    closeBtn.on("pointerdown", () => this.closeMasteryPanel());
+
+    panel.add([
+      dim,
+      box,
+      title,
+      subtitle,
+      task1,
+      task2,
+      closeBtn,
+      closeLabel,
+    ]);
+    this.root.add(panel);
+    this.masteryPanel = panel;
   }
 
   private makeBobberRow(

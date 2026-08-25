@@ -9,9 +9,10 @@ import {
   PLAYER_FRAME_PAD_TOP,
   ROD_TIP_LOCAL,
   RodDrawStyle,
-  rodStyleFromItemId,
+  rodStyleForSkin,
 } from "./PlayerArt";
 import { ITEMS, ItemId } from "../data/items";
+import { ROD_SKINS, RodSkinLayout } from "../data/rodSkins";
 
 export type PlayerAnimMode =
   | "move"
@@ -38,8 +39,9 @@ export class Player {
   private fishingRodStyle: RodDrawStyle = "starter";
   /** Rod shown over the shoulder while selected on the hotbar. */
   private carriedRodStyle: RodDrawStyle | null = null;
-  /** Gallery Crystal Rod skin overlay (replaces baked rod while carrying). */
-  private crystalSkinOn = false;
+  /** Active cosmetic rod skin overlay (hides baked rod art). */
+  private overlaySkinKey: string | null = null;
+  private overlayLayout: RodSkinLayout | null = null;
   private skinSprite?: Phaser.GameObjects.Image;
   private equippedHatId: ItemId | null = null;
   private hatSprite?: Phaser.GameObjects.Image;
@@ -58,13 +60,11 @@ export class Player {
     body.setOffset(11, 10);
     this.sprite.setFlipX(false);
 
-    if (scene.textures.exists("crystal_rod_skin")) {
-      this.skinSprite = scene.add
-        .image(x, y, "crystal_rod_skin")
-        .setDepth(13)
-        .setVisible(false)
-        .setOrigin(0.35, 0.55);
-    }
+    this.skinSprite = scene.add
+      .image(x, y, "crystal_rod_skin")
+      .setDepth(13)
+      .setVisible(false)
+      .setOrigin(0.35, 0.55);
 
     this.hatSprite = scene.add
       .image(x, y, "hat_tophat")
@@ -91,25 +91,47 @@ export class Player {
   /**
    * Sync shoulder-carry rod with the hotbar selection.
    * Pass the selected item id (or null); only rods show in-hand.
-   * `crystalSkin` overlays gallery skin art on the Crystal Rod animations.
+   * Crate skins use baked rod frames; Gallery still uses overlay.
    */
   syncCarriedRod(
     selectedItemId: ItemId | null,
-    opts?: { crystalSkin?: boolean }
+    opts?: {
+      skinId?: string | null;
+      skinTextureKey?: string | null;
+      skinLayout?: RodSkinLayout | null;
+    }
   ): void {
-    const wantSkin =
-      selectedItemId === "crystal_rod" && !!opts?.crystalSkin;
+    const skinId = opts?.skinId ?? null;
+    const skinDef =
+      skinId && skinId !== "default" && skinId in ROD_SKINS
+        ? ROD_SKINS[skinId as keyof typeof ROD_SKINS]
+        : null;
+    const useOverlay = !!(skinDef?.overlay && opts?.skinTextureKey);
+    const wantKey = useOverlay ? opts?.skinTextureKey ?? null : null;
+    const wantLayout = useOverlay ? opts?.skinLayout ?? null : null;
     const next =
       selectedItemId && ITEMS[selectedItemId]?.isRod
-        ? rodStyleFromItemId(selectedItemId)
+        ? rodStyleForSkin(selectedItemId, skinId)
         : null;
-    if (next === this.carriedRodStyle && wantSkin === this.crystalSkinOn) {
+    if (
+      next === this.carriedRodStyle &&
+      wantKey === this.overlaySkinKey
+    ) {
       this.updateSkinSprite();
       return;
     }
     this.carriedRodStyle = next;
-    this.crystalSkinOn = wantSkin;
-    this.skinSprite?.setVisible(wantSkin);
+    this.overlaySkinKey = wantKey;
+    this.overlayLayout = wantLayout;
+    if (wantKey && this.skinSprite) {
+      if (
+        this.skinSprite.scene.textures.exists(wantKey) &&
+        this.skinSprite.texture.key !== wantKey
+      ) {
+        this.skinSprite.setTexture(wantKey);
+      }
+    }
+    this.skinSprite?.setVisible(!!wantKey);
 
     if (this.animMode === "move" && !this.locked) {
       const key = this.sprite.anims.currentAnim?.key ?? "";
@@ -149,11 +171,13 @@ export class Player {
   }
 
   private updateSkinSprite(): void {
-    if (!this.skinSprite || !this.crystalSkinOn) {
+    if (!this.skinSprite || !this.overlaySkinKey) {
       this.skinSprite?.setVisible(false);
       return;
     }
     this.skinSprite.setVisible(true);
+    const layout =
+      this.overlayLayout ?? ROD_SKINS.gallery.layout;
 
     const fishing =
       this.animMode === "fishing-cast" || this.animMode === "fishing-wait";
@@ -162,15 +186,15 @@ export class Player {
     const hand = this.localToWorld(handLocal);
     const tip = this.localToWorld(tipLocal);
 
-    // Sit along the baked rod, nudged down so the skin covers it
     const t = fishing ? 0.42 : 0.36;
     let x = hand.x + (tip.x - hand.x) * t;
     let y = hand.y + (tip.y - hand.y) * t + (fishing ? 14 : 18);
     let angle = Phaser.Math.RadToDeg(
       Math.atan2(tip.y - hand.y, tip.x - hand.x)
     );
+    // Compensate for diagonal rod-icon art (~-46°) so skins align like baked rods
+    angle -= layout.textureAngleDeg;
 
-    // Facing left while carrying: swing further behind so the bulk clears the face
     if (!fishing && this.facing === "left") {
       angle += 58;
       x += 8;
@@ -178,21 +202,31 @@ export class Player {
     }
 
     this.skinSprite.setFlipX(false);
-    this.skinSprite.setOrigin(0.18, 0.55);
+    this.skinSprite.setOrigin(layout.originX, layout.originY);
     this.skinSprite.setPosition(x, y);
     this.skinSprite.setAngle(angle);
-    this.skinSprite.setDisplaySize(62, 38);
+    this.skinSprite.setDisplaySize(layout.displayW, layout.displayH);
     this.skinSprite.setDepth(this.sprite.depth + 1);
+
+    // Laser skin — soft pink/purple aura
+    if (this.overlaySkinKey === "skin_laser") {
+      this.skinSprite.setTint(0xffffff);
+      const pulse = 0.85 + Math.sin(Date.now() / 180) * 0.15;
+      this.skinSprite.setAlpha(pulse);
+    } else {
+      this.skinSprite.clearTint();
+      this.skinSprite.setAlpha(1);
+    }
   }
 
   /**
-   * World point of the skin's fist / muzzle — where the fishing line attaches.
+   * World point of the skin tip / muzzle — where the fishing line attaches.
    */
   private getSkinFistWorld(): { x: number; y: number } {
     const s = this.skinSprite!;
-    // Fist is the grey block near the right end of crystal_rod_skin.png
-    const localX = s.displayWidth * (0.9 - s.originX);
-    const localY = s.displayHeight * (0.5 - s.originY);
+    const layout = this.overlayLayout ?? ROD_SKINS.gallery.layout;
+    const localX = s.displayWidth * (layout.tipFracX - s.originX);
+    const localY = s.displayHeight * (layout.tipFracY - s.originY);
     const rad = Phaser.Math.DegToRad(s.angle);
     const c = Math.cos(rad);
     const sn = Math.sin(rad);
@@ -281,10 +315,10 @@ export class Player {
     const key =
       this.sprite.anims.currentFrame?.textureKey ?? this.sprite.texture.key;
 
-    const idleM = key.match(/player_idle(?:_rod_[a-z]+)?_(\d+)$/);
+    const idleM = key.match(/player_idle(?:_rod_.+)?_(\d+)$/);
     if (idleM && Number(idleM[1]) === 2) bob = 1;
 
-    const jumpM = key.match(/player_jump(?:_rod_[a-z]+)?_(\d+)$/);
+    const jumpM = key.match(/player_jump(?:_rod_.+)?_(\d+)$/);
     if (jumpM) {
       const i = Number(jumpM[1]);
       bob = i === 1 ? -2 : -1;
@@ -294,13 +328,13 @@ export class Player {
       bob = 4;
     }
 
-    const fishM = key.match(/player_fish_[a-z]+_(\d+)$/);
+    const fishM = key.match(/^player_fish_(.+)_(\d+)$/);
     if (fishM) {
       const leans = [0, -1, -1, -2, 0, 2, 0, 0];
-      lean = leans[Number(fishM[1])] ?? 0;
+      lean = leans[Number(fishM[2])] ?? 0;
     }
 
-    const walkM = key.match(/player_walk(?:_rod_[a-z]+)?_(\d+)$/);
+    const walkM = key.match(/player_walk(?:_rod_.+)?_(\d+)$/);
     if (walkM && Number(walkM[1]) === 3) lean = 1;
 
     return {
@@ -309,20 +343,20 @@ export class Player {
     };
   }
 
-  /** Tip used for skin follow — carry uses shoulder tip, fishing uses cast tips. */
+  /** Tip used for skin / VFX follow — carry uses shoulder tip, fishing uses cast tips. */
   private currentRodTipLocalForSkin(): { x: number; y: number } {
     const fishing =
       this.animMode === "fishing-cast" || this.animMode === "fishing-wait";
     if (fishing) return this.currentRodTipLocal();
-    // Shoulder-carry tip (matches PlayerArt carry default tip)
-    return { x: 18, y: 4 };
+    // Shoulder-carry tip: PlayerArt uses ox-4, oy-6 (oy includes PAD_TOP, bob≈0)
+    return { x: 18, y: 2 + PLAYER_FRAME_PAD_TOP };
   }
 
-  /** Anim style for baked frames — hide crystal rod art when gallery skin is on. */
+  /** Anim style for baked frames — hide rod art when overlay skin is on. */
   private animRodStyle(
     style: RodDrawStyle | null = this.carriedRodStyle
   ): RodDrawStyle | null {
-    if (this.crystalSkinOn) return "hidden";
+    if (this.overlaySkinKey) return "hidden";
     return style;
   }
 
@@ -404,11 +438,25 @@ export class Player {
     return this.carriedRodStyle === "forge";
   }
 
+  /** Laser Zeus skin VFX — baked laser style held on hotbar or while fishing. */
+  isLaserRodInHand(): boolean {
+    if (this.isFishingAnim()) {
+      return this.fishingRodStyle === "laser";
+    }
+    return this.carriedRodStyle === "laser";
+  }
+
+  /** World hand point for held-rod VFX. */
+  getRodHandWorld(): { x: number; y: number } {
+    return this.localToWorld(this.currentRodHandLocal());
+  }
+
   playFishCast(
     rodItemId: ItemId = "starter_rod",
-    onRelease?: () => void
+    onRelease?: () => void,
+    skinId?: string | null
   ): void {
-    this.fishingRodStyle = rodStyleFromItemId(rodItemId);
+    this.fishingRodStyle = rodStyleForSkin(rodItemId, skinId);
     const castStyle = this.resolvedCastStyle(this.fishingRodStyle);
     const castKey = `player-fish-cast-${castStyle}`;
     this.animMode = "fishing-cast";
@@ -512,12 +560,12 @@ export class Player {
 
   /** World position of the fishing-rod tip (matches current drawn eyelet / skin fist). */
   getRodTip(): { x: number; y: number } {
-    if (this.crystalSkinOn && this.skinSprite) {
+    if (this.overlaySkinKey && this.skinSprite) {
       this.updateSkinSprite();
       return this.getSkinFistWorld();
     }
-    const tipLocal = this.currentRodTipLocal();
-    return this.localToWorld(tipLocal);
+    // Carry + cast: use pose-aware tip (not fishing-wait ROD_TIP while shoulder-carrying)
+    return this.localToWorld(this.currentRodTipLocalForSkin());
   }
 
   /** Forge Rod embers — mid-shaft furnace, follows carry & cast poses. */
@@ -534,9 +582,10 @@ export class Player {
   private currentRodTipLocal(): { x: number; y: number } {
     const frame = this.sprite.anims.currentFrame;
     const key = frame?.textureKey ?? this.sprite.texture.key;
-    const m = key.match(/player_fish_[a-z]+_(\d+)$/);
+    // Style names may include underscores (e.g. golden_lucky, universal_portal)
+    const m = key.match(/^player_fish_(.+)_(\d+)$/);
     if (m) {
-      const idx = Number(m[1]);
+      const idx = Number(m[2]);
       return FISH_FRAME_TIPS[idx] ?? ROD_TIP_LOCAL;
     }
     return ROD_TIP_LOCAL;

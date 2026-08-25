@@ -73,33 +73,21 @@ export function applyDevInventoryBootstrap(inventory: InventorySystem): void {
     localStorage.setItem(forgeCraftKey, "1");
   }
 
-  const birthdayClearKey = "fischers_cleared_birthday_dev_grant_v1";
-  if (!localStorage.getItem(birthdayClearKey)) {
-    const bi = inventory.ownedRods.indexOf("birthday_rod");
-    if (bi >= 0) {
-      inventory.ownedRods.splice(bi, 1);
+  // Test-only: Laser Zeus skin (this file is stubbed out in production builds)
+  const laserSkinKey = "fischers_granted_laser_skin_v1";
+  if (!localStorage.getItem(laserSkinKey)) {
+    if (!inventory.ownsRod("zeus_rod")) {
+      inventory.addItem("zeus_rod");
     }
-    if (!inventory.ownsRod(inventory.getEquippedRodId())) {
-      inventory.equipRod("starter_rod");
+    if (!inventory.ownsRodSkin("laser")) {
+      inventory.ownedRodSkins.push("laser");
     }
-    localStorage.setItem(birthdayClearKey, "1");
+    inventory.activeRodSkins["zeus_rod"] = "laser";
+    inventory.equipRod("zeus_rod");
+    localStorage.setItem(laserSkinKey, "1");
   }
 
-  const birthdayStripKey = "fischers_stripped_birthday_rod_v2";
-  if (!localStorage.getItem(birthdayStripKey)) {
-    const bi = inventory.ownedRods.indexOf("birthday_rod");
-    if (bi >= 0) {
-      inventory.ownedRods.splice(bi, 1);
-    }
-    if (!inventory.ownsRod(inventory.getEquippedRodId())) {
-      inventory.equipRod("starter_rod");
-    }
-    const promoIdx = inventory.redeemedPromoCodes.indexOf("birthday_rod");
-    if (promoIdx >= 0) {
-      inventory.redeemedPromoCodes.splice(promoIdx, 1);
-    }
-    localStorage.setItem(birthdayStripKey, "1");
-  }
+  // Birthday Rod: codes expired, but never strip from owned rods / equipment bag.
 
   const clearKey = "fischers_cleared_amber_perch_test_v1";
   if (!localStorage.getItem(clearKey)) {

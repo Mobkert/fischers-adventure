@@ -129,7 +129,7 @@ export class MenuScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xc4a86a);
 
     const title = this.add
-      .text(0, -panelH / 2 + 28, "Ashencast Update", {
+      .text(0, -panelH / 2 + 28, "Ashencast 1.25", {
         fontFamily: "Georgia, serif",
         fontSize: "24px",
         color: "#f0e6d2",
@@ -137,7 +137,7 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const subtitle = this.add
-      .text(0, -panelH / 2 + 56, "What's New · Changes & Fixes", {
+      .text(0, -panelH / 2 + 56, "What's New · Skins, Crates & Rods", {
         fontFamily: "Arial",
         fontSize: "13px",
         color: "#9aaa9a",
@@ -161,30 +161,32 @@ export class MenuScene extends Phaser.Scene {
 
     const bodyText =
       "WHAT'S NEW\n\n" +
-      "• Ashencast Isle — a volcanic island past the reef:\n" +
-      "  forge quest, anvil repair, local fish, and merchant\n" +
-      "• Ashencast Forge — after the quest, craft four rods:\n" +
-      "  Tranquil Rod, Recoil Rod, Portal Rod, and Forge Rod\n" +
-      "• Code Guy — on starter island between the green and\n" +
-      "  blue cottages; type promo codes for rewards:\n" +
-      "  FreeBirthdayGift1 → $10,000\n" +
-      "  FreeBirthdayGift2 → Sprout Angelfish\n" +
-      "  SORRYFORBUGS → $10,000, Starlight Crystalfin Tuna,\n" +
-      "  Celestial Amulet, and Ocean Anvil Shard (if needed)\n\n" +
-      "CHANGES & FIXES\n\n" +
-      "• Ocean Anvil Shard — stays in the water if you fail\n" +
-      "  the catch minigame (no more permanent disappear)\n" +
-      "• Zeus Rod — lightning zones in the catch minigame;\n" +
-      "  warning beeps, then a strike can instant-catch the\n" +
-      "  fish or electrify your bar (guarantees Thunder)\n" +
-      "• Tranquil Rod — random extra cast depth; bubble\n" +
-      "  minigame every 2 catches (fail resets streak)\n" +
-      "• Recoil Rod — shotgun kick after the fish dashes\n" +
-      "• Portal Rod — rarest nearby fish warps to your bobber\n" +
-      "• Forge Rod — swords and axes erupt above the hotbar\n" +
-      "  during the fight for progress bursts\n" +
-      "• Special rod cast animations fixed — no more missing\n" +
-      "  texture freeze when casting crafted rods";
+      "• Collectors Skin Boutique — enter the red brick house\n" +
+      "  on Collectors Island for Skin Crates ($15,000)\n" +
+      "• Skin Crates — open from inventory for a CS-style\n" +
+      "  reveal; odds menu with Open 1 or Open 3 (triple\n" +
+      "  reels stack vertically). Dupes refund $7,500\n" +
+      "• Six crate skins:\n" +
+      "  Golden Lucky (39%), Universal Portal (25%),\n" +
+      "  Pufferfirm (15%), Poisoned (10%), Pistol (7%),\n" +
+      "  Laser (3%) — skins save even if you don't own\n" +
+      "  that rod yet, and equip when you get it\n" +
+      "• FREESKINCRATES promo (Code Guy) — $5,000 and\n" +
+      "  3 Skin Crates (one-time)\n\n" +
+      "ROD & SKIN CHANGES\n\n" +
+      "• Golden Lucky / Universal Portal / Poisoned /\n" +
+      "  Pistol / Laser — unique held looks & catch VFX\n" +
+      "• Pufferfirm — your pufferfish image as the rod\n" +
+      "• Poisoned — waving vines on the catch UI\n" +
+      "• Laser — space-themed catch UI, electric sparks,\n" +
+      "  pink/purple beam strikes & held energy VFX\n" +
+      "• Pistol — grey Recoil-style blasts\n" +
+      "• Equipment Bag — Skin button to swap finishes\n" +
+      "  on rods you own\n\n" +
+      "ALSO IN ASHENCAST\n\n" +
+      "• Ashencast Isle, Forge quest, and craftable rods\n" +
+      "  (Tranquil, Recoil, Portal, Forge)\n" +
+      "• Code Guy — SORRYFORBUGS and more on starter island";
 
     const body = this.add
       .text(0, 0, bodyText, {
@@ -507,6 +509,7 @@ export class MenuScene extends Phaser.Scene {
     this.scene.stop("ShopScene");
     this.scene.stop("BobberShopScene");
     this.scene.stop("BackpackShopScene");
+    this.scene.stop("SkinShopScene");
     this.scene.stop("CloudShopScene");
     this.scene.stop("AmuletCaveScene");
     this.scene.stop("SavesScene");

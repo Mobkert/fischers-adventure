@@ -71,7 +71,8 @@ export type ItemId =
   | "hat_cap"
   | "hat_shell"
   | "hat_yellowfin"
-  | "hat_gem";
+  | "hat_gem"
+  | "skin_crate";
 
 export type AmuletEffectId =
   | "celestial"
@@ -98,7 +99,8 @@ export type FishMutationId =
   | "blasted"
   | "ashencast"
   | "wrapped"
-  | "confetti";
+  | "confetti"
+  | "electric";
 
 export type FishBodyTone = "black" | "orange" | "red";
 
@@ -296,6 +298,15 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     glowColor: 0xffee44,
     toastColor: "#ff88cc",
     label: "Confetti! ",
+  },
+  electric: {
+    id: "electric",
+    name: "Electric",
+    sellMult: 2.5,
+    tint: 0xb8e8ff,
+    glowColor: 0x7ec8ff,
+    toastColor: "#7ec8ff",
+    label: "Electric! ",
   },
 };
 
@@ -800,7 +811,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "zeus_rod",
     name: "Zeus Rod",
     description:
-      "Forged in storm clouds — 5% Thunder (5×). +15% stats in Thunderstorms (not depth). In the catch minigame: lightning zones start at 25%/s then halve each strike — fish struck = instant catch; your bar struck = electrified (slows fish in zone, guarantees Thunder).",
+      "Forged in storm clouds — 5% Thunder (5×). +15% stats in Thunderstorms (not depth). In the catch minigame: lightning zones start at 25%/s then halve each strike — fish struck = instant catch; your bar struck = electrified (slows fish in zone; 75% Electric 2.5× / 25% Thunder 5× on unmutated fish only).",
     stackable: false,
     textureKey: "rod_zeus",
     isRod: true,
@@ -897,14 +908,14 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "recoil_rod",
     name: "Recoil Rod",
     description:
-      "A sawed-off shotgun rigged for fishing. After the fish moves 4 times: warning beep, then a blast slings your bar to the far side (+22.5% catch progress). Ash 10% on black fish (0.8×); Blasted 10% on orange/red fish (3×).",
+      "A sawed-off shotgun rigged for fishing. After the fish moves 4 times: warning beep, then a blast slings your bar to the far side (+22.5% catch progress). Ash 30% on black fish (0.8×); Blasted 50% on orange/red fish (3×). Land 4 blasts in one fight → Ash 25% / Blasted 75% (any fish).",
     stackable: false,
     textureKey: "rod_recoil",
     isRod: true,
     rodMinigamePower: "recoil_kick",
     rodMutations: [
-      { mutation: "ash", chance: 0.1, fishTones: ["black"] },
-      { mutation: "blasted", chance: 0.1, fishTones: ["orange", "red"] },
+      { mutation: "ash", chance: 0.3, fishTones: ["black"] },
+      { mutation: "blasted", chance: 0.5, fishTones: ["orange", "red"] },
     ],
     craftCost: {
       coins: 30000,
@@ -928,7 +939,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       resilience: 10,
       control: 10,
       progressSpeed: 0,
-      lineDepth: 3,
+      lineDepth: 4,
     },
   },
   portal_rod: {
@@ -1055,6 +1066,15 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     stackable: false,
     textureKey: "gem_purple",
     isQuestItem: true,
+  },
+  skin_crate: {
+    id: "skin_crate",
+    name: "Skin Crate",
+    description:
+      "A sealed crate of rod skins. Open from your inventory for a random finish. Duplicates refund $7500.",
+    stackable: true,
+    textureKey: "skin_crate",
+    buyPrice: 15000,
   },
   equipment_bag: {
     id: "equipment_bag",
@@ -2227,6 +2247,7 @@ const ROD_ONLY_MUTATIONS = new Set<FishMutationId>([
   "ashencast",
   "wrapped",
   "confetti",
+  "electric",
 ]);
 
 /** Full moon catch odds (mutually exclusive; lunar checked first). */
@@ -2331,14 +2352,17 @@ export function rollRodMutation(
   rodId: ItemId,
   speciesId: ItemId,
   chanceBonus = 0,
-  chanceMult = 1
+  chanceMult = 1,
+  chanceOverrides?: Partial<Record<FishMutationId, number>>
 ): FishMutationId | null {
   const grants = getRodMutationGrants(rodId);
   if (!grants.length) return null;
 
   for (const grant of grants) {
     if (!fishMatchesRodGrant(speciesId, grant)) continue;
-    const chance = (grant.chance + chanceBonus) * Math.max(0, chanceMult);
+    const base =
+      chanceOverrides?.[grant.mutation] ?? grant.chance + chanceBonus;
+    const chance = base * Math.max(0, chanceMult);
     if (Math.random() < chance) return grant.mutation;
   }
   return null;
@@ -2361,7 +2385,8 @@ export function resolveCatchMutation(
   worldMutation: FishMutationId | null | undefined,
   mutationChanceMult = 1,
   rodChanceBonus = 0,
-  speciesMutMult = 1
+  speciesMutMult = 1,
+  chanceOverrides?: Partial<Record<FishMutationId, number>>
 ): FishMutationId | null {
   if (worldMutation) return worldMutation;
   if (mutationChanceMult > 1) {
@@ -2372,7 +2397,13 @@ export function resolveCatchMutation(
     const fromRod = rollWorldMutation(speciesMutMult);
     if (fromRod) return fromRod;
   }
-  return rollRodMutation(rodId, speciesId, rodChanceBonus, speciesMutMult);
+  return rollRodMutation(
+    rodId,
+    speciesId,
+    rodChanceBonus,
+    speciesMutMult,
+    chanceOverrides
+  );
 }
 
 /**

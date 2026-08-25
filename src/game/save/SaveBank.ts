@@ -82,6 +82,10 @@ export interface SaveData {
   crystalRodSkinOwned: boolean;
   /** Using the gallery skin on the Crystal Rod. */
   crystalRodSkinActive: boolean;
+  /** All owned rod skin ids (gallery + crate skins). */
+  ownedRodSkins: string[];
+  /** Active skin per rod id (omit / "default" = stock look). */
+  activeRodSkins: Record<string, string>;
   /** Cosmetic hats unlocked. */
   ownedHats: ItemId[];
   /** Equipped hat, or null for none. */
@@ -94,6 +98,10 @@ export interface SaveData {
   ashencastQuestStage: import("../systems/AshencastQuest").AshencastQuestStage;
   /** One-time promo codes redeemed from Code Guy. */
   redeemedPromoCodes: import("../systems/PromoCodes").PromoCodeId[];
+  /** Recoil Rod mastery — fish caught while Recoil is equipped (archived feature). */
+  recoilMasteryCatches: number;
+  /** Recoil Rod mastery — Ash-mutation fish sold (archived feature). */
+  recoilMasteryAshSold: number;
   updatedAt: number;
 }
 
@@ -203,12 +211,16 @@ export function defaultSave(): SaveData {
     crystalGalleryChallengeDone: false,
     crystalRodSkinOwned: false,
     crystalRodSkinActive: false,
+    ownedRodSkins: [],
+    activeRodSkins: {},
     ownedHats: [...STARTER_HAT_IDS],
     equippedHatId: null,
     nautilusQuestDone: false,
     activeFishQuest: null,
     ashencastQuestStage: 0,
     redeemedPromoCodes: [],
+    recoilMasteryCatches: 0,
+    recoilMasteryAshSold: 0,
     updatedAt: Date.now(),
   };
 }
@@ -287,12 +299,48 @@ function normalizePromoCodes(raw: unknown): PromoCodeId[] {
     "free_coins_10k",
     "free_fish_gift_3",
     "sorry_for_bugs",
+    "free_skin_crates",
   ];
   if (!Array.isArray(raw)) return [];
   return raw.filter(
     (id): id is PromoCodeId =>
       typeof id === "string" && valid.includes(id as PromoCodeId)
   );
+}
+
+function normalizeOwnedRodSkins(s: Partial<SaveData>): string[] {
+  const out: string[] = [];
+  if (Array.isArray(s.ownedRodSkins)) {
+    for (const id of s.ownedRodSkins) {
+      if (typeof id === "string" && id && !out.includes(id)) out.push(id);
+    }
+  }
+  // Migrate legacy gallery flag
+  if (s.crystalRodSkinOwned && !out.includes("gallery")) {
+    out.push("gallery");
+  }
+  return out;
+}
+
+function normalizeActiveRodSkins(s: Partial<SaveData>): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (s.activeRodSkins && typeof s.activeRodSkins === "object") {
+    for (const [rodId, skinId] of Object.entries(s.activeRodSkins)) {
+      if (
+        typeof rodId === "string" &&
+        typeof skinId === "string" &&
+        skinId &&
+        skinId !== "default"
+      ) {
+        // Keep finishes even if the matching rod isn't owned yet
+        out[rodId] = skinId;
+      }
+    }
+  }
+  if (s.crystalRodSkinActive && s.crystalRodSkinOwned && !out["crystal_rod"]) {
+    out["crystal_rod"] = "gallery";
+  }
+  return out;
 }
 
 export function cloneSave(raw: unknown): SaveData {
@@ -425,12 +473,22 @@ export function cloneSave(raw: unknown): SaveData {
     crystalGalleryChallengeDone: Boolean(s.crystalGalleryChallengeDone),
     crystalRodSkinOwned: Boolean(s.crystalRodSkinOwned),
     crystalRodSkinActive: Boolean(s.crystalRodSkinActive),
+    ownedRodSkins: normalizeOwnedRodSkins(s),
+    activeRodSkins: normalizeActiveRodSkins(s),
     ownedHats,
     equippedHatId,
     nautilusQuestDone: Boolean(s.nautilusQuestDone),
     activeFishQuest: normalizeActiveFishQuest(s.activeFishQuest),
     ashencastQuestStage: normalizeAshencastQuestStage(s.ashencastQuestStage),
     redeemedPromoCodes: normalizePromoCodes(s.redeemedPromoCodes),
+    recoilMasteryCatches: Math.max(
+      0,
+      Math.floor(Number(s.recoilMasteryCatches) || 0)
+    ),
+    recoilMasteryAshSold: Math.max(
+      0,
+      Math.floor(Number(s.recoilMasteryAshSold) || 0)
+    ),
     updatedAt: Number(s.updatedAt) || Date.now(),
   };
 }
