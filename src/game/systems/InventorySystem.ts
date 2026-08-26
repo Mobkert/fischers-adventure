@@ -26,6 +26,11 @@ import {
   STARTER_HAT_IDS,
   formatCraftIngredientLabel,
   fishMeetsMinRarity,
+  isMerchantSellable,
+  ORE_CLUSTER_VENDOR_PRICE,
+  ORE_CLUSTER_VENDOR_STOCK_MAX,
+  ORE_CLUSTER_VENDOR_RESTOCK_MS,
+  rollOreFromCluster,
 } from "../data/items";
 import { SaveData, cloneSave, defaultSave } from "../save/SaveBank";
 import type { WeatherId } from "./WeatherSystem";
@@ -123,6 +128,10 @@ export class InventorySystem {
   nautilusQuestDone = false;
   activeFishQuest: ActiveFishQuest | null = null;
   ashencastQuestStage: AshencastQuestStage = 0;
+  oreVendorStock = ORE_CLUSTER_VENDOR_STOCK_MAX;
+  /** Wall-clock ms when stock refills; 0 if stocked. */
+  oreVendorRestockAt = 0;
+  curioStockSave: import("./CurioTraderStock").CurioStockSave | null = null;
   redeemedPromoCodes: PromoCodeId[] = [];
   /**
    * Recoil mastery progress (archived — set RECOIL_MASTERY_ENABLED to re-ship).
@@ -215,6 +224,14 @@ export class InventorySystem {
       ? { ...save.activeFishQuest }
       : null;
     this.ashencastQuestStage = save.ashencastQuestStage;
+    this.oreVendorStock = save.oreVendorStock;
+    this.oreVendorRestockAt = save.oreVendorRestockAt;
+    this.curioStockSave = save.curioStockSave
+      ? {
+          nextRestockAt: save.curioStockSave.nextRestockAt,
+          entries: save.curioStockSave.entries.map((e) => ({ ...e })),
+        }
+      : null;
     this.redeemedPromoCodes = [...save.redeemedPromoCodes];
     this.recoilMasteryCatches = save.recoilMasteryCatches;
     this.recoilMasteryAshSold = save.recoilMasteryAshSold;
@@ -314,6 +331,14 @@ export class InventorySystem {
         ? { ...this.activeFishQuest }
         : null,
       ashencastQuestStage: this.ashencastQuestStage,
+      oreVendorStock: this.oreVendorStock,
+      oreVendorRestockAt: this.oreVendorRestockAt,
+      curioStockSave: this.curioStockSave
+        ? {
+            nextRestockAt: this.curioStockSave.nextRestockAt,
+            entries: this.curioStockSave.entries.map((e) => ({ ...e })),
+          }
+        : null,
       redeemedPromoCodes: [...this.redeemedPromoCodes],
       recoilMasteryCatches: this.recoilMasteryCatches,
       recoilMasteryAshSold: this.recoilMasteryAshSold,
@@ -1092,6 +1117,110 @@ export class InventorySystem {
     return false;
   }
 
+  /** Crack one ore cluster from the bag/hotbar into a rolled mineral. */
+  openOreCluster(): { ok: boolean; oreId?: ItemId; message: string } {
+    if (!this.hasItem("ore_cluster")) {
+      return { ok: false, message: "No ore cluster." };
+    }
+    const oreId = rollOreFromCluster();
+    if (!this.removeOneItem("ore_cluster")) {
+      return { ok: false, message: "No ore cluster." };
+    }
+    if (!this.addItem(oreId)) {
+      this.addItem("ore_cluster");
+      return { ok: false, message: "Inventory full!" };
+    }
+    return {
+      ok: true,
+      oreId,
+      message: `Found ${ITEMS[oreId].name}!`,
+    };
+  }
+
+  /** Apply wall-clock restock if the 10-minute timer has elapsed. */
+  refreshOreVendorStock(nowMs = Date.now()): void {
+    if (this.oreVendorRestockAt > 0 && nowMs >= this.oreVendorRestockAt) {
+      this.oreVendorStock = ORE_CLUSTER_VENDOR_STOCK_MAX;
+      this.oreVendorRestockAt = 0;
+    }
+  }
+
+  getOreVendorStock(nowMs = Date.now()): number {
+    this.refreshOreVendorStock(nowMs);
+    return this.oreVendorStock;
+  }
+
+  getOreVendorRestockMs(nowMs = Date.now()): number {
+    this.refreshOreVendorStock(nowMs);
+    if (this.oreVendorStock > 0 || this.oreVendorRestockAt <= 0) return 0;
+    return Math.max(0, this.oreVendorRestockAt - nowMs);
+  }
+
+  buyOreClusters(
+    amount: number,
+    nowMs = Date.now()
+  ): { ok: boolean; message: string; bought: number } {
+    this.refreshOreVendorStock(nowMs);
+    const n = Math.floor(amount);
+    if (n < 1) {
+      return { ok: false, message: "Pick an amount.", bought: 0 };
+    }
+    if (this.oreVendorStock <= 0) {
+      return {
+        ok: false,
+        message: "Sold out — come back after the restock.",
+        bought: 0,
+      };
+    }
+    const buy = Math.min(n, this.oreVendorStock, ORE_CLUSTER_VENDOR_STOCK_MAX);
+    const cost = buy * ORE_CLUSTER_VENDOR_PRICE;
+    if (this.coins < cost) {
+      return {
+        ok: false,
+        message: `Need $${cost.toLocaleString("en-US")} — you have $${this.coins.toLocaleString("en-US")}.`,
+        bought: 0,
+      };
+    }
+    const hasStack = !!this.findStack("ore_cluster");
+    const hasEmpty = this.bag.some(
+      (s, i) => i < this.getBagCapacity() && s.itemId === null
+    );
+    if (!hasStack && !hasEmpty) {
+      return { ok: false, message: "Inventory full!", bought: 0 };
+    }
+
+    this.coins -= cost;
+    for (let i = 0; i < buy; i++) {
+      if (!this.addItem("ore_cluster")) {
+        // Refund leftover unplaced (shouldn't happen after capacity check)
+        this.coins += (buy - i) * ORE_CLUSTER_VENDOR_PRICE;
+        this.oreVendorStock -= i;
+        if (this.oreVendorStock <= 0) {
+          this.oreVendorStock = 0;
+          this.oreVendorRestockAt = nowMs + ORE_CLUSTER_VENDOR_RESTOCK_MS;
+        }
+        return {
+          ok: i > 0,
+          message:
+            i > 0
+              ? `Bought ${i} Ore Cluster${i === 1 ? "" : "s"} (bag filled).`
+              : "Inventory full!",
+          bought: i,
+        };
+      }
+    }
+    this.oreVendorStock -= buy;
+    if (this.oreVendorStock <= 0) {
+      this.oreVendorStock = 0;
+      this.oreVendorRestockAt = nowMs + ORE_CLUSTER_VENDOR_RESTOCK_MS;
+    }
+    return {
+      ok: true,
+      message: `Bought ${buy} Ore Cluster${buy === 1 ? "" : "s"} for $${cost.toLocaleString("en-US")}!`,
+      bought: buy,
+    };
+  }
+
   isVaultGemAvailable(gemId: VaultGemId): boolean {
     if (!this.vaultGemQuestAccepted) return false;
     if (this.vaultGemsPlaced.includes(gemId)) return false;
@@ -1683,18 +1812,18 @@ export class InventorySystem {
     };
   }
 
-  /** Toggle keep on a bag fish slot (won't be sold). Returns new keep state or null. */
+  /** Toggle keep/favorite on a bag fish or ore slot (won't be sold). */
   toggleKeepBag(index: number): boolean | null {
     const slot = this.bag[index];
-    if (!slot?.itemId || !FISH_ITEM_IDS.includes(slot.itemId)) return null;
+    if (!slot?.itemId || !isMerchantSellable(slot.itemId)) return null;
     slot.keep = !slot.keep;
     return !!slot.keep;
   }
 
-  /** Toggle keep on a hotbar fish slot. */
+  /** Toggle keep/favorite on a hotbar fish or ore slot. */
   toggleKeepHotbar(index: number): boolean | null {
     const slot = this.hotbar[index];
-    if (!slot?.itemId || !FISH_ITEM_IDS.includes(slot.itemId)) return null;
+    if (!slot?.itemId || !isMerchantSellable(slot.itemId)) return null;
     slot.keep = !slot.keep;
     return !!slot.keep;
   }
@@ -1722,7 +1851,7 @@ export class InventorySystem {
       .filter(
         (s) =>
           s.itemId != null &&
-          FISH_ITEM_IDS.includes(s.itemId) &&
+          isMerchantSellable(s.itemId) &&
           !s.keep &&
           !ITEMS[s.itemId].isQuestItem &&
           ITEMS[s.itemId].sellPrice != null
@@ -1736,7 +1865,7 @@ export class InventorySystem {
     for (const slot of [...this.bag, ...this.hotbar]) {
       if (
         !slot.itemId ||
-        !FISH_ITEM_IDS.includes(slot.itemId) ||
+        !isMerchantSellable(slot.itemId) ||
         slot.count <= 0 ||
         slot.keep ||
         ITEMS[slot.itemId].isQuestItem ||
@@ -1770,7 +1899,7 @@ export class InventorySystem {
     for (const slot of [...this.bag, ...this.hotbar]) {
       if (
         !slot.itemId ||
-        !FISH_ITEM_IDS.includes(slot.itemId) ||
+        !isMerchantSellable(slot.itemId) ||
         slot.count <= 0 ||
         slot.keep ||
         ITEMS[slot.itemId].isQuestItem ||
@@ -1796,7 +1925,7 @@ export class InventorySystem {
 
   /** Fair coin value for one unit in a sellable fish slot. */
   getFishUnitFairValue(slot: InventorySlot): number {
-    if (!slot.itemId || !FISH_ITEM_IDS.includes(slot.itemId) || slot.keep) {
+    if (!slot.itemId || !isMerchantSellable(slot.itemId) || slot.keep) {
       return 0;
     }
     const price = ITEMS[slot.itemId].sellPrice ?? 0;
@@ -1810,7 +1939,7 @@ export class InventorySystem {
     return [...this.bag, ...this.hotbar].filter(
       (s) =>
         s.itemId != null &&
-        FISH_ITEM_IDS.includes(s.itemId) &&
+        isMerchantSellable(s.itemId) &&
         s.count > 0 &&
         !s.keep
     );
@@ -1823,7 +1952,7 @@ export class InventorySystem {
   ): { ok: boolean; message: string } {
     if (
       !slot.itemId ||
-      !FISH_ITEM_IDS.includes(slot.itemId) ||
+      !isMerchantSellable(slot.itemId) ||
       slot.count <= 0 ||
       slot.keep
     ) {

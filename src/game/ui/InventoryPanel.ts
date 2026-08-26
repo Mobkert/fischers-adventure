@@ -5,12 +5,12 @@ import {
   HOTBAR_SIZE,
   MUTATIONS,
   FISH_SIZES,
-  FISH_ITEM_IDS,
   sizeScale,
   mutationSellMult,
   sizeSellMult,
   applyMutationTint,
   InventorySlot,
+  isMerchantSellable,
 } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
 
@@ -21,6 +21,7 @@ const RARITY_NAME: Record<string, string> = {
   epic: "Epic",
   legendary: "Legendary",
   mythical: "Mythical",
+  mystical: "Mystical",
 };
 
 const KEEP_COLOR = 0xffe066;
@@ -44,6 +45,7 @@ export class InventoryPanel {
   private inventory: InventorySystem;
   private onChanged?: () => void;
   private onOpenSkinCrate?: () => void;
+  private onOpenOreCluster?: () => void;
   visible = false;
   private panelH = 560;
 
@@ -85,7 +87,7 @@ export class InventoryPanel {
       .text(
         0,
         h / 2 - 22,
-        "E close · Left-click Skin Crate to open · Right-click fish to keep",
+        "E close · Left-click Skin Crate / Ore Cluster to open · Right-click fish/ores to favorite",
         {
           fontFamily: "Arial",
           fontSize: "12px",
@@ -133,7 +135,7 @@ export class InventoryPanel {
             this.onChanged?.();
           }
         },
-        () => this.tryOpenCrate(() => this.inventory.hotbar[i])
+        () => this.tryLeftClickSlot(() => this.inventory.hotbar[i])
       );
     }
 
@@ -180,7 +182,7 @@ export class InventoryPanel {
         },
         () => {
           if (slotIndex >= this.inventory.getBagCapacity()) return;
-          this.tryOpenCrate(() => this.inventory.bag[slotIndex]);
+          this.tryLeftClickSlot(() => this.inventory.bag[slotIndex]);
         }
       );
     }
@@ -213,10 +215,31 @@ export class InventoryPanel {
     this.onOpenSkinCrate = cb;
   }
 
+  setOnOpenOreCluster(cb: () => void): void {
+    this.onOpenOreCluster = cb;
+  }
+
   private tryOpenCrate(getSlot: () => InventorySlot): void {
     const slot = getSlot();
     if (slot.itemId !== "skin_crate" || slot.count <= 0) return;
     this.onOpenSkinCrate?.();
+  }
+
+  private tryOpenOreCluster(getSlot: () => InventorySlot): void {
+    const slot = getSlot();
+    if (slot.itemId !== "ore_cluster" || slot.count <= 0) return;
+    this.onOpenOreCluster?.();
+  }
+
+  private tryLeftClickSlot(getSlot: () => InventorySlot): void {
+    const slot = getSlot();
+    if (slot.itemId === "skin_crate") {
+      this.tryOpenCrate(getSlot);
+      return;
+    }
+    if (slot.itemId === "ore_cluster") {
+      this.tryOpenOreCluster(getSlot);
+    }
   }
 
   private bindSlot(
@@ -279,9 +302,19 @@ export class InventoryPanel {
         sizeSellMult(slot.size);
       lines.push(`Sell: $${Math.round(unit)}`);
       if (slot.keep) {
-        lines.push("Kept — won't sell");
+        lines.push(
+          ITEMS[slot.itemId!]?.isMineral
+            ? "Favorited — won't sell"
+            : "Kept — won't sell"
+        );
+      }
+      if (slot.itemId === "ore_cluster") {
+        lines.push("Left-click to open");
       }
     } else if (slot.itemId === "skin_crate") {
+      lines.push(def.description);
+      lines.push("Left-click to open");
+    } else if (slot.itemId === "ore_cluster") {
       lines.push(def.description);
       lines.push("Left-click to open");
     } else {
@@ -308,8 +341,9 @@ export class InventoryPanel {
   refresh(): void {
     for (let i = 0; i < HOTBAR_SIZE; i++) {
       const slot = this.inventory.hotbar[i];
-      const isFish = !!slot.itemId && FISH_ITEM_IDS.includes(slot.itemId);
-      const kept = isFish && !!slot.keep;
+      const canFavorite =
+        !!slot.itemId && isMerchantSellable(slot.itemId);
+      const kept = canFavorite && !!slot.keep;
       this.hotbarFrames[i].setStrokeStyle(
         kept ? 3 : 1,
         kept ? KEEP_COLOR : HOTBAR_BORDER
@@ -347,8 +381,9 @@ export class InventoryPanel {
         continue;
       }
 
-      const isFish = !!slot?.itemId && FISH_ITEM_IDS.includes(slot.itemId);
-      const kept = isFish && !!slot.keep;
+      const canFavorite =
+        !!slot?.itemId && isMerchantSellable(slot.itemId);
+      const kept = canFavorite && !!slot.keep;
       this.slotFrames[i].setFillStyle(0x2f2f3a, 0.95);
       this.slotFrames[i].setStrokeStyle(
         kept ? 3 : 1,

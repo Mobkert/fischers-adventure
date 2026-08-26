@@ -129,7 +129,7 @@ export class MenuScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xc4a86a);
 
     const title = this.add
-      .text(0, -panelH / 2 + 28, "Ashencast 1.25", {
+      .text(0, -panelH / 2 + 28, "Ashencast 1.26", {
         fontFamily: "Georgia, serif",
         fontSize: "24px",
         color: "#f0e6d2",
@@ -137,7 +137,7 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const subtitle = this.add
-      .text(0, -panelH / 2 + 56, "What's New · Skins, Crates & Rods", {
+      .text(0, -panelH / 2 + 56, "What's New · Hot Springs & Ores", {
         fontFamily: "Arial",
         fontSize: "13px",
         color: "#9aaa9a",
@@ -161,32 +161,24 @@ export class MenuScene extends Phaser.Scene {
 
     const bodyText =
       "WHAT'S NEW\n\n" +
-      "• Collectors Skin Boutique — enter the red brick house\n" +
-      "  on Collectors Island for Skin Crates ($15,000)\n" +
-      "• Skin Crates — open from inventory for a CS-style\n" +
-      "  reveal; odds menu with Open 1 or Open 3 (triple\n" +
-      "  reels stack vertically). Dupes refund $7,500\n" +
-      "• Six crate skins:\n" +
-      "  Golden Lucky (39%), Universal Portal (25%),\n" +
-      "  Pufferfirm (15%), Poisoned (10%), Pistol (7%),\n" +
-      "  Laser (3%) — skins save even if you don't own\n" +
-      "  that rod yet, and equip when you get it\n" +
-      "• FREESKINCRATES promo (Code Guy) — $5,000 and\n" +
-      "  3 Skin Crates (one-time)\n\n" +
-      "ROD & SKIN CHANGES\n\n" +
-      "• Golden Lucky / Universal Portal / Poisoned /\n" +
-      "  Pistol / Laser — unique held looks & catch VFX\n" +
-      "• Pufferfirm — your pufferfish image as the rod\n" +
-      "• Poisoned — waving vines on the catch UI\n" +
-      "• Laser — space-themed catch UI, electric sparks,\n" +
-      "  pink/purple beam strikes & held energy VFX\n" +
-      "• Pistol — grey Recoil-style blasts\n" +
-      "• Equipment Bag — Skin button to swap finishes\n" +
-      "  on rods you own\n\n" +
-      "ALSO IN ASHENCAST\n\n" +
-      "• Ashencast Isle, Forge quest, and craftable rods\n" +
-      "  (Tranquil, Recoil, Portal, Forge)\n" +
-      "• Code Guy — SORRYFORBUGS and more on starter island";
+      "• Ashencast hotsprings — new fish (Ore Cluster,\n" +
+      "  Volcanic Hermitcrab, Ash Flounder, Molter,\n" +
+      "  Pyrefin, Magma Jellyfish) plus Ashencast Trout\n" +
+      "• Open Ore Clusters in your bag for ores (Pyrite\n" +
+      "  through Painite); right-click to favorite ores\n" +
+      "• Ore Peddler on the hotspring bridges — buys\n" +
+      "  clusters ($110), 20 stock / 10 min restock\n" +
+      "• Curio Trader stock & restock timer now save\n" +
+      "  with your slot (no full restock on quit)\n" +
+      "• Forge Rod recipe — 1 Taaffite + 1 Vivianite\n" +
+      "  instead of 2 Starlight fish\n" +
+      "• OREAREAWESOME promo (Code Guy) — $2,200 and\n" +
+      "  10 Ore Clusters (one-time)\n\n" +
+      "FROM 1.25\n\n" +
+      "• Collectors Skin Boutique, Skin Crates, and\n" +
+      "  six crate rod finishes\n" +
+      "• FREESKINCRATES promo — $5,000 and 3 crates\n" +
+      "• Ashencast Isle forge quest & craftable rods";
 
     const body = this.add
       .text(0, 0, bodyText, {

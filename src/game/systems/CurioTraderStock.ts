@@ -45,6 +45,11 @@ export type CurioStockEntry =
 
 const RESTOCK_MS = 3 * 60 * 1000;
 
+export type CurioStockSave = {
+  nextRestockAt: number;
+  entries: CurioStockEntry[];
+};
+
 /** Craft bobbers the Curio may discount — never Mutation Bobber. */
 const CURIO_BOBBER_IDS: ItemId[] = ["bobber_double", "bobber_depth"];
 
@@ -104,19 +109,49 @@ export class CurioTraderStock {
   }
 
   /** Force an immediate restock (e.g. when the anvil quest starts). */
-  forceRestock(nowMs: number): void {
+  forceRestock(nowMs: number = Date.now()): void {
     this.restock(nowMs);
   }
 
-  /** Call once when the scene starts. */
-  start(nowMs: number): void {
-    this.restock(nowMs);
-  }
-
-  update(nowMs: number): void {
+  /**
+   * Restore from save (wall-clock). If the timer already elapsed offline,
+   * restocks immediately. Fresh saves with no data get a new stall.
+   */
+  applyPersisted(save: CurioStockSave | null | undefined, nowMs = Date.now()): void {
+    if (
+      !save ||
+      !Array.isArray(save.entries) ||
+      !(save.nextRestockAt > 0)
+    ) {
+      this.restock(nowMs);
+      return;
+    }
+    this.entries = this.normalizeEntries(save.entries);
+    this.nextRestockAt = save.nextRestockAt;
     if (nowMs >= this.nextRestockAt) {
       this.restock(nowMs);
     }
+  }
+
+  /** Snapshot for the active save slot. */
+  exportPersisted(): CurioStockSave {
+    return {
+      nextRestockAt: this.nextRestockAt,
+      entries: this.entries.map((e) => ({ ...e })),
+    };
+  }
+
+  /** Call once when the scene starts — prefer applyPersisted for saves. */
+  start(nowMs: number = Date.now()): void {
+    this.restock(nowMs);
+  }
+
+  update(nowMs: number = Date.now()): boolean {
+    if (nowMs >= this.nextRestockAt) {
+      this.restock(nowMs);
+      return true;
+    }
+    return false;
   }
 
   getEntries(): CurioStockEntry[] {
@@ -138,8 +173,77 @@ export class CurioTraderStock {
     return true;
   }
 
-  msUntilRestock(nowMs: number): number {
+  msUntilRestock(nowMs: number = Date.now()): number {
     return Math.max(0, this.nextRestockAt - nowMs);
+  }
+
+  private normalizeEntries(raw: CurioStockEntry[]): CurioStockEntry[] {
+    const out: CurioStockEntry[] = [];
+    for (const e of raw) {
+      if (!e || typeof e !== "object") continue;
+      const itemId = e.itemId as ItemId;
+      if (!ITEMS[itemId]) continue;
+      if (e.kind === "fish") {
+        const mutation =
+          e.mutation && e.mutation in MUTATIONS ? e.mutation : null;
+        const size =
+          e.size && e.size in FISH_SIZES && e.size !== "normal"
+            ? e.size
+            : e.size === "normal"
+              ? null
+              : null;
+        out.push({
+          id: String(e.id || this.nextId()),
+          kind: "fish",
+          itemId,
+          mutation,
+          size,
+          fair: Math.max(1, Math.floor(Number(e.fair) || 1)),
+          label:
+            typeof e.label === "string" && e.label
+              ? e.label
+              : this.formatFishLabel(itemId, mutation, size),
+        });
+      } else if (e.kind === "rod") {
+        out.push({
+          id: String(e.id || this.nextId()),
+          kind: "rod",
+          itemId,
+          fair: Math.max(1, Math.floor(Number(e.fair) || 1)),
+          label:
+            typeof e.label === "string" && e.label
+              ? e.label
+              : ITEMS[itemId].name,
+        });
+      } else if (e.kind === "bobber") {
+        out.push({
+          id: String(e.id || this.nextId()),
+          kind: "bobber",
+          itemId,
+          fair: Math.max(1, Math.floor(Number(e.fair) || 1)),
+          label:
+            typeof e.label === "string" && e.label
+              ? e.label
+              : ITEMS[itemId].name,
+          needsLabel:
+            typeof e.needsLabel === "string" && e.needsLabel
+              ? e.needsLabel
+              : formatBobberNeeds(itemId),
+        });
+      } else if (e.kind === "misc") {
+        out.push({
+          id: String(e.id || this.nextId()),
+          kind: "misc",
+          itemId,
+          fair: Math.max(1, Math.floor(Number(e.fair) || 1)),
+          label:
+            typeof e.label === "string" && e.label
+              ? e.label
+              : ITEMS[itemId].name,
+        });
+      }
+    }
+    return out;
   }
 
   private restock(nowMs: number): void {

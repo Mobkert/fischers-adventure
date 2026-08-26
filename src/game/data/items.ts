@@ -54,6 +54,21 @@ export type ItemId =
   | "nautilus"
   | "serpent_eel"
   | "cave_whale"
+  | "ore_cluster"
+  | "volcanic_hermitcrab"
+  | "ash_flounder"
+  | "molter"
+  | "pyrefin"
+  | "magma_jellyfish"
+  | "pyrite"
+  | "emerald"
+  | "cassiterite"
+  | "ruby"
+  | "vivianite"
+  | "austinite"
+  | "taaffite"
+  | "rhodochrosite"
+  | "painite"
   | "amulet_celestial"
   | "amulet_moonlight"
   | "amulet_tempest"
@@ -106,7 +121,7 @@ export type FishBodyTone = "black" | "orange" | "red";
 
 export type FishSizeId = "normal" | "big" | "giant";
 
-export type FishHabitat = "ocean" | "pond" | "reef" | "cave";
+export type FishHabitat = "ocean" | "pond" | "reef" | "cave" | "hotspring";
 
 export type FishRarity =
   | "common"
@@ -571,8 +586,14 @@ export interface ItemDef {
   isQuestItem?: boolean;
   /** Quest catchable that has no sell price (e.g. anvil shard). */
   isCatchable?: boolean;
-  /** Only rolls in Ashencast-adjacent ocean via special chance. */
+  /** Sellable mineral — not a fish (no bestiary entry). */
+  isMineral?: boolean;
+  /** Only rolls in Ashencast hotsprings via special trout chance. */
   ashencastExclusive?: boolean;
+  /** Bob slowly up/down in place (magma jellyfish). */
+  verticalHover?: boolean;
+  /** Rotate catch-minigame icon (degrees). */
+  minigameRotateDeg?: number;
   /** On failed catch, stay as this species (don't re-roll / despawn). */
   persistOnFail?: boolean;
   rarity?: FishRarity;
@@ -932,6 +953,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
           anyMutation: true,
           sizes: ["big", "giant"],
         },
+        { itemId: "cassiterite", count: 5 },
       ],
     },
     rodStats: {
@@ -991,14 +1013,8 @@ export const ITEMS: Record<ItemId, ItemDef> = {
         { itemId: "serpent_eel", count: 5, mutation: "blasted" },
         { itemId: "driftwood", count: 5, mutation: "ash" },
         { itemId: "alligator", count: 3, anyMutation: true },
-        {
-          itemId: "sockeye_salmon",
-          iconKey: "craft_starlight_fish",
-          count: 2,
-          anyFish: true,
-          minRarity: "uncommon",
-          mutation: "starlight",
-        },
+        { itemId: "taaffite", count: 1 },
+        { itemId: "vivianite", count: 1 },
       ],
     },
     rodStats: {
@@ -1242,12 +1258,12 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "ashencast_trout",
     name: "Ashencast Trout",
     description:
-      "A mystical grey trout marked with ember runes. Rare near Ashencast Isle.",
+      "A mystical grey trout marked with ember runes. Rare in Ashencast hotsprings.",
     stackable: true,
     textureKey: "ashencast_trout",
     sellPrice: 9000,
     rarity: "mystical",
-    habitat: "ocean",
+    habitat: "hotspring",
     spawnWeight: 0,
     ashencastExclusive: true,
     facesLeft: true,
@@ -1852,13 +1868,276 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     minigameDisplayWidth: 70,
     minigameDisplayHeight: 23,
   },
+  ore_cluster: {
+    id: "ore_cluster",
+    name: "Ore Cluster",
+    description:
+      "A floating ore pile in the hotsprings. Catch it, then left-click in your bag to open. Ignores bait.",
+    stackable: true,
+    textureKey: "ore_cluster",
+    sellPrice: 30,
+    rarity: "common",
+    habitat: "hotspring",
+    spawnWeight: 9,
+    ignoresBobber: true,
+    minigameSpeed: 0.5,
+    minigamePauseChance: 0.5,
+    depthBand: { min: 10, max: 28 },
+    displayWidth: 48,
+    displayHeight: 40,
+  },
+  volcanic_hermitcrab: {
+    id: "volcanic_hermitcrab",
+    name: "Volcanic Hermit Crab",
+    description: "An uncommon ember crab. Very slow in the hot springs.",
+    stackable: true,
+    textureKey: "volcanic_hermitcrab",
+    sellPrice: 100,
+    rarity: "uncommon",
+    habitat: "hotspring",
+    spawnWeight: 5,
+    minigameSpeed: 0.5,
+    depthBand: { min: 40, max: 90 },
+    displayWidth: 36,
+    displayHeight: 30,
+    bodyTones: ["orange"],
+  },
+  ash_flounder: {
+    id: "ash_flounder",
+    name: "Ash Flounder",
+    description:
+      "A rare ashen flatfish. Fairly quick — not quite a puffer's pace.",
+    stackable: true,
+    textureKey: "ash_flounder",
+    sellPrice: 200,
+    rarity: "rare",
+    habitat: "hotspring",
+    spawnWeight: 3.2,
+    minigameSpeed: 1.28,
+    minigameJerky: true,
+    // Same mid band as volcanic hermit crabs
+    depthBand: { min: 40, max: 90 },
+    displayWidth: 52,
+    displayHeight: 26,
+    bodyTones: ["black"],
+  },
+  molter: {
+    id: "molter",
+    name: "Molter",
+    description: "An epic molten swimmer. Pretty fast in the springs.",
+    stackable: true,
+    textureKey: "molter",
+    sellPrice: 780,
+    rarity: "epic",
+    habitat: "hotspring",
+    spawnWeight: 1,
+    minigameSpeed: 1.7,
+    minigameJerky: true,
+    minigameChaos: 0.55,
+    depthBand: { min: 88, max: 140 },
+    // Native 187×150 — keep boxy aspect (was stretched flat)
+    displayWidth: 48,
+    displayHeight: 38,
+    bodyTones: ["orange"],
+  },
+  pyrefin: {
+    id: "pyrefin",
+    name: "Pyrefin",
+    description:
+      "A legendary fire-fin. A little faster than a nurse shark.",
+    stackable: true,
+    textureKey: "pyrefin",
+    sellPrice: 2605,
+    rarity: "legendary",
+    habitat: "hotspring",
+    spawnWeight: 1,
+    minigameSpeed: 1.95,
+    minigameJerky: true,
+    minigameChaos: 0.5,
+    catchProgress: -20,
+    depthBand: { min: 90, max: 145 },
+    displayWidth: 68,
+    displayHeight: 26,
+    bodyTones: ["orange"],
+  },
+  magma_jellyfish: {
+    id: "magma_jellyfish",
+    name: "Magma Jellyfish",
+    description:
+      "A mythical magma jelly. Hovers in place, pulsing up and down — blazing fast on the line.",
+    stackable: true,
+    textureKey: "magma_jellyfish",
+    sellPrice: 10000,
+    rarity: "mythical",
+    habitat: "hotspring",
+    spawnWeight: 1,
+    verticalHover: true,
+    minigameRotateDeg: 90,
+    minigameSpeed: 2.1,
+    minigameJerky: true,
+    minigameChaos: 0.55,
+    unstoppableJerky: true,
+    catchProgress: -35,
+    depthBand: { min: 95, max: 148 },
+    displayWidth: 52,
+    displayHeight: 108,
+    // Tall art — size before 90° rotate so sideways look isn't squished
+    minigameDisplayWidth: 34,
+    minigameDisplayHeight: 70,
+    bodyTones: ["orange"],
+  },
+  pyrite: {
+    id: "pyrite",
+    name: "Pyrite",
+    description: "Fool's gold — common sparkling cubes from ore clusters.",
+    stackable: true,
+    textureKey: "gold_nugget",
+    sellPrice: 120,
+    rarity: "common",
+    isMineral: true,
+    displayWidth: 36,
+    displayHeight: 36,
+  },
+  emerald: {
+    id: "emerald",
+    name: "Emerald",
+    description: "An uncommon green gem cracked from an ore cluster.",
+    stackable: true,
+    textureKey: "emerald_gem",
+    sellPrice: 300,
+    rarity: "uncommon",
+    isMineral: true,
+    displayWidth: 32,
+    displayHeight: 34,
+  },
+  cassiterite: {
+    id: "cassiterite",
+    name: "Cassiterite",
+    description: "Uncommon dark tin ore from Ashencast clusters.",
+    stackable: true,
+    textureKey: "coal_ore",
+    sellPrice: 260,
+    rarity: "uncommon",
+    isMineral: true,
+    displayWidth: 38,
+    displayHeight: 38,
+  },
+  ruby: {
+    id: "ruby",
+    name: "Ruby",
+    description: "A rare crimson gem from the hotspring ore piles.",
+    stackable: true,
+    textureKey: "ruby_gem",
+    sellPrice: 750,
+    rarity: "rare",
+    isMineral: true,
+    displayWidth: 32,
+    displayHeight: 32,
+  },
+  vivianite: {
+    id: "vivianite",
+    name: "Vivianite",
+    description: "Epic green bar-shards from ore clusters.",
+    stackable: true,
+    textureKey: "jade_shards",
+    sellPrice: 800,
+    rarity: "epic",
+    isMineral: true,
+    displayWidth: 42,
+    displayHeight: 32,
+  },
+  austinite: {
+    id: "austinite",
+    name: "Austinite",
+    description: "Legendary crystal spikes from the hot springs.",
+    stackable: true,
+    textureKey: "green_crystal",
+    sellPrice: 1300,
+    rarity: "legendary",
+    isMineral: true,
+    displayWidth: 36,
+    displayHeight: 48,
+  },
+  taaffite: {
+    id: "taaffite",
+    name: "Taaffite",
+    description: "A legendary lavender teardrop gem.",
+    stackable: true,
+    textureKey: "amethyst_teardrop",
+    sellPrice: 1350,
+    rarity: "legendary",
+    isMineral: true,
+    displayWidth: 28,
+    displayHeight: 44,
+  },
+  rhodochrosite: {
+    id: "rhodochrosite",
+    name: "Rhodochrosite",
+    description: "Mythical pink ore cubes — blisteringly rare.",
+    stackable: true,
+    textureKey: "pink_ore",
+    sellPrice: 5000,
+    rarity: "mythical",
+    isMineral: true,
+    displayWidth: 40,
+    displayHeight: 36,
+  },
+  painite: {
+    id: "painite",
+    name: "Painite",
+    description: "Mystical volcanic painite. The rarest cluster find.",
+    stackable: true,
+    textureKey: "painite",
+    sellPrice: 20000,
+    rarity: "mystical",
+    isMineral: true,
+    displayWidth: 52,
+    displayHeight: 30,
+  },
 };
 
 export const FISH_ITEM_IDS: ItemId[] = (
   Object.keys(ITEMS) as ItemId[]
 ).filter(
-  (id) => ITEMS[id].sellPrice != null || !!ITEMS[id].isCatchable
+  (id) =>
+    !ITEMS[id].isMineral &&
+    (ITEMS[id].sellPrice != null || !!ITEMS[id].isCatchable)
 );
+
+/** Ashencast ore peddler — $110 each, 20 stock, 10 min restock. */
+export const ORE_CLUSTER_VENDOR_PRICE = 110;
+export const ORE_CLUSTER_VENDOR_STOCK_MAX = 20;
+export const ORE_CLUSTER_VENDOR_RESTOCK_MS = 10 * 60 * 1000;
+
+/** Ore cluster left-click loot table (weights sum to 100). */
+export const ORE_CLUSTER_DROPS: { itemId: ItemId; weight: number }[] = [
+  { itemId: "pyrite", weight: 35 },
+  { itemId: "cassiterite", weight: 25 },
+  { itemId: "emerald", weight: 20 },
+  { itemId: "ruby", weight: 5 },
+  { itemId: "vivianite", weight: 5 },
+  { itemId: "austinite", weight: 3.5 },
+  { itemId: "taaffite", weight: 3.5 },
+  { itemId: "rhodochrosite", weight: 2 },
+  { itemId: "painite", weight: 1 },
+];
+
+export function rollOreFromCluster(): ItemId {
+  const total = ORE_CLUSTER_DROPS.reduce((s, d) => s + d.weight, 0);
+  let r = Math.random() * total;
+  for (const d of ORE_CLUSTER_DROPS) {
+    r -= d.weight;
+    if (r <= 0) return d.itemId;
+  }
+  return ORE_CLUSTER_DROPS[0]!.itemId;
+}
+
+/** Merchant-sellable fish or minerals. */
+export function isMerchantSellable(itemId: ItemId): boolean {
+  const def = ITEMS[itemId];
+  if (!def || def.isQuestItem || def.sellPrice == null) return false;
+  return FISH_ITEM_IDS.includes(itemId) || !!def.isMineral;
+}
 
 /** Coins claimed the first time a fish is unlocked in the bestiary. */
 export const BESTIARY_CLAIM_REWARD: Record<FishRarity, number> = {
@@ -1921,6 +2200,12 @@ export const BESTIARY_AREAS: BestiaryArea[] = [
     name: "Ocean",
     subtitle: "Open waters beyond the docks",
     fishIds: fishIdsByHabitat("ocean"),
+  },
+  {
+    id: "hotspring",
+    name: "Ashencast",
+    subtitle: "Volcanic pools on Ashencast Isle",
+    fishIds: fishIdsByHabitat("hotspring"),
   },
   {
     id: "reef",
@@ -2018,7 +2303,7 @@ export const JUNGLE_SHOP_ROD_IDS: ItemId[] = ROD_ITEM_IDS.filter(
  *        (mythical cave fish are abundance-only)
  *
  * Bases — Ocean: Epic 7.5%, Legendary 5%, Mythical 1%
- *          Pond:  Epic 4%,   Legendary 2.5%, Mythical 0.5%
+ *          Pond / Hotspring: Epic 4%, Legendary 2.5%, Mythical 0.5%
  *          Reef:  Epic 3%,   Legendary 0.5%
  *          Cave:  Epic 2.35%, Legendary 0.5%
  */
@@ -2045,6 +2330,7 @@ function absoluteRareShare(
     if (rarity === "legendary") return Math.max(0, 0.05 + n * perTier);
     if (rarity === "mythical") return Math.max(0, 0.01 + n * perTier);
   } else {
+    // Pond + Ashencast hotsprings share the same rare rates
     if (rarity === "epic") return Math.max(0, 0.04 + n * perTier);
     if (rarity === "legendary") return Math.max(0, 0.025 + n * perTier);
     if (rarity === "mythical") return Math.max(0, 0.005 + n * perTier);
@@ -2070,6 +2356,7 @@ export function rollFishSpecies(
   if (fish.length === 0) {
     if (habitat === "reef") return "clownfish";
     if (habitat === "cave") return "chilled_clownfish";
+    if (habitat === "hotspring") return "ore_cluster";
     return "sockeye_salmon";
   }
 
@@ -2143,7 +2430,8 @@ export function rollFishSpecies(
 }
 
 /**
- * Ashencast Trout spawn near Ashencast Isle (quest stage 2+).
+ * Ashencast Trout spawn in hotsprings (quest stage 2+).
+ * Separate from swamp-style habitat rolls — keep these trout rates as-is.
  * During stage 2 (need a trout): ~8% base, +3% per +25% luck before first catch.
  * Otherwise (rare mystical): 0.15% base; +0.5%/+0.1% per +25% luck.
  */
@@ -2160,8 +2448,19 @@ export function ashencastTroutChance(
   return Math.max(0, 0.0015 + (luckPercent / 25) * perTier);
 }
 
-/** Ocean roll near Ashencast — may yield Ashencast Trout when quest allows. */
+/** Ocean near Ashencast — normal ocean fish only (trout is hotspring-only). */
 export function rollAshencastOceanSpecies(
+  luckPercent = 0,
+  _alreadyCaughtTrout: boolean,
+  exclude: readonly ItemId[] = [],
+  _allowTrout = false,
+  _questNeedsTrout = false
+): ItemId {
+  return rollFishSpecies(luckPercent, "ocean", exclude);
+}
+
+/** Hotspring roll — may yield Ashencast Trout when quest allows. */
+export function rollHotspringSpecies(
   luckPercent = 0,
   alreadyCaughtTrout: boolean,
   exclude: readonly ItemId[] = [],
@@ -2175,7 +2474,7 @@ export function rollAshencastOceanSpecies(
   ) {
     return "ashencast_trout";
   }
-  return rollFishSpecies(luckPercent, "ocean", exclude);
+  return rollFishSpecies(luckPercent, "hotspring", exclude);
 }
 
 export function mutationSellMult(mutation?: FishMutationId | null): number {

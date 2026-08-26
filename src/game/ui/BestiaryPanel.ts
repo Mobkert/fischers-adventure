@@ -11,8 +11,8 @@ import { InventorySystem } from "../systems/InventorySystem";
 
 const PANEL_W = 520;
 const PANEL_H = 540;
-const GRID_TOP = -150;
-const GRID_VIEW_H = 360;
+const GRID_TOP = -118;
+const GRID_VIEW_H = 330;
 const CELL_W = 140;
 const CELL_H = 150;
 const COLS = 3;
@@ -129,21 +129,25 @@ export class BestiaryPanel {
   }
 
   private buildTabs(): void {
-    const tabY = -182;
-    const tabW = 128;
-    const startX = -((BESTIARY_AREAS.length - 1) * (tabW + 8)) / 2;
+    const tabW = 118;
+    const gap = 6;
+    // Main row: everything except Ashencast; Ashencast sits under Ocean
+    const mainAreas = BESTIARY_AREAS.filter((a) => a.id !== "hotspring");
+    const spring = BESTIARY_AREAS.find((a) => a.id === "hotspring");
+    const startX = -((mainAreas.length - 1) * (tabW + gap)) / 2;
+    const row1Y = -182;
+    const row2Y = -150;
 
-    BESTIARY_AREAS.forEach((area, i) => {
-      const x = startX + i * (tabW + 8);
-      const btn = this.scene.add.container(x, tabY);
+    const addTab = (area: (typeof BESTIARY_AREAS)[number], x: number, y: number) => {
+      const btn = this.scene.add.container(x, y);
       const bg = this.scene.add
-        .rectangle(0, 0, tabW, 28, 0x2a2f3a, 0.95)
+        .rectangle(0, 0, tabW, 26, 0x2a2f3a, 0.95)
         .setStrokeStyle(2, 0x666666)
         .setInteractive({ useHandCursor: true });
       const label = this.scene.add
         .text(0, 0, area.name, {
           fontFamily: "Arial",
-          fontSize: "14px",
+          fontSize: "13px",
           color: "#dddddd",
         })
         .setOrigin(0.5);
@@ -155,7 +159,17 @@ export class BestiaryPanel {
       });
       this.tabButtons.push(btn);
       this.root.add(btn);
-    });
+    };
+
+    // Keep tabButtons order aligned with BESTIARY_AREAS for refresh()
+    for (const area of BESTIARY_AREAS) {
+      if (area.id === "hotspring" && spring) {
+        addTab(spring, startX, row2Y);
+        continue;
+      }
+      const i = mainAreas.findIndex((a) => a.id === area.id);
+      addTab(area, startX + i * (tabW + gap), row1Y);
+    }
   }
 
   private redrawMask(): void {

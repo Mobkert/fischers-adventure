@@ -46,6 +46,7 @@ export const FISH_QUEST_HABITAT_LABEL: Record<FishHabitat, string> = {
   pond: "swamp pond",
   reef: "coral reef",
   cave: "cave",
+  hotspring: "hotsprings",
 };
 
 const COIN_REWARD: Record<Exclude<FishRarity, "mythical" | "mystical">, number> = {

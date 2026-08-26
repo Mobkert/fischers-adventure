@@ -97,6 +97,7 @@ export class CatchMinigame {
   private pauseChance: number | null = null;
   private pauseDuration: { min: number; max: number } | null = null;
   private facesLeft = false;
+  private fishRotateDeg = 0;
   private glowColor: number | null = null;
   private progress = 0.2;
   private fillRate = 0.12; // ~6.5s of solid tracking from 20% → 100%
@@ -388,6 +389,8 @@ export class CatchMinigame {
       pauseDuration?: { min: number; max: number };
       /** Texture faces left by default. */
       facesLeft?: boolean;
+      /** Rotate fish icon in the catch bar (deg). */
+      rotateDeg?: number;
       /** Body tint for mutations. */
       tint?: number | null;
       /** Use solid fill tint (albino / near-white). */
@@ -438,6 +441,7 @@ export class CatchMinigame {
       options?.pauseChance != null ? options.pauseChance : null;
     this.pauseDuration = options?.pauseDuration ?? null;
     this.facesLeft = !!options?.facesLeft;
+    this.fishRotateDeg = options?.rotateDeg ?? 0;
     this.glowColor = options?.glowColor ?? null;
     this.crystalBurst = !!options?.crystalBurst;
     this.crystalBurstTimer = 0;
@@ -564,6 +568,7 @@ export class CatchMinigame {
     this.fishBubbleH = dh;
     this.fishIcon.setTexture(tex);
     this.fishIcon.setDisplaySize(dw, dh);
+    this.fishIcon.setAngle(this.fishRotateDeg);
     this.fishIcon.clearTint();
     if (options?.tint != null) {
       if (options.tintFill) {
@@ -574,6 +579,7 @@ export class CatchMinigame {
     }
     this.fishGlow.setTexture(tex);
     this.fishGlow.setDisplaySize(dw * 1.4, dh * 1.55);
+    this.fishGlow.setAngle(this.fishRotateDeg);
     if (this.glowColor != null) {
       this.fishGlow.setTint(this.glowColor);
       this.fishGlow.setAlpha(0.5);
@@ -2145,9 +2151,19 @@ export class CatchMinigame {
       this.fishGlow2.setX(this.fishX + 14);
     }
     if (Math.abs(this.fishVel) > 8) {
-      const flip = this.facesLeft ? this.fishVel > 0 : this.fishVel < 0;
-      this.fishIcon.setFlipX(flip);
-      this.fishGlow.setFlipX(flip);
+      if (this.fishRotateDeg !== 0) {
+        // Sideways species (magma jelly): tip points the way it's swimming
+        const ang =
+          this.fishVel >= 0 ? this.fishRotateDeg : -this.fishRotateDeg;
+        this.fishIcon.setFlipX(false);
+        this.fishGlow.setFlipX(false);
+        this.fishIcon.setAngle(ang);
+        this.fishGlow.setAngle(ang);
+      } else {
+        const flip = this.facesLeft ? this.fishVel > 0 : this.fishVel < 0;
+        this.fishIcon.setFlipX(flip);
+        this.fishGlow.setFlipX(flip);
+      }
       if (this.dualCatch) {
         const flip2 = this.facesLeft2 ? this.fishVel > 0 : this.fishVel < 0;
         this.fishIcon2.setFlipX(flip2);

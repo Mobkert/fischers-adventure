@@ -309,7 +309,7 @@ export class QuestTracker {
       body =
         have === 1
           ? "Trout ready — return to the Forge Keeper"
-          : "Catch an Ashencast Trout near the isle";
+          : "Catch an Ashencast Trout in the hotsprings";
       key += `|${have}`;
     }
     if (key === this.lastAshenKey && this.ashenRoot.visible) return;

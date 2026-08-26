@@ -6,7 +6,8 @@ export type PromoCodeId =
   | "free_coins_10k"
   | "free_fish_gift_3"
   | "sorry_for_bugs"
-  | "free_skin_crates";
+  | "free_skin_crates"
+  | "ore_area_awesome";
 
 export type PromoRedeemResult =
   | { ok: true; message: string }
@@ -18,6 +19,7 @@ const CODE_MAP: Record<string, PromoCodeId> = {
   FreeBirthdayGift2: "free_fish_gift_3",
   SORRYFORBUGS: "sorry_for_bugs",
   FREESKINCRATES: "free_skin_crates",
+  OREAREAWESOME: "ore_area_awesome",
 };
 
 /** Birthday event codes — no longer redeemable. Owned Birthday Rods are kept. */
@@ -106,6 +108,23 @@ export function redeemPromoCode(
       return {
         ok: true,
         message: "Code Guy hands you $5,000 and 3 Skin Crates!",
+      };
+    }
+    case "ore_area_awesome": {
+      if (
+        !inventory.hasItem("ore_cluster") &&
+        inventory.countEmptyBagSlots() < 1
+      ) {
+        return { ok: false, message: "Need 1 free bag slot for Ore Clusters." };
+      }
+      if (!inventory.addItem("ore_cluster", 10)) {
+        return { ok: false, message: "Your bag is full!" };
+      }
+      inventory.coins += 2200;
+      inventory.markPromoRedeemed(codeId);
+      return {
+        ok: true,
+        message: "Code Guy hands you $2,200 and 10 Ore Clusters!",
       };
     }
     default:

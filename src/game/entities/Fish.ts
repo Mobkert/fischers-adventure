@@ -40,6 +40,8 @@ export class Fish {
 
   private velX = 0;
   private targetVelX = 0;
+  /** Home X for vertical-hover species (magma jelly). */
+  private hoverAnchorX = 0;
   private accel = 55;
   private maxSpeed = 70;
   private nextDecisionAt = 0;
@@ -112,6 +114,7 @@ export class Fish {
     this.idleMaxX = idleMaxX;
     this.surfaceY = waterSurfaceY;
     this.baseY = this.depthForSpecies();
+    this.hoverAnchorX = x;
     this.sprite = scene.physics.add.sprite(x, this.baseY, def.textureKey);
     this.sprite.setDepth(5);
     this.applySpeciesVisual();
@@ -183,7 +186,9 @@ export class Fish {
           ? 155
           : this.habitat === "cave"
             ? CAVE_FISH_MAX_DEPTH_PX
-            : undefined;
+            : this.habitat === "hotspring"
+              ? 150
+              : undefined;
     const y =
       this.surfaceY +
       rollSpawnDepthOffset(
@@ -458,6 +463,7 @@ export class Fish {
         this.baseY
       );
     }
+    this.hoverAnchorX = this.sprite.x;
     this.syncGlow(this.sprite.scene.time.now);
     this.pickNewIdleBehavior(true);
     this.scheduleDespawn();
@@ -612,7 +618,9 @@ export class Fish {
           ? 155
           : this.habitat === "cave"
             ? CAVE_FISH_MAX_DEPTH_PX
-            : 165);
+            : this.habitat === "hotspring"
+              ? 150
+              : 165);
     if (this.sprite.y < minY) {
       this.sprite.y = minY;
       const body = this.sprite.body as Phaser.Physics.Arcade.Body;
@@ -626,6 +634,10 @@ export class Fish {
 
   private updateIdleSwim(now: number, dt: number): void {
     if (this.diving) return;
+    if (ITEMS[this.speciesId].verticalHover) {
+      this.updateVerticalHover(now, dt);
+      return;
+    }
     if (ITEMS[this.speciesId].surfaceJumps) {
       if (this.jumping) {
         this.updateSurfaceJump(dt);
@@ -686,6 +698,26 @@ export class Fish {
     const bobAmp = Math.abs(this.velX) < 8 ? 3 : 6;
     this.sprite.y =
       this.baseY + Math.sin(now / 450 + this.sprite.x * 0.05) * bobAmp;
+    this.clampUnderwater();
+  }
+
+  /** Magma jelly — stays at depth and gently bobs up and down in place. */
+  private updateVerticalHover(now: number, _dt: number): void {
+    // Soft leash back to home X — almost no travel
+    const dx = this.hoverAnchorX - this.sprite.x;
+    this.velX = Phaser.Math.Clamp(dx * 3.5, -10, 10);
+    this.targetVelX = 0;
+    this.sprite.setVelocity(this.velX, 0);
+
+    const bobAmp = 10;
+    this.sprite.y =
+      this.baseY + Math.sin(now / 700 + this.hoverAnchorX * 0.03) * bobAmp;
+
+    if (Math.abs(this.sprite.x - this.hoverAnchorX) > 12) {
+      this.sprite.x =
+        this.hoverAnchorX +
+        Math.sign(this.sprite.x - this.hoverAnchorX) * 12;
+    }
     this.clampUnderwater();
   }
 
@@ -801,6 +833,15 @@ export class Fish {
 
   private pickNewIdleBehavior(immediate: boolean): void {
     const now = this.sprite.scene.time.now;
+
+    if (ITEMS[this.speciesId].verticalHover) {
+      this.targetVelX = 0;
+      this.velX = 0;
+      this.pauseUntil = 0;
+      this.nextDecisionAt = now + 999999;
+      this.sprite.setVelocity(0, 0);
+      return;
+    }
 
     // Mushroom clusters: only patrol back and forth, no mid-swim pauses
     if (this.ignoresBobber()) {

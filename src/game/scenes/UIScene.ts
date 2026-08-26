@@ -10,6 +10,7 @@ import { FishingTutorial } from "../ui/FishingTutorial";
 import {
   AUGMENT_UPGRADE_CHANCE,
   ITEMS,
+  ItemId,
   RARITY_COLOR,
   RARITY_LABEL,
   MUTATIONS,
@@ -20,6 +21,7 @@ import { BoatMenu } from "../ui/BoatMenu";
 import { CoinDisplay } from "../ui/CoinDisplay";
 import { QuestTracker } from "../ui/QuestTracker";
 import { WildflowerBuyPanel } from "../ui/WildflowerBuyPanel";
+import { OreVendorPanel } from "../ui/OreVendorPanel";
 import { CoralRodOfferPanel } from "../ui/CoralRodOfferPanel";
 import { BargainPanel, BargainSession } from "../ui/BargainPanel";
 import { AugmentUpgradePanel } from "../ui/AugmentUpgradePanel";
@@ -147,6 +149,7 @@ export class UIScene extends Phaser.Scene {
   private minigame!: CatchMinigame;
   private boatMenu!: BoatMenu;
   private wildflowerBuy!: WildflowerBuyPanel;
+  private oreVendor!: OreVendorPanel;
   private coralRodOffer!: CoralRodOfferPanel;
   private bargainPanel!: BargainPanel;
   private forgePanel!: ForgeCraftPanel;
@@ -253,6 +256,16 @@ export class UIScene extends Phaser.Scene {
       this.inventoryPanel.setOpen(false);
       this.skinCrateMenu.open();
     });
+    this.inventoryPanel.setOnOpenOreCluster(() => {
+      const result = this.inventory.openOreCluster();
+      if (!result.ok || !result.oreId) {
+        this.showToast(result.message, "#ff8866");
+        return;
+      }
+      this.showOreFound(result.oreId);
+      this.onCoinsChanged();
+      this.persistSave();
+    });
     this.equipmentBag = new EquipmentBag(this, this.inventory);
     this.equipmentBag.setOnChanged((message) => {
       this.hotbar.refresh();
@@ -308,6 +321,25 @@ export class UIScene extends Phaser.Scene {
       this.tryBuyJungleRod();
       this.hotbar.refresh();
     });
+    this.oreVendor = new OreVendorPanel(this);
+    this.oreVendor.setCallbacks(
+      (amount) => {
+        const result = this.inventory.buyOreClusters(amount, Date.now());
+        this.showToast(result.message, result.ok ? "#7CFC00" : "#ffaa66");
+        this.onCoinsChanged();
+        this.persistSave();
+        this.oreVendor.syncState(
+          this.inventory.getOreVendorStock(Date.now()),
+          this.inventory.getOreVendorRestockMs(Date.now())
+        );
+        if (result.ok && this.inventory.getOreVendorStock(Date.now()) <= 0) {
+          // keep panel open to show sold-out timer
+        }
+      },
+      () => {
+        /* closed */
+      }
+    );
     this.coralRodOffer = new CoralRodOfferPanel(this);
     this.coralRodOffer.setCallbacks(
       (amount) => {
@@ -527,6 +559,10 @@ export class UIScene extends Phaser.Scene {
         this.closeCoralRodOffer();
         return;
       }
+      if (this.oreVendor.visible) {
+        this.closeOreVendor();
+        return;
+      }
       if (this.wildflowerBuy.visible) {
         this.closeWildflowerBuy();
         return;
@@ -554,6 +590,10 @@ export class UIScene extends Phaser.Scene {
       }
       if (this.coralRodOffer.visible) {
         this.coralRodOffer.handleKey(event);
+        return;
+      }
+      if (this.oreVendor.visible) {
+        this.oreVendor.handleKey(event);
       }
     });
 
@@ -679,6 +719,7 @@ export class UIScene extends Phaser.Scene {
           pauseChance: def.minigamePauseChance,
           pauseDuration: def.minigamePauseDuration,
           facesLeft: def.facesLeft ?? false,
+          rotateDeg: def.minigameRotateDeg ?? 0,
           tint: worldMutDef?.tint ?? null,
           tintFill: worldMutDef?.tintFill ?? false,
           glowColor: worldMutDef?.glowColor ?? null,
@@ -904,6 +945,7 @@ export class UIScene extends Phaser.Scene {
       this.minigame.isActive() ||
       this.boatMenu.visible ||
       this.wildflowerBuy.visible ||
+      this.oreVendor.visible ||
       this.coralRodOffer.visible ||
       this.bargainPanel.visible ||
       this.codeGuyPanel.isOpen() ||
@@ -970,6 +1012,32 @@ export class UIScene extends Phaser.Scene {
     this.wildflowerBuy.close();
   }
 
+  openOreVendor(): void {
+    const now = Date.now();
+    this.oreVendor.open(
+      this.inventory.getOreVendorStock(now),
+      this.inventory.getOreVendorRestockMs(now)
+    );
+  }
+
+  closeOreVendor(): void {
+    this.oreVendor.setOpen(false);
+  }
+
+  isOreVendorOpen(): boolean {
+    return this.oreVendor.visible;
+  }
+
+  /** Keep sold-out timer live while the panel is open. */
+  syncOreVendorPanel(): void {
+    if (!this.oreVendor.visible) return;
+    const now = Date.now();
+    this.oreVendor.syncState(
+      this.inventory.getOreVendorStock(now),
+      this.inventory.getOreVendorRestockMs(now)
+    );
+  }
+
   openCoralRodOffer(): void {
     this.coralRodOffer.setOpen(true);
   }
@@ -1017,6 +1085,75 @@ export class UIScene extends Phaser.Scene {
       onComplete: () => {
         this.toast?.destroy();
         this.toast = undefined;
+      },
+    });
+  }
+
+  /** Top-of-screen ore reveal — icon + rarity-colored name. */
+  showOreFound(itemId: ItemId): void {
+    const def = ITEMS[itemId];
+    if (!def) return;
+    const rarity = def.rarity ?? "common";
+    const color = RARITY_COLOR[rarity];
+    const label =
+      rarity.charAt(0).toUpperCase() + rarity.slice(1);
+
+    this.toast?.destroy();
+    this.tweens.killTweensOf(this.toast ?? []);
+
+    const cx = this.scale.width / 2;
+    const cy = 78;
+    const root = this.add.container(cx, cy).setScrollFactor(0).setDepth(160);
+
+    const bg = this.add
+      .rectangle(0, 0, 280, 64, 0x111118, 0.88)
+      .setStrokeStyle(2, Phaser.Display.Color.HexStringToColor(color).color);
+
+    const icon = this.add.image(-96, 0, def.textureKey);
+    const dw = def.displayWidth ?? 40;
+    const dh = def.displayHeight ?? 40;
+    const fit = Math.min(44 / dw, 44 / dh);
+    icon.setDisplaySize(Math.round(dw * fit), Math.round(dh * fit));
+
+    const name = this.add
+      .text(8, -8, def.name, {
+        fontFamily: "Arial",
+        fontSize: "22px",
+        color,
+        stroke: "#000000",
+        strokeThickness: 4,
+      })
+      .setOrigin(0, 0.5);
+
+    const sub = this.add
+      .text(8, 14, label.trim(), {
+        fontFamily: "Arial",
+        fontSize: "13px",
+        color: "#cccccc",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0, 0.5);
+
+    root.add([bg, icon, name, sub]);
+    root.setAlpha(0);
+    root.y = cy + 12;
+
+    this.tweens.add({
+      targets: root,
+      alpha: 1,
+      y: cy,
+      duration: 220,
+      ease: "Quad.easeOut",
+      onComplete: () => {
+        this.tweens.add({
+          targets: root,
+          alpha: 0,
+          y: cy - 18,
+          delay: 1600,
+          duration: 450,
+          onComplete: () => root.destroy(true),
+        });
       },
     });
   }

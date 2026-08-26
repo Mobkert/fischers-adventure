@@ -1,11 +1,29 @@
 import type { InventorySystem } from "../systems/InventorySystem";
 
 /**
- * Dev-only one-shot inventory grants and migration cleanup.
- * Production builds alias this module to DevGrants.stub.ts and never call it.
+ * Local-dev-only inventory cheats / one-shot migrations.
+ *
+ * Production (`vite build`) aliases this file to DevGrants.stub.ts — the
+ * real grant code never ships. Even in `npm run dev`, grants only run when
+ * you opt in (so recipe tweaks never dump free items into your save):
+ *
+ *   localStorage.setItem("fischers_dev_grants", "1")
+ *
+ * Then reload. Clear with localStorage.removeItem("fischers_dev_grants").
  */
+const DEV_GRANTS_OPT_IN = "fischers_dev_grants";
+
+function isLocalDevHost(): boolean {
+  if (typeof location === "undefined") return false;
+  const h = location.hostname;
+  return h === "localhost" || h === "127.0.0.1" || h === "[::1]";
+}
+
 export function applyDevInventoryBootstrap(inventory: InventorySystem): void {
+  // Belt-and-suspenders: stubbed in prod, skipped unless Vite DEV + localhost + opt-in
   if (!import.meta.env.DEV) return;
+  if (!isLocalDevHost()) return;
+  if (localStorage.getItem(DEV_GRANTS_OPT_IN) !== "1") return;
 
   const forgeClearKey = "fischers_cleared_forge_dev_grant_v1";
   if (!localStorage.getItem(forgeClearKey)) {
@@ -63,13 +81,14 @@ export function applyDevInventoryBootstrap(inventory: InventorySystem): void {
     localStorage.setItem(portalCraftKey, "1");
   }
 
-  const forgeCraftKey = "fischers_granted_forge_craft_v1";
+  const forgeCraftKey = "fischers_granted_forge_craft_v2";
   if (!localStorage.getItem(forgeCraftKey)) {
     inventory.coins = Math.max(inventory.coins, 210000);
     inventory.addItem("serpent_eel", 5, "blasted");
     inventory.addItem("driftwood", 5, "ash");
     inventory.addItem("alligator", 3, "glowing");
-    inventory.addItem("angelfish", 2, "starlight");
+    inventory.addItem("taaffite", 1);
+    inventory.addItem("vivianite", 1);
     localStorage.setItem(forgeCraftKey, "1");
   }
 

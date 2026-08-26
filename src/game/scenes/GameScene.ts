@@ -49,7 +49,14 @@ import { AmbientMusic, musicZoneForX, areaNameForZone, MusicZone } from "../audi
 import { BargainerNpc } from "../entities/BargainerNpc";
 import { CurioTraderStock, formatCurioRestock } from "../systems/CurioTraderStock";
 import { loadActiveSave, saveActiveSave } from "../save/SaveBank";
-import { ItemId, ITEMS, FishHabitat, rollAshencastOceanSpecies } from "../data/items";
+import {
+  ItemId,
+  ITEMS,
+  FishHabitat,
+  rollAshencastOceanSpecies,
+  rollHotspringSpecies,
+  ORE_CLUSTER_VENDOR_PRICE,
+} from "../data/items";
 import { ROD_SKINS } from "../data/rodSkins";
 import { BoatId } from "../data/boats";
 import { CaveWhaleAbundance } from "../systems/CaveWhaleAbundance";
@@ -118,6 +125,7 @@ export class GameScene extends Phaser.Scene {
   curioTrader?: BargainerNpc;
   ashenMerchant?: FishMerchant;
   ashenForgeNpc?: TalkNpc;
+  orePeddler?: TalkNpc;
   private ashenBuildAnvil?: () => void;
   private anvilOceanFish?: Fish;
   private zoneLoader!: WorldZoneLoader;
@@ -268,6 +276,7 @@ export class GameScene extends Phaser.Scene {
     this.frostHermit = undefined;
     this.ashenMerchant = undefined;
     this.ashenForgeNpc = undefined;
+    this.orePeddler = undefined;
     this.fishCollector = undefined;
     this.curioTrader = undefined;
     this.jungleMerchant = undefined;
@@ -291,8 +300,11 @@ export class GameScene extends Phaser.Scene {
 
     const save = loadActiveSave();
     this.inventory = new InventorySystem(save);
-    if (import.meta.env.DEV) {
-      applyDevInventoryBootstrap(this.inventory);
+    if (import.meta.env.DEV && typeof location !== "undefined") {
+      const h = location.hostname;
+      if (h === "localhost" || h === "127.0.0.1" || h === "[::1]") {
+        applyDevInventoryBootstrap(this.inventory);
+      }
     }
 
     this.tutorialDone = save.tutorialDone;
@@ -354,7 +366,8 @@ export class GameScene extends Phaser.Scene {
         this.inventory.ashencastQuestStage === 1 &&
         !this.inventory.hasItem("anvil_piece_curio")
     );
-    this.curioStock.start(this.time.now);
+    this.curioStock.applyPersisted(this.inventory.curioStockSave, Date.now());
+    this.syncCurioStockToInventory();
 
     this.bobber = new Bobber(this);
 
@@ -523,7 +536,7 @@ export class GameScene extends Phaser.Scene {
         this.completeBargainDeal(session, price),
       declineBargainers: () => this.declineBargainers(),
       getCurioStock: () => this.curioStock.getEntries(),
-      getCurioRestockMs: () => this.curioStock.msUntilRestock(this.time.now),
+      getCurioRestockMs: () => this.curioStock.msUntilRestock(Date.now()),
       tryEnterShop: () => this.tryEnterShop(),
       tryEnterBobberShop: () => this.tryEnterBobberShop(),
       tryEnterBackpackShop: () => this.tryEnterBackpackShop(),
@@ -898,6 +911,14 @@ export class GameScene extends Phaser.Scene {
         ))
     ) {
       return this.handleAshencastForgeTalk();
+    }
+
+    if (
+      this.orePeddler &&
+      (this.orePeddler.isNear(this.player.sprite.x, this.player.sprite.y) ||
+        ui.isOreVendorOpen?.())
+    ) {
+      return this.handleOrePeddlerTalk();
     }
 
     if (
@@ -1471,16 +1492,17 @@ export class GameScene extends Phaser.Scene {
         "Find the anvil pieces and bring them back.";
       ui.showToast("Quest started: Find the anvil pieces", "#ffaa88");
       this.refreshAnvilOceanFloater();
-      this.curioStock?.forceRestock(this.time.now);
+      this.curioStock?.forceRestock(Date.now());
+      this.syncCurioStockToInventory();
     } else if (inv.ashencastQuestStage === 1) {
       if (inv.turnInAnvilPieces()) {
         text =
           "You've gathered every shard — the frame is whole.\n\n" +
-          "Now I need an Ashencast Trout from these waters.\n" +
+          "Now I need an Ashencast Trout from the hotsprings.\n" +
           "Bring me one and I'll finish the forge.";
         ui.showToast("Quest: Catch an Ashencast Trout", "#7a8cff");
         this.refreshAnvilOceanFloater();
-        this.refreshAshencastOceanFish();
+        this.refreshAshencastHotspringFish();
       } else {
         text =
           "Find the anvil pieces.\n" +
@@ -1500,7 +1522,7 @@ export class GameScene extends Phaser.Scene {
       } else {
         text =
           "I still need an Ashencast Trout.\n" +
-          "They haunt the ocean around this isle.";
+          "They haunt the Ashencast hotsprings.";
       }
     } else {
       text =
@@ -1512,6 +1534,20 @@ export class GameScene extends Phaser.Scene {
     this.ashenForgeNpc.speak(text);
     this.persistSave();
     ui.refreshQuestTracker?.();
+    return true;
+  }
+
+  private handleOrePeddlerTalk(): boolean {
+    if (!this.orePeddler) return false;
+    const ui = this.scene.get("UIScene") as UIScene;
+    if (ui.isOreVendorOpen()) {
+      ui.closeOreVendor();
+      return true;
+    }
+    if (!this.orePeddler.isNear(this.player.sprite.x, this.player.sprite.y)) {
+      return false;
+    }
+    ui.openOreVendor();
     return true;
   }
 
@@ -1728,6 +1764,7 @@ export class GameScene extends Phaser.Scene {
         );
         if (result.ok) {
           this.curioStock.remove(session.stockId);
+          this.syncCurioStockToInventory();
         }
         ui.showToast(result.message, result.ok ? "#7CFC00" : "#ffaa66");
         this.curioTrader?.clearBubble();
@@ -2794,33 +2831,52 @@ export class GameScene extends Phaser.Scene {
           )
         : this.inventory.getFishingStats().luck;
     const getExcludeSpecies = (self: Fish): ItemId[] => {
-      const otherCluster = this.fishList.some(
-        (f) => f !== self && f.speciesId === "mushroom_cluster"
-      );
-      return otherCluster ? ["mushroom_cluster"] : [];
+      const exclude: ItemId[] = [];
+      if (
+        this.fishList.some(
+          (f) => f !== self && f.speciesId === "mushroom_cluster"
+        )
+      ) {
+        exclude.push("mushroom_cluster");
+      }
+      if (
+        this.fishList.some((f) => f !== self && f.speciesId === "ore_cluster")
+      ) {
+        exclude.push("ore_cluster");
+      }
+      return exclude;
     };
     const getIsRainy = () => this.weather?.isRainy() ?? false;
     const getIsSunny = () => this.weather?.weather === "sunny";
+    const narrow = habitat === "pond" || habitat === "hotspring";
     for (let i = 0; i < count; i++) {
-      const pad = habitat === "pond" ? 30 : 60;
+      const pad = narrow ? 30 : 60;
       const x = Phaser.Math.Between(left + pad, right - pad);
       const y = this.waterSurfaceY + Phaser.Math.Between(28, 70);
-      const rollSpecies = ashencastWaters && habitat === "ocean"
-        ? () =>
-            rollAshencastOceanSpecies(
-              getLuck(),
-              this.inventory.bestiaryFound.includes("ashencast_trout"),
-              getExcludeSpecies({} as Fish),
-              this.inventory.ashencastQuestStage >= 2,
-              this.inventory.ashencastQuestStage === 2
-            )
-        : undefined;
+      const rollSpecies =
+        habitat === "hotspring"
+          ? () =>
+              rollHotspringSpecies(
+                getLuck(),
+                this.inventory.bestiaryFound.includes("ashencast_trout"),
+                getExcludeSpecies({} as Fish),
+                this.inventory.ashencastQuestStage >= 2,
+                this.inventory.ashencastQuestStage === 2
+              )
+          : ashencastWaters && habitat === "ocean"
+            ? () =>
+                rollAshencastOceanSpecies(
+                  getLuck(),
+                  this.inventory.bestiaryFound.includes("ashencast_trout"),
+                  getExcludeSpecies({} as Fish)
+                )
+            : undefined;
       const fish = new Fish(
         this,
         x,
         y,
-        left + (habitat === "pond" ? 20 : 50),
-        right - (habitat === "pond" ? 20 : 50),
+        left + (narrow ? 20 : 50),
+        right - (narrow ? 20 : 50),
         this.waterSurfaceY,
         getLuck,
         habitat,
@@ -2965,12 +3021,34 @@ export class GameScene extends Phaser.Scene {
       ""
     );
     this.ashenForgeNpc.sprite.setTint(0xffaa88);
+    // Ore peddler — between the two hotspring bridges
+    const peddlerX =
+      (this.ashenSpringARight + this.ashenSpringBLeft) / 2;
+    this.orePeddler = new TalkNpc(
+      this,
+      peddlerX,
+      this.groundY,
+      "Ore Peddler",
+      ""
+    );
+    this.orePeddler.sprite.setTint(0xd4a070);
     this.spawnFishInZone(this.westWaterLeft, this.ashenLeft, 8, "ocean", true);
     this.spawnCollectorsAshencastOceanFish();
-    // Hotsprings stay fishable water, but no swamp pond fish spawn here.
+    this.spawnFishInZone(
+      this.ashenSpringALeft,
+      this.ashenSpringARight,
+      4,
+      "hotspring"
+    );
+    this.spawnFishInZone(
+      this.ashenSpringBLeft,
+      this.ashenSpringBRight,
+      4,
+      "hotspring"
+    );
     this.refreshAnvilOceanFloater();
     if (this.inventory.ashencastQuestStage >= 2) {
-      this.refreshAshencastOceanFish();
+      this.refreshAshencastHotspringFish();
     }
   }
 
@@ -3097,16 +3175,10 @@ export class GameScene extends Phaser.Scene {
     this.addIslandBedrock(left, right, false, gy);
   }
 
-  /** Re-roll Ashencast-adjacent ocean fish so trout can appear after reaching stage 2. */
-  private refreshAshencastOceanFish(): void {
+  /** Re-roll hotspring fish so Ashencast Trout can appear after reaching stage 2. */
+  private refreshAshencastHotspringFish(): void {
     for (const fish of this.fishList) {
-      if (fish === this.anvilOceanFish) continue;
-      if (fish.habitat !== "ocean") continue;
-      const x = fish.sprite.x;
-      const near =
-        (x >= this.westWaterLeft && x <= this.ashenLeft) ||
-        (x >= this.ashenRight && x <= this.collectorLeft);
-      if (!near) continue;
+      if (fish.habitat !== "hotspring") continue;
       if (fish.state !== "idle") continue;
       fish.resetIdle();
     }
@@ -3276,7 +3348,9 @@ export class GameScene extends Phaser.Scene {
     this.whaleAbundance?.update(delta);
     this.coralRodSpawn?.update(delta);
     this.updateVaultGemFx(delta);
-    this.curioStock?.update(this.time.now);
+    if (this.curioStock?.update(Date.now())) {
+      this.syncCurioStockToInventory();
+    }
     this.syncPlayerCarriedRod();
     this.player.update();
     // Rod VFX after player move/anim so shaft tip tracks the current frame
@@ -3378,6 +3452,21 @@ export class GameScene extends Phaser.Scene {
           : "F — Talk to Forge Keeper"
       );
     } else if (
+      this.orePeddler?.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      const now = Date.now();
+      const stock = this.inventory.getOreVendorStock(now);
+      if (stock <= 0) {
+        const wait = formatCurioRestock(
+          this.inventory.getOreVendorRestockMs(now)
+        );
+        ui.setPrompt(`F — Ore Peddler · Restock ${wait}`);
+      } else {
+        ui.setPrompt(
+          `F — Buy Ore Clusters ($${ORE_CLUSTER_VENDOR_PRICE} · ${stock}/20)`
+        );
+      }
+    } else if (
       FISH_QUEST_ISLAND_IDS.some((id) =>
         this.fishQuestNpcs[id]?.isNear(
           this.player.sprite.x,
@@ -3394,7 +3483,7 @@ export class GameScene extends Phaser.Scene {
       this.curioTrader?.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
       const restock = formatCurioRestock(
-        this.curioStock.msUntilRestock(this.time.now)
+        this.curioStock.msUntilRestock(Date.now())
       );
       ui.setPrompt(`F — Bargain with Curio Trader · Restock ${restock}`);
     } else {
@@ -3450,6 +3539,13 @@ export class GameScene extends Phaser.Scene {
     const uiScene = this.scene.get("UIScene") as UIScene;
     if (uiScene.isWildflowerBuyOpen() && !this.isNearWildflowerRod()) {
       uiScene.closeWildflowerBuy();
+    }
+    if (uiScene.isOreVendorOpen()) {
+      if (!this.orePeddler?.isNear(this.player.sprite.x, this.player.sprite.y)) {
+        uiScene.closeOreVendor();
+      } else {
+        uiScene.syncOreVendorPanel();
+      }
     }
     if (uiScene.isCoralRodOfferOpen() && !this.isNearCoralRodOnBoat()) {
       uiScene.closeCoralRodOffer();
@@ -3912,6 +4008,7 @@ export class GameScene extends Phaser.Scene {
 
   persistSave(): void {
     if (!this.inventory || !this.player) return;
+    this.syncCurioStockToInventory();
     // Don't save the player stuck inside the mountain
     const saveX = this.inFrostpeakCave
       ? this.frostCaveX
@@ -3928,6 +4025,12 @@ export class GameScene extends Phaser.Scene {
         weatherId: this.weather?.weather ?? "clear",
       })
     );
+  }
+
+  /** Keep curio stall + wall-clock restock in the save buffer. */
+  private syncCurioStockToInventory(): void {
+    if (!this.curioStock || !this.inventory) return;
+    this.inventory.curioStockSave = this.curioStock.exportPersisted();
   }
 
   quitToMenu(): void {

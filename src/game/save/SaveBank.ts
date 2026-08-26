@@ -96,6 +96,12 @@ export interface SaveData {
   activeFishQuest: import("../systems/FishQuest").ActiveFishQuest | null;
   /** Ashencast forge anvil quest: 0 not started … 3 anvil fixed. */
   ashencastQuestStage: import("../systems/AshencastQuest").AshencastQuestStage;
+  /** Ore peddler clusters left in current stock (0–20). */
+  oreVendorStock: number;
+  /** Wall-clock ms when ore peddler restocks; 0 if fully stocked. */
+  oreVendorRestockAt: number;
+  /** Curio Trader stall — wall-clock restock + current listings. */
+  curioStockSave: import("../systems/CurioTraderStock").CurioStockSave | null;
   /** One-time promo codes redeemed from Code Guy. */
   redeemedPromoCodes: import("../systems/PromoCodes").PromoCodeId[];
   /** Recoil Rod mastery — fish caught while Recoil is equipped (archived feature). */
@@ -218,10 +224,30 @@ export function defaultSave(): SaveData {
     nautilusQuestDone: false,
     activeFishQuest: null,
     ashencastQuestStage: 0,
+    oreVendorStock: 20,
+    oreVendorRestockAt: 0,
+    curioStockSave: null,
     redeemedPromoCodes: [],
     recoilMasteryCatches: 0,
     recoilMasteryAshSold: 0,
     updatedAt: Date.now(),
+  };
+}
+
+function normalizeCurioStockSave(
+  raw: unknown
+): import("../systems/CurioTraderStock").CurioStockSave | null {
+  if (!raw || typeof raw !== "object") return null;
+  const s = raw as {
+    nextRestockAt?: unknown;
+    entries?: unknown;
+  };
+  const nextRestockAt = Math.max(0, Math.floor(Number(s.nextRestockAt) || 0));
+  if (!(nextRestockAt > 0) || !Array.isArray(s.entries)) return null;
+  // Entries are re-validated by CurioTraderStock.applyPersisted
+  return {
+    nextRestockAt,
+    entries: s.entries as import("../systems/CurioTraderStock").CurioStockEntry[],
   };
 }
 
@@ -300,6 +326,7 @@ function normalizePromoCodes(raw: unknown): PromoCodeId[] {
     "free_fish_gift_3",
     "sorry_for_bugs",
     "free_skin_crates",
+    "ore_area_awesome",
   ];
   if (!Array.isArray(raw)) return [];
   return raw.filter(
@@ -480,6 +507,12 @@ export function cloneSave(raw: unknown): SaveData {
     nautilusQuestDone: Boolean(s.nautilusQuestDone),
     activeFishQuest: normalizeActiveFishQuest(s.activeFishQuest),
     ashencastQuestStage: normalizeAshencastQuestStage(s.ashencastQuestStage),
+    oreVendorStock: Math.max(
+      0,
+      Math.min(20, Math.floor(Number(s.oreVendorStock ?? 20)))
+    ),
+    oreVendorRestockAt: Math.max(0, Math.floor(Number(s.oreVendorRestockAt) || 0)),
+    curioStockSave: normalizeCurioStockSave(s.curioStockSave),
     redeemedPromoCodes: normalizePromoCodes(s.redeemedPromoCodes),
     recoilMasteryCatches: Math.max(
       0,
