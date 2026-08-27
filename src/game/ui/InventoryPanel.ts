@@ -13,6 +13,7 @@ import {
   isMerchantSellable,
 } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
+import { skinCrateKindForItem, SkinCrateKind } from "../data/rodSkins";
 
 const RARITY_NAME: Record<string, string> = {
   common: "Common",
@@ -44,7 +45,7 @@ export class InventoryPanel {
   private tooltip: Phaser.GameObjects.Text;
   private inventory: InventorySystem;
   private onChanged?: () => void;
-  private onOpenSkinCrate?: () => void;
+  private onOpenSkinCrate?: (kind: SkinCrateKind) => void;
   private onOpenOreCluster?: () => void;
   visible = false;
   private panelH = 560;
@@ -211,7 +212,7 @@ export class InventoryPanel {
     this.onChanged = cb;
   }
 
-  setOnOpenSkinCrate(cb: () => void): void {
+  setOnOpenSkinCrate(cb: (kind: SkinCrateKind) => void): void {
     this.onOpenSkinCrate = cb;
   }
 
@@ -221,8 +222,9 @@ export class InventoryPanel {
 
   private tryOpenCrate(getSlot: () => InventorySlot): void {
     const slot = getSlot();
-    if (slot.itemId !== "skin_crate" || slot.count <= 0) return;
-    this.onOpenSkinCrate?.();
+    const kind = slot.itemId ? skinCrateKindForItem(slot.itemId) : null;
+    if (!kind || slot.count <= 0) return;
+    this.onOpenSkinCrate?.(kind);
   }
 
   private tryOpenOreCluster(getSlot: () => InventorySlot): void {
@@ -233,7 +235,7 @@ export class InventoryPanel {
 
   private tryLeftClickSlot(getSlot: () => InventorySlot): void {
     const slot = getSlot();
-    if (slot.itemId === "skin_crate") {
+    if (slot.itemId === "skin_crate" || slot.itemId === "frostpeak_crate") {
       this.tryOpenCrate(getSlot);
       return;
     }
@@ -311,7 +313,7 @@ export class InventoryPanel {
       if (slot.itemId === "ore_cluster") {
         lines.push("Left-click to open");
       }
-    } else if (slot.itemId === "skin_crate") {
+    } else if (slot.itemId === "skin_crate" || slot.itemId === "frostpeak_crate") {
       lines.push(def.description);
       lines.push("Left-click to open");
     } else if (slot.itemId === "ore_cluster") {

@@ -1,9 +1,11 @@
 import Phaser from "phaser";
 import {
-  CRATE_SKIN_IDS,
   ROD_SKINS,
+  SkinCrateKind,
+  crateSkinIds,
+  crateItemId,
+  crateDuplicateRefund,
   skinCrateOddsPercent,
-  SKIN_CRATE_DUPLICATE_REFUND,
 } from "../data/rodSkins";
 import { ITEMS } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
@@ -14,17 +16,23 @@ import { InventorySystem } from "../systems/InventorySystem";
 export class SkinCrateMenu {
   private root: Phaser.GameObjects.Container;
   private dim!: Phaser.GameObjects.Rectangle;
+  private title!: Phaser.GameObjects.Text;
+  private subtitle!: Phaser.GameObjects.Text;
   private countText!: Phaser.GameObjects.Text;
+  private oddsLayer!: Phaser.GameObjects.Container;
   private open1Btn!: Phaser.GameObjects.Rectangle;
   private open1Label!: Phaser.GameObjects.Text;
   private open3Btn!: Phaser.GameObjects.Rectangle;
   private open3Label!: Phaser.GameObjects.Text;
   private inventory: InventorySystem;
+  private scene: Phaser.Scene;
+  private kind: SkinCrateKind = "collectors";
   visible = false;
-  private onOpen?: (count: 1 | 3) => void;
+  private onOpen?: (count: 1 | 3, kind: SkinCrateKind) => void;
   private onClose?: () => void;
 
   constructor(scene: Phaser.Scene, inventory: InventorySystem) {
+    this.scene = scene;
     this.inventory = inventory;
     const w = scene.scale.width;
     const h = scene.scale.height;
@@ -40,7 +48,7 @@ export class SkinCrateMenu {
       .rectangle(w / 2, h / 2, 720, 420, 0x16121c, 0.98)
       .setStrokeStyle(3, 0xc4a86a);
 
-    const title = scene.add
+    this.title = scene.add
       .text(w / 2, h / 2 - 178, "Skin Crate", {
         fontFamily: "Georgia, serif",
         fontSize: "28px",
@@ -48,17 +56,12 @@ export class SkinCrateMenu {
       })
       .setOrigin(0.5);
 
-    const subtitle = scene.add
-      .text(
-        w / 2,
-        h / 2 - 148,
-        `Pick a finish · Duplicates refund $${SKIN_CRATE_DUPLICATE_REFUND.toLocaleString()}`,
-        {
-          fontFamily: "Arial",
-          fontSize: "13px",
-          color: "#a89078",
-        }
-      )
+    this.subtitle = scene.add
+      .text(w / 2, h / 2 - 148, "", {
+        fontFamily: "Arial",
+        fontSize: "13px",
+        color: "#a89078",
+      })
       .setOrigin(0.5);
 
     this.countText = scene.add
@@ -69,50 +72,7 @@ export class SkinCrateMenu {
       })
       .setOrigin(0.5);
 
-    const oddsLayer = scene.add.container(w / 2, h / 2 - 20);
-    const ids = CRATE_SKIN_IDS;
-    const gap = 108;
-    const startX = -((ids.length - 1) * gap) / 2;
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i]!;
-      const def = ROD_SKINS[id];
-      const x = startX + i * gap;
-      const card = scene.add.container(x, 0);
-      const bg = scene.add
-        .rectangle(0, 0, 96, 150, 0x2a2430, 1)
-        .setStrokeStyle(2, rarityColor(def.crateWeight));
-      const icon = scene.add
-        .image(0, -28, def.textureKey)
-        .setDisplaySize(
-          id === "pufferfirm" ? 72 : 48,
-          id === "pufferfirm" ? 28 : 48
-        );
-      const name = scene.add
-        .text(0, 28, def.label, {
-          fontFamily: "Arial",
-          fontSize: "11px",
-          color: "#e8dcc8",
-          align: "center",
-          wordWrap: { width: 88 },
-        })
-        .setOrigin(0.5);
-      const rod = scene.add
-        .text(0, 48, ITEMS[def.rodId]?.name?.replace(" Rod", "") ?? "", {
-          fontFamily: "Arial",
-          fontSize: "10px",
-          color: "#8a8070",
-        })
-        .setOrigin(0.5);
-      const pct = scene.add
-        .text(0, 66, `${skinCrateOddsPercent(id)}%`, {
-          fontFamily: "Arial Black, Arial",
-          fontSize: "16px",
-          color: "#ffe066",
-        })
-        .setOrigin(0.5);
-      card.add([bg, icon, name, rod, pct]);
-      oddsLayer.add(card);
-    }
+    this.oddsLayer = scene.add.container(w / 2, h / 2 - 20);
 
     this.open1Btn = scene.add
       .rectangle(w / 2 - 90, h / 2 + 150, 150, 44, 0x3a4a6b)
@@ -149,10 +109,10 @@ export class SkinCrateMenu {
     this.root.add([
       this.dim,
       panel,
-      title,
-      subtitle,
+      this.title,
+      this.subtitle,
       this.countText,
-      oddsLayer,
+      this.oddsLayer,
       this.open1Btn,
       this.open1Label,
       this.open3Btn,
@@ -167,7 +127,7 @@ export class SkinCrateMenu {
     this.open1Btn.on("pointerdown", () => this.requestOpen(1));
 
     this.open3Btn.on("pointerover", () => {
-      if (this.inventory.countItem("skin_crate") >= 3) {
+      if (this.crateCount() >= 3) {
         this.open3Btn.setFillStyle(0x5a4a78);
       }
     });
@@ -175,7 +135,7 @@ export class SkinCrateMenu {
     this.open3Btn.on("pointerdown", () => this.requestOpen(3));
   }
 
-  setOnOpen(cb: (count: 1 | 3) => void): void {
+  setOnOpen(cb: (count: 1 | 3, kind: SkinCrateKind) => void): void {
     this.onOpen = cb;
   }
 
@@ -183,9 +143,11 @@ export class SkinCrateMenu {
     this.onClose = cb;
   }
 
-  open(): void {
+  open(kind: SkinCrateKind = "collectors"): void {
+    this.kind = kind;
     this.visible = true;
     this.root.setVisible(true);
+    this.rebuildOdds();
     this.refresh();
   }
 
@@ -196,16 +158,77 @@ export class SkinCrateMenu {
     this.onClose?.();
   }
 
+  private crateCount(): number {
+    return this.inventory.countItem(crateItemId(this.kind));
+  }
+
+  private rebuildOdds(): void {
+    for (const child of [...this.oddsLayer.list]) {
+      child.destroy(true);
+    }
+    const ids = crateSkinIds(this.kind);
+    const gap = 108;
+    const startX = -((ids.length - 1) * gap) / 2;
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i]!;
+      const def = ROD_SKINS[id];
+      const x = startX + i * gap;
+      const card = this.scene.add.container(x, 0);
+      const bg = this.scene.add
+        .rectangle(0, 0, 96, 150, 0x2a2430, 1)
+        .setStrokeStyle(2, rarityColor(def.crateWeight));
+      const icon = this.scene.add
+        .image(0, -28, def.textureKey)
+        .setDisplaySize(
+          id === "pufferfirm" ? 72 : 48,
+          id === "pufferfirm" ? 28 : 48
+        );
+      const name = this.scene.add
+        .text(0, 28, def.label, {
+          fontFamily: "Arial",
+          fontSize: "11px",
+          color: "#e8dcc8",
+          align: "center",
+          wordWrap: { width: 88 },
+        })
+        .setOrigin(0.5);
+      const rod = this.scene.add
+        .text(0, 48, ITEMS[def.rodId]?.name?.replace(" Rod", "") ?? "", {
+          fontFamily: "Arial",
+          fontSize: "10px",
+          color: "#8a8070",
+        })
+        .setOrigin(0.5);
+      const pct = this.scene.add
+        .text(0, 66, `${skinCrateOddsPercent(id, this.kind)}%`, {
+          fontFamily: "Arial Black, Arial",
+          fontSize: "16px",
+          color: "#ffe066",
+        })
+        .setOrigin(0.5);
+      card.add([bg, icon, name, rod, pct]);
+      this.oddsLayer.add(card);
+    }
+  }
+
   refresh(): void {
-    const n = this.inventory.countItem("skin_crate");
+    const refund = crateDuplicateRefund(this.kind);
+    const frost = this.kind === "frostpeak";
+    this.title.setText(frost ? "Frostpeak Crate" : "Skin Crate");
+    this.subtitle.setText(
+      `Pick a finish · Duplicates refund $${refund.toLocaleString()}`
+    );
+    this.countText.setColor(frost ? "#a8d8ff" : "#c4b5fd");
+    const n = this.crateCount();
+    const label = frost ? "Frostpeak Crate" : "Skin Crate";
     this.countText.setText(
-      n === 1 ? "You have 1 Skin Crate" : `You have ${n} Skin Crates`
+      n === 1 ? `You have 1 ${label}` : `You have ${n} ${label}s`
     );
     this.refreshButtons();
   }
 
   private refreshButtons(): void {
-    const n = this.inventory.countItem("skin_crate");
+    const n = this.crateCount();
     const can1 = n >= 1;
     const can3 = n >= 3;
     this.open1Btn.setAlpha(can1 ? 1 : 0.4);
@@ -218,8 +241,8 @@ export class SkinCrateMenu {
   }
 
   private requestOpen(count: 1 | 3): void {
-    if (this.inventory.countItem("skin_crate") < count) return;
-    this.onOpen?.(count);
+    if (this.crateCount() < count) return;
+    this.onOpen?.(count, this.kind);
   }
 
   isBusy(): boolean {

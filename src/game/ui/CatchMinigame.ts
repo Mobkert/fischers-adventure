@@ -8,6 +8,7 @@ import {
   playForgeLaunchSfx,
 } from "../audio/ForgeRodSfx";
 import { playForgeWeaponHitFx } from "../fx/ForgeRodFx";
+import { playStarweaverWeaveFx, createStarweaverLockOn, StarweaverLockOn } from "../fx/StarweaverFx";
 
 export type CatchMinigameResultMeta = {
   guaranteeThunder?: boolean;
@@ -15,6 +16,8 @@ export type CatchMinigameResultMeta = {
   guaranteeConfetti?: boolean;
   /** How many Recoil shotgun kicks fired during this fight. */
   recoilKicks?: number;
+  /** Tranquil bubble popped during this fight (75% Tranquil mutation). */
+  bubbleCatch?: boolean;
 };
 
 type BirthdayBalloonKind = "blue" | "red" | "green";
@@ -39,6 +42,10 @@ export class CatchMinigame {
   private laserSpaceGfx?: Phaser.GameObjects.Graphics;
   private laserSparkGfx?: Phaser.GameObjects.Graphics;
   private laserSpacePhase = 0;
+  /** Frostpeak skin chrome (lotus / ice frames / VFX). */
+  private frostChromeGfx?: Phaser.GameObjects.Graphics;
+  private frostFxGfx?: Phaser.GameObjects.Graphics;
+  private frostChromePhase = 0;
   private laserSparkSpawnTimer = 0;
   private laserStars: Array<{
     x: number;
@@ -113,6 +120,8 @@ export class CatchMinigame {
   /** Tranquil Rod: bubble on the fish; at 50% progress it pops and fill speeds up. */
   private tranquilBubble = false;
   private bubbleActive = false;
+  /** True if the tranquil bubble popped this fight. */
+  private bubbleCatch = false;
   private tranquilRush = false;
   private readonly bubbleBurstProgress = 0.5;
   /** Fill rate after the bubble pops (~0.4s from 50% → 100% in the white zone). */
@@ -177,6 +186,15 @@ export class CatchMinigame {
   private forgeWeaponSprites: Phaser.GameObjects.Image[] = [];
   /** Forge Rod — at least one orange ember weapon in the volley guarantees Ashencast. */
   private forgeHadEmberWeapon = false;
+  /** Starweaver Rod: sacrifice progress after 3 fish moves to stun. */
+  private starweaverWeave = false;
+  private starweaverFishMoves = 0;
+  private starweaverCooldownMoves = 0;
+  /** Remaining stun lock-on time (separate from generic fishPauseTimer). */
+  private starweaverStunLeft = 0;
+  private starweaverLock: StarweaverLockOn | null = null;
+  /** True while bullets are in flight or stun lock is active — blocks move counting. */
+  private starweaverBusy = false;
   /** Birthday Rod: party balloons, zone tick, instant confetti catch. */
   private birthdayParty = false;
   private birthdayBalloons: BirthdayBalloon[] = [];
@@ -210,9 +228,17 @@ export class CatchMinigame {
   private readonly accel = 980;
   private readonly maxSpeed = 520;
   /** How hard it rebounds off the grey bar edges. */
-  private readonly bounceRestitution = 0.78;
+  private readonly bounceRestitution = 0.72;
   /** Soft damping so it doesn't feel endless. */
   private readonly drag = 1.6;
+  /**
+   * Wall bounce chain: impact speed picks 0–3 bounces; chain stays armed
+   * until those are spent and the bar leaves the wall (no endless ping-pong).
+   */
+  private leftBounceRemaining = 0;
+  private rightBounceRemaining = 0;
+  private leftBounceChain = false;
+  private rightBounceChain = false;
   private holdKey!: Phaser.Input.Keyboard.Key;
   private onResult?: (success: boolean, meta?: CatchMinigameResultMeta) => void;
   private onTranquilBubblePop?: () => void;
@@ -409,6 +435,8 @@ export class CatchMinigame {
       recoilBurstMastery?: boolean;
       /** Forge Rod sword/axe volley after fish moves. */
       forgeStrike?: boolean;
+      /** Starweaver Rod progress sacrifice stun. */
+      starweaverWeave?: boolean;
       /** Birthday Rod party abilities. */
       birthdayParty?: boolean;
       /** Active rod skin id (crate / gallery) for VFX overrides. */
@@ -435,6 +463,10 @@ export class CatchMinigame {
     this.progress = 0.2;
     this.whiteX = 0;
     this.whiteVel = 0;
+    this.leftBounceRemaining = 0;
+    this.rightBounceRemaining = 0;
+    this.leftBounceChain = false;
+    this.rightBounceChain = false;
     this.fishX = 0;
     this.fishVel = 0;
     this.pauseChance =
@@ -448,6 +480,7 @@ export class CatchMinigame {
     this.dualCatch = !!options?.second;
     this.tranquilBubble = !!options?.tranquilBubble;
     this.bubbleActive = this.tranquilBubble;
+    this.bubbleCatch = false;
     this.tranquilRush = false;
     this.zeusStrike = !!options?.zeusStrike;
     this.zeusRollTimer = 0;
@@ -476,6 +509,8 @@ export class CatchMinigame {
     this.recoilWarnRoot.setVisible(false).setAlpha(1).setScale(1);
     this.recoilWarnIcon.setAlpha(1).setScale(1);
     this.forgeStrike = !!options?.forgeStrike;
+    this.starweaverWeave = !!options?.starweaverWeave;
+    this.resetStarweaverState();
     this.forgeFishMoves = 0;
     this.forgeCooldownMoves = 0;
     this.forgePhase = "idle";
@@ -511,6 +546,7 @@ export class CatchMinigame {
     this.poisonVines = undefined;
     this.poisonVinePhase = 0;
     this.clearLaserSpaceUi();
+    this.clearFrostChromeUi();
     this.applyRodSkinVisuals();
     this.facesLeft2 = !!options?.second?.facesLeft;
     this.glowColor2 = options?.second?.glowColor ?? null;
@@ -664,6 +700,9 @@ export class CatchMinigame {
       if (this.rodSkinId === "laser") {
         this.updateLaserSpaceUi(dt);
       }
+      if (this.isFrostChromeSkin()) {
+        this.updateFrostChromeUi(dt);
+      }
       this.syncVisuals();
       return;
     }
@@ -675,6 +714,9 @@ export class CatchMinigame {
     if (this.rodSkinId === "laser") {
       this.updateLaserSpaceUi(dt);
     }
+    if (this.isFrostChromeSkin()) {
+      this.updateFrostChromeUi(dt);
+    }
 
     this.updateWhiteBarPhysics(dt, pointerDown || this.holdKey.isDown);
     this.updateFish(dt);
@@ -682,6 +724,7 @@ export class CatchMinigame {
     this.updateZeusStrike(dt);
     this.updateRecoilKick(dt);
     this.updateForgeStrike(dt);
+    this.updateStarweaverLock(dt);
     this.updateBirthdayParty(
       dt,
       pointerRightDown && !this.prevRightDown,
@@ -941,6 +984,111 @@ export class CatchMinigame {
     playForgeArmSfx(this.root.scene);
   }
 
+  /**
+   * Sacrifice 5–15% catch progress, fire 5 bullets, then stun once they all hit.
+   * 5% → 1s stun, 15% → 3s stun (linear).
+   */
+  private triggerStarweaverWeave(): void {
+    this.starweaverFishMoves = 0;
+    this.starweaverBusy = true;
+    this.starweaverCooldownMoves = 3;
+    const sacrifice = Phaser.Math.FloatBetween(0.05, 0.15);
+    const taken = Math.min(this.progress, sacrifice);
+    this.progress = Math.max(0, this.progress - taken);
+    const stunSec = taken * 20; // 0.05→1s, 0.15→3s
+
+    const fishScreen = () => ({
+      x: this.root.x + this.fishIcon.x,
+      y: this.root.y + this.fishIcon.y,
+    });
+
+    const fromX =
+      this.root.x -
+      this.barWidth / 2 +
+      this.barWidth * Math.max(0.05, this.progress + taken * 0.5);
+    const fromY = this.root.y + 34;
+    playStarweaverWeaveFx(this.root.scene, fromX, fromY, fishScreen, {
+      depth: 220,
+      theme: this.rodSkinId === "hyperboreal" ? "ice" : "default",
+      onAllHit: () => this.applyStarweaverStun(stunSec),
+    });
+  }
+
+  /** Apply stun + lock-on after the full volley connects. */
+  private applyStarweaverStun(stunSec: number): void {
+    if (!this.active || !this.starweaverBusy) return;
+    // Pause timer alone freezes movement — do NOT hold fishDecisionTimer for
+    // the full stun (it doesn't tick while busy, so the fish would stay still
+    // after the lock UI ends).
+    this.fishPauseTimer = stunSec;
+    this.fishTargetVel = 0;
+    this.fishVel = 0;
+    this.fishDecisionTimer = 0.05;
+
+    this.clearStarweaverLock();
+    this.starweaverStunLeft = stunSec;
+    this.starweaverBusy = true;
+    const lockAt = {
+      x: this.root.x + this.fishIcon.x,
+      y: this.root.y + this.fishIcon.y,
+    };
+    this.starweaverLock = createStarweaverLockOn(
+      this.root.scene,
+      lockAt.x,
+      lockAt.y,
+      {
+        depth: 225,
+        theme: this.rodSkinId === "hyperboreal" ? "ice" : "default",
+      }
+    );
+  }
+
+  private clearStarweaverLock(): void {
+    this.starweaverLock?.destroy();
+    this.starweaverLock = null;
+    this.starweaverStunLeft = 0;
+  }
+
+  /** End stun + lock together so the fish resumes immediately. */
+  private endStarweaverStun(): void {
+    this.clearStarweaverLock();
+    this.starweaverBusy = false;
+    // Clear any leftover pause so the fish isn't frozen after the lock fades
+    this.fishPauseTimer = 0;
+    this.fishDecisionTimer = Math.min(this.fishDecisionTimer, 0.08);
+  }
+
+  private resetStarweaverState(): void {
+    this.clearStarweaverLock();
+    this.starweaverBusy = false;
+    this.starweaverFishMoves = 0;
+    this.starweaverCooldownMoves = 0;
+  }
+
+  private updateStarweaverLock(dt: number): void {
+    if (!this.starweaverLock) {
+      // Still weaving (bullets in flight) — keep busy until stun starts
+      return;
+    }
+    if (this.starweaverStunLeft <= 0) {
+      this.endStarweaverStun();
+      return;
+    }
+    this.starweaverStunLeft -= dt;
+    // Keep pause timer matched to the lock so they end together
+    this.fishPauseTimer = Math.max(0, this.starweaverStunLeft);
+    this.fishTargetVel = 0;
+    this.fishVel = 0;
+    this.starweaverLock.update(
+      this.root.x + this.fishIcon.x,
+      this.root.y + this.fishIcon.y,
+      dt
+    );
+    if (this.starweaverStunLeft <= 0) {
+      this.endStarweaverStun();
+    }
+  }
+
   private spawnForgeWeapons(): void {
     this.clearForgeWeapons();
     const scene = this.root.scene;
@@ -962,7 +1110,14 @@ export class CatchMinigame {
 
     for (let i = 0; i < count; i++) {
       const kind = kinds[i]!;
-      const tex = kind === "sword" ? "forge_sword" : "forge_axe";
+      const iceForge = this.rodSkinId === "hyperthermic";
+      const tex = iceForge
+        ? kind === "sword"
+          ? "forge_icicle"
+          : "forge_ice_spike"
+        : kind === "sword"
+          ? "forge_sword"
+          : "forge_axe";
       const t = count === 1 ? 0.5 : i / (count - 1);
       const arcAng = Phaser.Math.Linear(angleStart, angleEnd, t);
       const wx = target.x + Math.cos(arcAng) * radius;
@@ -973,7 +1128,22 @@ export class CatchMinigame {
 
       const img = scene.add
         .image(wx, wy, tex)
-        .setDisplaySize(kind === "sword" ? 22 : 26, kind === "sword" ? 32 : 34)
+        .setDisplaySize(
+          iceForge
+            ? kind === "sword"
+              ? 28
+              : 32
+            : kind === "sword"
+              ? 22
+              : 26,
+          iceForge
+            ? kind === "sword"
+              ? 42
+              : 40
+            : kind === "sword"
+              ? 32
+              : 34
+        )
         .setDepth(155)
         .setScrollFactor(0)
         .setAngle(aimDeg + 90)
@@ -983,7 +1153,11 @@ export class CatchMinigame {
         !emberSwordChosen &&
         Math.random() < this.forgeEmberSwordChance
       ) {
-        img.setTint(0xff8833);
+        if (iceForge) {
+          img.setTint(0xa8e8ff);
+        } else {
+          img.setTint(0xff8833);
+        }
         img.setData("ember", true);
         emberSwordChosen = true;
         this.forgeHadEmberWeapon = true;
@@ -1519,6 +1693,7 @@ export class CatchMinigame {
   private applyRodSkinVisuals(): void {
     const scene = this.root.scene;
     // Reset chrome to defaults; themed skins override below
+    this.panel.setVisible(true);
     this.panel.setFillStyle(0x111118, 0.92).setStrokeStyle(2, 0xffffff);
     this.title
       .setText("Keep the fish in the white zone!")
@@ -1566,6 +1741,10 @@ export class CatchMinigame {
       this.zeusWarnIcon.setColor("#ffe066");
     }
 
+    if (this.isFrostChromeSkin()) {
+      this.setupFrostChromeUi();
+    }
+
     this.applyRodSkinThemeColors();
   }
 
@@ -1589,6 +1768,257 @@ export class CatchMinigame {
       this.progressFill.setFillStyle(0xec4899);
       this.hint.setColor("#c4b5fd");
     }
+    if (this.rodSkinId === "frozen_lotus" && !this.bubbleActive) {
+      this.panel.setVisible(false);
+      this.title.setText("Keep the fish in the lotus!").setColor("#f0f8ff");
+      this.greyBar.setFillStyle(0xd8e8f8);
+      this.greyBar.setStrokeStyle(2, 0xa0c0d8);
+      this.whiteBar.setFillStyle(0xffffff, 0.98);
+      this.whiteBar.setStrokeStyle(1, 0xe8f0ff);
+      this.progressBg.setFillStyle(0xc8dce8);
+      this.progressBg.setStrokeStyle(1, 0x90b0c8);
+      this.progressFill.setFillStyle(0x7ec8e8);
+      this.hint.setColor("#90b0c8");
+    }
+    if (this.rodSkinId === "halo_of_ice" && !this.bubbleActive) {
+      this.panel.setFillStyle(0xf0f8ff, 0.88).setStrokeStyle(2, 0x8ec8e8, 0.95);
+      this.title.setText("Keep the fish in the frost ring!").setColor("#3a6a88");
+      this.greyBar.setFillStyle(0xd0e8f8);
+      this.greyBar.setStrokeStyle(2, 0x7ab0d0);
+      this.whiteBar.setFillStyle(0xffffff, 0.98);
+      this.whiteBar.setStrokeStyle(1, 0xb0d8f0);
+      this.progressBg.setFillStyle(0xc0dcec);
+      this.progressBg.setStrokeStyle(1, 0x80b0d0);
+      this.progressFill.setFillStyle(0x6ab8e0);
+      this.hint.setColor("#5a90b0");
+    }
+    if (this.rodSkinId === "hyperboreal" && !this.bubbleActive) {
+      this.panel.setFillStyle(0x0c2030, 0.55).setStrokeStyle(2, 0xa8e0ff, 0.9);
+      this.title.setText("Keep the fish in the polar zone!").setColor("#d8f0ff");
+      this.greyBar.setFillStyle(0x2a4a62);
+      this.greyBar.setStrokeStyle(2, 0x8ec8e8);
+      this.whiteBar.setFillStyle(0xe8f8ff, 0.95);
+      this.whiteBar.setStrokeStyle(1, 0xffffff);
+      this.progressBg.setFillStyle(0x163040);
+      this.progressBg.setStrokeStyle(1, 0x7ec8e8);
+      this.progressFill.setFillStyle(0x9ad8f0);
+      this.hint.setColor("#a8d0e8");
+    }
+    if (this.rodSkinId === "hyperthermic" && !this.bubbleActive) {
+      this.panel.setFillStyle(0x081828, 0.4).setStrokeStyle(2, 0xc8f0ff, 0.95);
+      this.title
+        .setText("Keep the fish in the flash-freeze!")
+        .setColor("#e8f8ff");
+      this.greyBar.setFillStyle(0x1a3850);
+      this.greyBar.setStrokeStyle(2, 0xa8e0ff);
+      this.whiteBar.setFillStyle(0xf0fbff, 0.98);
+      this.whiteBar.setStrokeStyle(1, 0xffffff);
+      this.progressBg.setFillStyle(0x102838);
+      this.progressBg.setStrokeStyle(1, 0x90d0f0);
+      this.progressFill.setFillStyle(0xb8ecff);
+      this.hint.setColor("#c0e4f8");
+    }
+  }
+
+  private isFrostChromeSkin(): boolean {
+    return (
+      this.rodSkinId === "frozen_lotus" ||
+      this.rodSkinId === "halo_of_ice" ||
+      this.rodSkinId === "hyperboreal" ||
+      this.rodSkinId === "hyperthermic"
+    );
+  }
+
+  private clearFrostChromeUi(): void {
+    this.frostChromeGfx?.destroy();
+    this.frostChromeGfx = undefined;
+    this.frostFxGfx?.destroy();
+    this.frostFxGfx = undefined;
+    this.frostChromePhase = 0;
+  }
+
+  private setupFrostChromeUi(): void {
+    const scene = this.root.scene;
+    this.clearFrostChromeUi();
+    this.frostChromeGfx = scene.add.graphics();
+    this.frostFxGfx = scene.add
+      .graphics()
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.root.addAt(this.frostChromeGfx, 0);
+    const titleIdx = this.root.getIndex(this.title);
+    if (titleIdx >= 0) this.root.addAt(this.frostFxGfx, titleIdx + 1);
+    else this.root.add(this.frostFxGfx);
+    this.frostChromePhase = 0;
+    this.redrawFrostChrome();
+  }
+
+  private updateFrostChromeUi(dt: number): void {
+    this.frostChromePhase += dt;
+    this.redrawFrostChrome();
+  }
+
+  private redrawFrostChrome(): void {
+    const g = this.frostChromeGfx;
+    const fx = this.frostFxGfx;
+    if (!g || !fx) return;
+    g.clear();
+    fx.clear();
+    const t = this.frostChromePhase;
+    const skin = this.rodSkinId;
+
+    if (skin === "frozen_lotus") {
+      this.drawFrozenLotusPanel(g, fx, t);
+      return;
+    }
+    if (skin === "halo_of_ice") {
+      this.drawHaloOfIceChrome(g, fx, t);
+      return;
+    }
+    if (skin === "hyperboreal") {
+      this.drawHyperborealChrome(g, fx, t);
+      return;
+    }
+    if (skin === "hyperthermic") {
+      this.drawHyperthermicChrome(g, fx, t);
+    }
+  }
+
+  /** White lotus silhouette instead of a rectangular panel. */
+  private drawFrozenLotusPanel(
+    g: Phaser.GameObjects.Graphics,
+    fx: Phaser.GameObjects.Graphics,
+    t: number
+  ): void {
+    const petals = 8;
+    const rx = 290;
+    const ry = 78;
+    for (let i = 0; i < petals; i++) {
+      const a = (i / petals) * Math.PI * 2 + Math.sin(t * 0.6) * 0.04;
+      const px = Math.cos(a) * rx * 0.42;
+      const py = Math.sin(a) * ry * 0.55;
+      g.fillStyle(0xffffff, 0.92);
+      g.fillEllipse(px, py, 150, 72);
+      g.fillStyle(0xf0f8ff, 0.75);
+      g.fillEllipse(px * 0.85, py * 0.85, 110, 52);
+    }
+    g.fillStyle(0xffffff, 0.96);
+    g.fillEllipse(0, 0, 420, 118);
+    g.fillStyle(0xe8f4ff, 0.55);
+    g.fillEllipse(0, 4, 360, 88);
+    g.lineStyle(2.5, 0xc8e0f0, 0.85);
+    g.strokeEllipse(0, 0, 420, 118);
+
+    // Soft petal tips / frost sparkles
+    for (let i = 0; i < petals; i++) {
+      const a = (i / petals) * Math.PI * 2 + t * 0.15;
+      const px = Math.cos(a) * 235;
+      const py = Math.sin(a) * 62;
+      fx.fillStyle(0xffffff, 0.35 + Math.sin(t * 3 + i) * 0.2);
+      fx.fillCircle(px, py, 3 + (i % 3));
+    }
+  }
+
+  private drawHaloOfIceChrome(
+    g: Phaser.GameObjects.Graphics,
+    fx: Phaser.GameObjects.Graphics,
+    t: number
+  ): void {
+    // Soft icy border glow behind the white/light-blue panel
+    g.lineStyle(6, 0xb8e0f8, 0.35);
+    g.strokeRoundedRect(-286, -70, 572, 140, 18);
+    g.lineStyle(2, 0xffffff, 0.55);
+    g.strokeRoundedRect(-282, -66, 564, 132, 16);
+
+    // Swirling frost ring VFX near title / center top of chrome
+    const cx = 0;
+    const cy = -52;
+    for (let ring = 0; ring < 3; ring++) {
+      const r = 18 + ring * 9;
+      fx.lineStyle(1.6 - ring * 0.3, 0xa8d8f0, 0.45 + Math.sin(t * 4 + ring) * 0.2);
+      fx.beginPath();
+      fx.arc(cx, cy, r, t * (1.2 + ring * 0.4), t * (1.2 + ring * 0.4) + Math.PI * 1.4, false);
+      fx.strokePath();
+    }
+    fx.fillStyle(0xffffff, 0.55 + Math.sin(t * 5) * 0.25);
+    fx.fillCircle(cx, cy, 4);
+    for (let i = 0; i < 8; i++) {
+      const a = t * 2 + (i / 8) * Math.PI * 2;
+      fx.fillStyle(0xd0f0ff, 0.5);
+      fx.fillCircle(cx + Math.cos(a) * 28, cy + Math.sin(a) * 10, 1.6);
+    }
+  }
+
+  private drawHyperborealChrome(
+    g: Phaser.GameObjects.Graphics,
+    fx: Phaser.GameObjects.Graphics,
+    t: number
+  ): void {
+    g.fillStyle(0x102838, 0.55);
+    g.fillRoundedRect(-288, -72, 576, 144, 12);
+    g.lineStyle(2.5, 0xa8e0ff, 0.9);
+    g.strokeRoundedRect(-288, -72, 576, 144, 12);
+
+    // Hanging icicles along top edge
+    const top = -72;
+    for (let i = 0; i < 18; i++) {
+      const x = -270 + i * 31 + Math.sin(t * 1.2 + i) * 2;
+      const len = 10 + ((i * 7) % 14) + Math.sin(t * 2 + i * 0.5) * 2;
+      g.fillStyle(0xb8e4f8, 0.9);
+      g.fillTriangle(x - 4, top, x + 4, top, x, top + len);
+      g.fillStyle(0xffffff, 0.75);
+      g.fillTriangle(x - 1.5, top + 1, x + 1.2, top + 1, x, top + len * 0.7);
+    }
+
+    // Drift sparkles
+    for (let i = 0; i < 12; i++) {
+      const x = ((i * 97 + t * 28) % 560) - 280;
+      const y = -40 + Math.sin(t * 1.5 + i) * 28;
+      fx.fillStyle(0xffffff, 0.35 + (i % 3) * 0.15);
+      fx.fillCircle(x, y, 1.2 + (i % 2));
+    }
+  }
+
+  private drawHyperthermicChrome(
+    g: Phaser.GameObjects.Graphics,
+    fx: Phaser.GameObjects.Graphics,
+    t: number
+  ): void {
+    // Deep freeze glass panel with intense VFX
+    g.fillStyle(0x061420, 0.5);
+    g.fillRoundedRect(-292, -76, 584, 152, 14);
+    g.lineStyle(3, 0xc8f0ff, 0.95);
+    g.strokeRoundedRect(-292, -76, 584, 152, 14);
+    g.lineStyle(1.5, 0xffffff, 0.55);
+    g.strokeRoundedRect(-286, -70, 572, 140, 12);
+
+    // Jagged ice crown along top
+    const top = -76;
+    for (let i = 0; i < 22; i++) {
+      const x = -275 + i * 26;
+      const h = 14 + ((i * 11) % 18) + Math.sin(t * 3 + i) * 3;
+      fx.fillStyle(0xa8e0ff, 0.85);
+      fx.fillTriangle(x - 5, top, x + 5, top, x, top + h);
+      fx.fillStyle(0xffffff, 0.7);
+      fx.fillTriangle(x - 2, top + 1, x + 1.5, top + 1, x, top + h * 0.65);
+    }
+
+    // Orbiting crystal shards
+    for (let i = 0; i < 10; i++) {
+      const a = t * 1.8 + (i / 10) * Math.PI * 2;
+      const rx = 250 + Math.sin(t + i) * 8;
+      const ry = 48;
+      const x = Math.cos(a) * rx;
+      const y = Math.sin(a) * ry * 0.55;
+      fx.fillStyle(i % 2 ? 0xffffff : 0x9ad8f0, 0.75);
+      fx.fillTriangle(x, y - 6, x + 3, y + 4, x - 3, y + 4);
+    }
+
+    // Center frost bloom pulse
+    const pulse = 0.5 + Math.sin(t * 4) * 0.5;
+    fx.lineStyle(2, 0xd0f0ff, 0.35 + pulse * 0.35);
+    fx.strokeCircle(0, -8, 40 + pulse * 12);
+    fx.fillStyle(0xffffff, 0.12 + pulse * 0.08);
+    fx.fillCircle(0, -8, 18 + pulse * 6);
   }
 
   private clearLaserSpaceUi(): void {
@@ -1800,6 +2230,7 @@ export class CatchMinigame {
   private triggerTranquilBubblePop(): void {
     this.bubbleActive = false;
     this.tranquilRush = true;
+    this.bubbleCatch = true;
     this.progressBg.setFillStyle(0x1a4a32);
     this.progressBg.setStrokeStyle(1, 0x6dff9a);
     this.progressFill.setFillStyle(0x7dffb0);
@@ -1895,24 +2326,75 @@ export class CatchMinigame {
 
     const whiteMin = -this.barWidth / 2 + this.whiteWidth / 2;
     const whiteMax = this.barWidth / 2 - this.whiteWidth / 2;
+    const leavePad = 2;
+
+    // End a spent bounce chain only after leaving the wall (keeps mid-chain hits armed)
+    if (this.whiteX > whiteMin + leavePad && this.leftBounceRemaining <= 0) {
+      this.leftBounceChain = false;
+    }
+    if (this.whiteX < whiteMax - leavePad && this.rightBounceRemaining <= 0) {
+      this.rightBounceChain = false;
+    }
 
     if (this.whiteX < whiteMin) {
       this.whiteX = whiteMin;
-      this.bounce(1);
+      this.handleWallHit("left");
     } else if (this.whiteX > whiteMax) {
       this.whiteX = whiteMax;
-      this.bounce(-1);
+      this.handleWallHit("right");
+    }
+  }
+
+  /** Impact speed → how many bounces this wall chain gets (0–3). */
+  private bounceBudgetFromImpact(impact: number): number {
+    const t = Phaser.Math.Clamp(impact / this.maxSpeed, 0, 1);
+    if (t < 0.12) return 0;
+    if (t < 0.35) return 1;
+    if (t < 0.65) return 2;
+    return 3;
+  }
+
+  /** Hit left/right grey-bar edge. Left wall rebounds right (+vel). */
+  private handleWallHit(side: "left" | "right"): void {
+    const impact = Math.abs(this.whiteVel);
+    const outward = side === "left" ? 1 : -1;
+    const inChain =
+      side === "left" ? this.leftBounceChain : this.rightBounceChain;
+
+    if (!inChain) {
+      const budget = this.bounceBudgetFromImpact(impact);
+      if (side === "left") {
+        this.leftBounceRemaining = budget;
+        this.leftBounceChain = true;
+      } else {
+        this.rightBounceRemaining = budget;
+        this.rightBounceChain = true;
+      }
+    }
+
+    const remaining =
+      side === "left" ? this.leftBounceRemaining : this.rightBounceRemaining;
+
+    if (remaining > 0) {
+      if (side === "left") this.leftBounceRemaining -= 1;
+      else this.rightBounceRemaining -= 1;
+      this.playWallBounce(outward, impact);
+      return;
+    }
+
+    // Out of bounces — deaden into the wall (still free to accelerate away)
+    if (side === "left") {
+      this.whiteVel = Math.max(0, this.whiteVel);
+    } else {
+      this.whiteVel = Math.min(0, this.whiteVel);
     }
   }
 
   /** Bounce off a wall. `dir` is the outward normal (+1 left wall, -1 right wall). */
-  private bounce(dir: number): void {
-    const impact = Math.abs(this.whiteVel);
-    // Snap velocity away from the wall with restitution; boost if hitting hard
-    const rebound = Math.max(impact * this.bounceRestitution, 140);
+  private playWallBounce(dir: number, impact: number): void {
+    const rebound = Math.max(impact * this.bounceRestitution, 40);
     this.whiteVel = dir * rebound;
 
-    // Quick squash/stretch so the bounce reads clearly
     const squash = Phaser.Math.Clamp(impact / this.maxSpeed, 0.25, 1);
     this.whiteBar.setScale(1 + 0.18 * squash, 1 - 0.22 * squash);
     this.root.scene.tweens.killTweensOf(this.whiteBar);
@@ -1926,9 +2408,12 @@ export class CatchMinigame {
   }
 
   private updateFish(dt: number): void {
-    this.fishDecisionTimer -= dt;
-    if (this.fishDecisionTimer <= 0) {
-      this.pickFishBehavior();
+    // Don't pick new swim moves while paused / Starweaver weaving or stunned
+    if (this.fishPauseTimer <= 0 && !this.starweaverBusy) {
+      this.fishDecisionTimer -= dt;
+      if (this.fishDecisionTimer <= 0) {
+        this.pickFishBehavior();
+      }
     }
 
     if (this.fishPauseTimer > 0) {
@@ -2029,6 +2514,17 @@ export class CatchMinigame {
         this.forgeFishMoves += 1;
         if (this.forgeFishMoves >= 3) {
           this.beginForgeArming();
+        }
+      }
+    }
+
+    if (this.starweaverWeave && this.ready && !this.starweaverBusy) {
+      if (this.starweaverCooldownMoves > 0) {
+        this.starweaverCooldownMoves -= 1;
+      } else {
+        this.starweaverFishMoves += 1;
+        if (this.starweaverFishMoves >= 3) {
+          this.triggerStarweaverWeave();
         }
       }
     }
@@ -2469,6 +2965,7 @@ export class CatchMinigame {
     this.clearZeusTelegraph();
     this.clearRecoilTelegraph();
     this.clearForgeWeapons();
+    this.resetStarweaverState();
     this.clearBirthdayBalloons();
     this.birthdayBalloonLayer.setVisible(false);
     this.forgePhase = "idle";
@@ -2481,7 +2978,8 @@ export class CatchMinigame {
       this.guaranteeThunder ||
       this.forgeHadEmberWeapon ||
       this.guaranteeConfetti ||
-      this.recoilKickCount > 0
+      this.recoilKickCount > 0 ||
+      this.bubbleCatch
         ? {
             ...(this.guaranteeThunder ? { guaranteeThunder: true } : {}),
             ...(this.forgeHadEmberWeapon ? { guaranteeAshencast: true } : {}),
@@ -2489,6 +2987,7 @@ export class CatchMinigame {
             ...(this.recoilKickCount > 0
               ? { recoilKicks: this.recoilKickCount }
               : {}),
+            ...(this.bubbleCatch ? { bubbleCatch: true } : {}),
           }
         : undefined;
     this.onResult = undefined;
@@ -2497,6 +2996,7 @@ export class CatchMinigame {
     this.forgeHadEmberWeapon = false;
     this.guaranteeConfetti = false;
     this.recoilKickCount = 0;
+    this.bubbleCatch = false;
     this.birthdayInstaPending = false;
     cb?.(success, meta);
   }

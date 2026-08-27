@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { drawRecoilShotgun } from "../art/RecoilRodArt";
 import { drawPortalRod } from "../art/PortalRodArt";
 import { drawForgeRod } from "../art/ForgeRodArt";
+import { drawStarweaverRod } from "../art/StarweaverRodArt";
 import { drawBirthdayRod } from "../art/BirthdayRodArt";
 import {
   drawGoldenLuckyRod,
@@ -10,6 +11,12 @@ import {
   drawPoisonedRod,
   drawPistolRod,
   drawLaserRod,
+  drawFrigidRod,
+  drawFrozenLotusRod,
+  drawIcicleRod,
+  drawHaloOfIceRod,
+  drawHyperborealRod,
+  drawHyperthermicRod,
 } from "../art/RodSkinHeldArt";
 
 /** Logical playable area — displayed size stays ~64px via setDisplaySize on the sprite. */
@@ -65,6 +72,7 @@ export type RodDrawStyle =
   | "recoil"
   | "portal"
   | "forge"
+  | "starweaver"
   | "birthday"
   /** Same poses/tips as other rods, but no baked rod art (Gallery overlay only). */
   | "hidden"
@@ -73,7 +81,13 @@ export type RodDrawStyle =
   | "pufferfirm"
   | "poisoned"
   | "pistol"
-  | "laser";
+  | "laser"
+  | "frigid"
+  | "frozen_lotus"
+  | "icicle"
+  | "halo_of_ice"
+  | "hyperboreal"
+  | "hyperthermic";
 
 /** Every rod that gets carry + cast player frames and anims — keep in sync with new rods. */
 export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
@@ -90,6 +104,7 @@ export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
   "recoil",
   "portal",
   "forge",
+  "starweaver",
   "birthday",
   "hidden",
   "golden_lucky",
@@ -98,6 +113,12 @@ export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
   "poisoned",
   "pistol",
   "laser",
+  "frigid",
+  "frozen_lotus",
+  "icicle",
+  "halo_of_ice",
+  "hyperboreal",
+  "hyperthermic",
 ];
 
 export function rodAnimStyleReady(scene: Phaser.Scene, style: RodDrawStyle): boolean {
@@ -127,6 +148,7 @@ export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "recoil_rod") return "recoil";
   if (itemId === "portal_rod") return "portal";
   if (itemId === "forge_rod") return "forge";
+  if (itemId === "starweaver_rod") return "starweaver";
   if (itemId === "birthday_rod") return "birthday";
   return "starter";
 }
@@ -149,6 +171,18 @@ export function rodStyleForSkin(
       return "pistol";
     case "laser":
       return "laser";
+    case "frigid":
+      return "frigid";
+    case "frozen_lotus":
+      return "frozen_lotus";
+    case "icicle":
+      return "icicle";
+    case "halo_of_ice":
+      return "halo_of_ice";
+    case "hyperboreal":
+      return "hyperboreal";
+    case "hyperthermic":
+      return "hyperthermic";
     case "gallery":
       return "hidden";
     default:
@@ -801,6 +835,36 @@ function drawHeldRod(
 
   if (style === "forge") {
     drawForgeRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+
+  if (style === "starweaver") {
+    drawStarweaverRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+
+  if (style === "frigid") {
+    drawFrigidRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+  if (style === "frozen_lotus") {
+    drawFrozenLotusRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+  if (style === "icicle") {
+    drawIcicleRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+  if (style === "halo_of_ice") {
+    drawHaloOfIceRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+  if (style === "hyperboreal") {
+    drawHyperborealRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+  if (style === "hyperthermic") {
+    drawHyperthermicRod(g, handX, handY, tipX, tipY);
     return;
   }
 

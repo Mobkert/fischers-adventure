@@ -664,6 +664,7 @@ export class FishingSystem {
       guaranteeAshencast?: boolean;
       guaranteeConfetti?: boolean;
       recoilKicks?: number;
+      bubbleCatch?: boolean;
     }
   ): FishMutationId | null {
     // Whirlpool always grants Thunder
@@ -683,6 +684,10 @@ export class FishingSystem {
     if (this.weather?.weather === "sunny" && !fish.mutation) {
       const sunMut = rollSunnyMutation(dolphinMult);
       if (sunMut) return sunMut;
+    }
+    // Bubble catch: 75% Tranquil on unmutated fish
+    if (meta?.bubbleCatch && !fish.mutation) {
+      if (Math.random() < 0.75) return "tranquil";
     }
     const rodId = this.inventory.getEquippedRodId();
     const rodChanceBonus =
@@ -720,6 +725,7 @@ export class FishingSystem {
       guaranteeAshencast?: boolean;
       guaranteeConfetti?: boolean;
       recoilKicks?: number;
+      bubbleCatch?: boolean;
     }
   ): void {
     this.player.hideExclamation();

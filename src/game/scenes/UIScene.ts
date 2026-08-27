@@ -237,24 +237,28 @@ export class UIScene extends Phaser.Scene {
       game?.syncPlayerCarriedRod?.();
     });
     this.skinCrateMenu = new SkinCrateMenu(this, this.inventory);
-    this.skinCrateMenu.setOnOpen((count) => {
+    this.skinCrateMenu.setOnOpen((count, kind) => {
       this.skinCrateMenu.close();
-      if (!this.skinCrateReveal.open(count)) {
-        this.showToast("Couldn't open Skin Crate.", "#ff8866");
+      if (!this.skinCrateReveal.open(count, kind)) {
+        this.showToast("Couldn't open crate.", "#ff8866");
         return;
       }
       this.inventoryPanel.refresh();
       this.hotbar.refresh();
       this.persistSave();
     });
-    this.inventoryPanel.setOnOpenSkinCrate(() => {
+    this.inventoryPanel.setOnOpenSkinCrate((kind) => {
       if (this.skinCrateReveal.isBusy() || this.skinCrateMenu.isBusy()) return;
-      if (this.inventory.countItem("skin_crate") <= 0) {
-        this.showToast("No Skin Crates.", "#ff8866");
+      const itemId = kind === "frostpeak" ? "frostpeak_crate" : "skin_crate";
+      if (this.inventory.countItem(itemId) <= 0) {
+        this.showToast(
+          kind === "frostpeak" ? "No Frostpeak Crates." : "No Skin Crates.",
+          "#ff8866"
+        );
         return;
       }
       this.inventoryPanel.setOpen(false);
-      this.skinCrateMenu.open();
+      this.skinCrateMenu.open(kind);
     });
     this.inventoryPanel.setOnOpenOreCluster(() => {
       const result = this.inventory.openOreCluster();
@@ -752,6 +756,9 @@ export class UIScene extends Phaser.Scene {
           forgeStrike:
             ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
             "forge_strike",
+          starweaverWeave:
+            ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+            "starweaver_weave",
           birthdayParty:
             ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
             "birthday_party",

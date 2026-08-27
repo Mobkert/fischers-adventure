@@ -1,4 +1,3 @@
-import { ITEMS, MUTATIONS } from "../data/items";
 import type { InventorySystem } from "./InventorySystem";
 
 export type PromoCodeId =
@@ -7,7 +6,8 @@ export type PromoCodeId =
   | "free_fish_gift_3"
   | "sorry_for_bugs"
   | "free_skin_crates"
-  | "ore_area_awesome";
+  | "ore_area_awesome"
+  | "new_stuff";
 
 export type PromoRedeemResult =
   | { ok: true; message: string }
@@ -20,13 +20,15 @@ const CODE_MAP: Record<string, PromoCodeId> = {
   SORRYFORBUGS: "sorry_for_bugs",
   FREESKINCRATES: "free_skin_crates",
   OREAREAWESOME: "ore_area_awesome",
+  NEWSTUFF: "new_stuff",
 };
 
-/** Birthday event codes — no longer redeemable. Owned Birthday Rods are kept. */
+/** Codes that can no longer be redeemed. */
 const EXPIRED_PROMO_CODES = new Set<PromoCodeId>([
   "birthday_rod",
   "free_coins_10k",
   "free_fish_gift_3",
+  "sorry_for_bugs",
 ]);
 
 export function normalizePromoCodeInput(raw: string): string {
@@ -55,7 +57,7 @@ export function redeemPromoCode(
   if (EXPIRED_PROMO_CODES.has(codeId)) {
     return {
       ok: false,
-      message: "That birthday code has expired. Sorry!",
+      message: "That code has expired. Sorry!",
     };
   }
   if (hasRedeemedPromo(inventory, codeId)) {
@@ -64,39 +66,32 @@ export function redeemPromoCode(
 
   switch (codeId) {
     case "sorry_for_bugs": {
-      // Need room for the tuna (+ optional ocean anvil shard).
-      const giveAnvil =
-        inventory.ashencastQuestStage <= 1 &&
-        !inventory.hasItem("anvil_piece_ocean");
-      const slotsNeeded = 1 + (giveAnvil ? 1 : 0);
-      if (inventory.countEmptyBagSlots() < slotsNeeded) {
+      // Expired — kept for type exhaustiveness; EXPIRED_PROMO_CODES blocks first.
+      return { ok: false, message: "That code has expired. Sorry!" };
+    }
+    case "new_stuff": {
+      if (
+        !inventory.hasItem("frostpeak_crate") &&
+        inventory.countEmptyBagSlots() < 1
+      ) {
         return {
           ok: false,
-          message: `Need ${slotsNeeded} free bag slot${slotsNeeded > 1 ? "s" : ""} for this code.`,
+          message: "Need 1 free bag slot for Frostpeak Crates.",
         };
       }
-      if (!inventory.addItem("crystalfin_tuna", 1, "starlight")) {
+      if (!inventory.addItem("frostpeak_crate", 4)) {
         return { ok: false, message: "Your bag is full!" };
       }
       inventory.coins += 10000;
-      inventory.grantAmulet("amulet_celestial");
-      const parts = [
-        "$10,000",
-        `a ${MUTATIONS.starlight.label}${ITEMS.crystalfin_tuna.name}`,
-        ITEMS.amulet_celestial.name,
-      ];
-      if (giveAnvil) {
-        inventory.addItem("anvil_piece_ocean");
-        parts.push(ITEMS.anvil_piece_ocean.name);
-      }
+      inventory.grantAmulet("amulet_tempest");
       inventory.markPromoRedeemed(codeId);
       return {
         ok: true,
-        message: `Sorry about the bugs! Code Guy gives you ${parts.join(", ")}.`,
+        message:
+          "Code Guy hands you $10,000, 4 Frostpeak Crates, and a Tempest Amulet!",
       };
     }
     case "free_skin_crates": {
-      // Stack onto an existing crate stack, or need 1 empty slot
       if (!inventory.hasItem("skin_crate") && inventory.countEmptyBagSlots() < 1) {
         return { ok: false, message: "Need 1 free bag slot for Skin Crates." };
       }

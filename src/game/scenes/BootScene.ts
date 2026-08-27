@@ -6,6 +6,7 @@ import {
 } from "../art/RecoilRodArt";
 import { drawPortalRodIcon } from "../art/PortalRodArt";
 import { drawForgeRodIcon } from "../art/ForgeRodArt";
+import { drawStarweaverRodIcon } from "../art/StarweaverRodArt";
 import { drawBirthdayRodIcon } from "../art/BirthdayRodArt";
 import { generateCraftStarlightFishIcon } from "../art/CraftIngredientArt";
 import {
@@ -397,6 +398,10 @@ export function generateRodTextures(scene: Phaser.Scene): void {
   g.generateTexture("rod_forge", S, S);
 
   g.clear();
+  drawStarweaverRodIcon(g);
+  g.generateTexture("rod_starweaver", S, S);
+
+  g.clear();
   drawBirthdayRodIcon(g);
   g.generateTexture("rod_birthday", S, S);
 
@@ -652,6 +657,7 @@ export function ensureRodIconTextures(scene: Phaser.Scene): void {
     "rod_tranquil",
     "rod_birthday",
     "rod_forge",
+    "rod_starweaver",
     "rod_portal",
     "rod_recoil",
   ];

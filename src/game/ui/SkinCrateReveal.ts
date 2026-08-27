@@ -1,9 +1,11 @@
 import Phaser from "phaser";
 import {
-  CRATE_SKIN_IDS,
   ROD_SKINS,
   RodSkinId,
-  SKIN_CRATE_DUPLICATE_REFUND,
+  SkinCrateKind,
+  crateSkinIds,
+  crateItemId,
+  crateDuplicateRefund,
 } from "../data/rodSkins";
 import { ITEMS } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
@@ -41,6 +43,7 @@ export class SkinCrateReveal {
   private pending = 0;
   private finished = 0;
   private resultLines: string[] = [];
+  private kind: SkinCrateKind = "collectors";
   visible = false;
   private onDone?: (message: string) => void;
   private layers: SpinLayer[] = [];
@@ -106,28 +109,29 @@ export class SkinCrateReveal {
   }
 
   /** Open `count` crates at once (triple opens as 3 vertical reels). */
-  open(count: 1 | 3 = 1): boolean {
+  open(count: 1 | 3 = 1, kind: SkinCrateKind = "collectors"): boolean {
     if (this.spinning || this.visible) return false;
-    if (this.inventory.countItem("skin_crate") < count) return false;
+    this.kind = kind;
+    const itemId = crateItemId(kind);
+    if (this.inventory.countItem(itemId) < count) return false;
 
     const winners: RodSkinId[] = [];
     for (let i = 0; i < count; i++) {
-      if (!this.inventory.consumeSkinCrate()) {
-        // Shouldn't happen after count check — stop if it does
+      if (!this.inventory.consumeCrate(kind)) {
         break;
       }
-      winners.push(this.inventory.peekSkinCrateRoll());
+      winners.push(this.inventory.peekCrateRoll(kind));
     }
     if (winners.length === 0) return false;
 
-    // Resolve in roll order NOW so within one Open 3:
-    // first copy of a new skin unlocks; later copies of the same skin refund.
-    // Already-owned skins refund on every copy.
     const outcomes: SpinOutcome[] = winners.map((winner) => {
-      const result = this.inventory.resolveSkinCrateRoll(winner);
+      const result = this.inventory.resolveCrateRoll(winner, kind);
       return { winner, ...result };
     });
 
+    this.title.setText(
+      kind === "frostpeak" ? "Opening Frostpeak Crate…" : "Opening Skin Crate…"
+    );
     this.visible = true;
     this.spinning = true;
     this.pending = outcomes.length;
@@ -251,7 +255,7 @@ export class SkinCrateReveal {
     cellH = CELL_H
   ): void {
     strip.removeAll(true);
-    const pool = CRATE_SKIN_IDS;
+    const pool = crateSkinIds(this.kind);
     const scene = this.root.scene;
     const iconSize = cellH < 100 ? 36 : 48;
     for (let i = 0; i < STRIP_LEN; i++) {
@@ -292,7 +296,7 @@ export class SkinCrateReveal {
 
     if (duplicate) {
       this.resultLines.push(
-        `Dup · ${def.label} (+$${SKIN_CRATE_DUPLICATE_REFUND.toLocaleString()})`
+        `Dup · ${def.label} (+$${crateDuplicateRefund(this.kind).toLocaleString()})`
       );
     } else {
       const haveRod = this.inventory.ownsRod(def.rodId);

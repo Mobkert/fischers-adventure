@@ -5,7 +5,7 @@ import {
 } from "../data/items";
 import { formatCurioRestock } from "../systems/CurioTraderStock";
 
-/** Ashencast ore peddler — buy 1–20 ore clusters ($110 each). */
+/** Ashencast ore peddler — buy 1–20 ore clusters ($240 each). */
 export class OreVendorPanel {
   private root: Phaser.GameObjects.Container;
   private amountText!: Phaser.GameObjects.Text;

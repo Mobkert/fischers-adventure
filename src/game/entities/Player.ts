@@ -446,6 +446,29 @@ export class Player {
     return this.carriedRodStyle === "laser";
   }
 
+  /**
+   * Frostpeak held-rod VFX theme, or null if none of those skins are in hand.
+   */
+  getFrostHeldTheme():
+    | "hyperthermic"
+    | "hyperboreal"
+    | "halo_of_ice"
+    | "frozen_lotus"
+    | null {
+    const style = this.isFishingAnim()
+      ? this.fishingRodStyle
+      : this.carriedRodStyle;
+    if (
+      style === "hyperthermic" ||
+      style === "hyperboreal" ||
+      style === "halo_of_ice" ||
+      style === "frozen_lotus"
+    ) {
+      return style;
+    }
+    return null;
+  }
+
   /** World hand point for held-rod VFX. */
   getRodHandWorld(): { x: number; y: number } {
     return this.localToWorld(this.currentRodHandLocal());

@@ -99,7 +99,10 @@ export class Hotbar {
           } else {
             this.icons[i].setDisplaySize(40, 40);
           }
-        } else if (slotData.itemId === "skin_crate") {
+        } else if (
+          slotData.itemId === "skin_crate" ||
+          slotData.itemId === "frostpeak_crate"
+        ) {
           this.icons[i].setDisplaySize(34, 34);
         } else {
           this.icons[i].setDisplaySize(28, 28);

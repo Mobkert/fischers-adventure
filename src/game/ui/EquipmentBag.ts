@@ -435,7 +435,7 @@ export class EquipmentBag {
         : "";
     const tranquilLine =
       def.rodMinigamePower === "tranquil_bubble"
-        ? "\n40% +1m cast depth · 15% +2m · bubble every 2 catches (fail resets, twin-hook OK)"
+        ? "\n40% +1m cast depth · 15% +2m · bubble every 2 catches (fail resets) · bubble catch 75% Tranquil · 30% Tranquil on catch"
         : "";
     const zeusLine =
       def.rodMinigamePower === "zeus_strike"
@@ -458,6 +458,10 @@ export class EquipmentBag {
       def.rodMinigamePower === "forge_strike"
         ? "\nAfter 3 fish moves: 8–12 swords (+5% progress speed) & axes (+10% progress) volley — 9-move cooldown · orange sword (2.5%) = Ashencast (5×)"
         : "";
+    const starweaverLine =
+      def.rodMinigamePower === "starweaver_weave"
+        ? "\nAfter 3 fish moves: sacrifice 5–15% progress to stun the fish (5%→1s, 15%→3s) · Starlight 5%"
+        : "";
     const birthdayLine =
       def.rodMinigamePower === "birthday_party"
         ? "\n15% instant catch (Confetti 3×) · balloons (minigame bar → top of screen; right-click: blue +10% progress, red +10% speed, green +10% bar) · +1% progress speed in white zone (0.5s → 0.4s → …, resets off bar)"
@@ -476,6 +480,7 @@ export class EquipmentBag {
           recoilLine +
           portalLine +
           forgeLine +
+          starweaverLine +
           birthdayLine,
         {
           fontFamily: "Arial",

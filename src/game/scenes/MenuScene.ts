@@ -129,7 +129,7 @@ export class MenuScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xc4a86a);
 
     const title = this.add
-      .text(0, -panelH / 2 + 28, "Ashencast 1.26", {
+      .text(0, -panelH / 2 + 28, "Ashencast 1.50", {
         fontFamily: "Georgia, serif",
         fontSize: "24px",
         color: "#f0e6d2",
@@ -137,7 +137,7 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const subtitle = this.add
-      .text(0, -panelH / 2 + 56, "What's New · Hot Springs & Ores", {
+      .text(0, -panelH / 2 + 56, "What's New · Frostpeak Skins & Codes", {
         fontFamily: "Arial",
         fontSize: "13px",
         color: "#9aaa9a",
@@ -161,24 +161,22 @@ export class MenuScene extends Phaser.Scene {
 
     const bodyText =
       "WHAT'S NEW\n\n" +
-      "• Ashencast hotsprings — new fish (Ore Cluster,\n" +
-      "  Volcanic Hermitcrab, Ash Flounder, Molter,\n" +
-      "  Pyrefin, Magma Jellyfish) plus Ashencast Trout\n" +
-      "• Open Ore Clusters in your bag for ores (Pyrite\n" +
-      "  through Painite); right-click to favorite ores\n" +
-      "• Ore Peddler on the hotspring bridges — buys\n" +
-      "  clusters ($110), 20 stock / 10 min restock\n" +
-      "• Curio Trader stock & restock timer now save\n" +
-      "  with your slot (no full restock on quit)\n" +
-      "• Forge Rod recipe — 1 Taaffite + 1 Vivianite\n" +
-      "  instead of 2 Starlight fish\n" +
-      "• OREAREAWESOME promo (Code Guy) — $2,200 and\n" +
-      "  10 Ore Clusters (one-time)\n\n" +
-      "FROM 1.25\n\n" +
-      "• Collectors Skin Boutique, Skin Crates, and\n" +
-      "  six crate rod finishes\n" +
-      "• FREESKINCRATES promo — $5,000 and 3 crates\n" +
-      "• Ashencast Isle forge quest & craftable rods";
+      "• Frostpeak Skin Crate at the Collectors boutique\n" +
+      "  ($20k) — Frigid, Icicle, Frozen Lotus, Halo of\n" +
+      "  Ice, Hyperboreal, Hyperthermic (dupes → $10k)\n" +
+      "• Starweaver Rod forge craft + weave ability\n" +
+      "• Catch bar wall bounce capped (0–3 by impact)\n\n" +
+      "CODES (Code Guy)\n\n" +
+      "• NEWSTUFF — $10,000, 4 Frostpeak Crates, and a\n" +
+      "  Tempest Amulet (one-time)\n" +
+      "• FREESKINCRATES — $5,000 and 3 Skin Crates\n" +
+      "  (one-time)\n" +
+      "• OREAREAWESOME — $2,200 and 10 Ore Clusters\n" +
+      "  (one-time)\n\n" +
+      "FROM 1.26\n\n" +
+      "• Ashencast hotsprings fish & Ore Clusters\n" +
+      "• Ore Peddler / Curio stock persistence\n" +
+      "• Collectors Skin Boutique & crate finishes";
 
     const body = this.add
       .text(0, 0, bodyText, {

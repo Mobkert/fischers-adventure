@@ -33,6 +33,7 @@ import { ensurePlayerRodArt } from "../entities/PlayerArt";
 import { ensureRodIconTextures } from "./BootScene";
 import { ForgeRodTipVfx } from "../fx/ForgeRodFx";
 import { LaserRodHeldVfx } from "../fx/LaserRodFx";
+import { FrostRodHeldVfx } from "../fx/FrostRodHeldVfx";
 import { WorldZoneLoader } from "../world/WorldZoneLoader";
 import {
   placeFrostpeakCave,
@@ -137,6 +138,7 @@ export class GameScene extends Phaser.Scene {
   private spawnedFishCorridors = new Set<string>();
   private forgeRodVfx: ForgeRodTipVfx | null = null;
   private laserRodVfx: LaserRodHeldVfx | null = null;
+  private frostRodVfx: FrostRodHeldVfx | null = null;
   private music!: AmbientMusic;
   private tutorialDone = false;
   private autosaveTimer?: Phaser.Time.TimerEvent;
@@ -283,6 +285,7 @@ export class GameScene extends Phaser.Scene {
     this.fishQuestNpcs = {};
     this.forgeRodVfx = null;
     this.laserRodVfx = null;
+    this.frostRodVfx = null;
     this.vaultPedestalGems = [];
     this.worldGemRoots = {};
     this.redGemBob = 0;
@@ -3356,6 +3359,7 @@ export class GameScene extends Phaser.Scene {
     // Rod VFX after player move/anim so shaft tip tracks the current frame
     this.syncForgeRodVfx();
     this.syncLaserRodVfx();
+    this.syncFrostRodVfx();
     if (!this.inFrostpeakCave) {
       if (
         Math.abs(this.player.sprite.x - (this.jungleLeft + this.jungleRight) / 2) <
@@ -3977,6 +3981,26 @@ export class GameScene extends Phaser.Scene {
     const tip = this.player.getRodTip();
     this.laserRodVfx.setDepth(this.player.sprite.depth + 2);
     this.laserRodVfx.update(hand.x, hand.y, tip.x, tip.y, this.time.now);
+  }
+
+  /** Frostpeak skin held VFX (Hyperthermic / Hyperboreal / Halo / Lotus). */
+  private syncFrostRodVfx(): void {
+    const theme = !this.inFrostpeakCave
+      ? this.player.getFrostHeldTheme()
+      : null;
+    if (!theme) {
+      this.frostRodVfx?.setActive(false);
+      return;
+    }
+    if (!this.frostRodVfx) {
+      this.frostRodVfx = new FrostRodHeldVfx(this);
+    }
+    this.frostRodVfx.setTheme(theme);
+    this.frostRodVfx.setActive(true);
+    const hand = this.player.getRodHandWorld();
+    const tip = this.player.getRodTip();
+    this.frostRodVfx.setDepth(this.player.sprite.depth + 2);
+    this.frostRodVfx.update(hand.x, hand.y, tip.x, tip.y, this.time.now);
   }
 
   /** Hotbar rod + optional active skin (baked styles; Gallery overlay only). */

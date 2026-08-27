@@ -327,6 +327,7 @@ function normalizePromoCodes(raw: unknown): PromoCodeId[] {
     "sorry_for_bugs",
     "free_skin_crates",
     "ore_area_awesome",
+    "new_stuff",
   ];
   if (!Array.isArray(raw)) return [];
   return raw.filter(

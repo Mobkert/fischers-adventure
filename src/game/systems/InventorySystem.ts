@@ -53,8 +53,13 @@ import {
   ROD_SKINS,
   RodSkinId,
   rollSkinCrate,
+  rollCrateSkin,
+  crateItemId,
+  crateDuplicateRefund,
   SKIN_CRATE_DUPLICATE_REFUND,
   SKIN_CRATE_PRICE,
+  FROSTPEAK_CRATE_PRICE,
+  SkinCrateKind,
   skinsForRod,
 } from "../data/rodSkins";
 import {
@@ -491,7 +496,8 @@ export class InventorySystem {
       };
     }
     if (entry.kind === "misc") {
-      if (this.hasItem(entry.itemId)) {
+      // Unique quest curios can't be bought twice; stackables (e.g. ore) can.
+      if (!def.stackable && this.hasItem(entry.itemId)) {
         return { ok: false, message: `You already have the ${def.name}.` };
       }
       this.coins -= cost;
@@ -502,7 +508,7 @@ export class InventorySystem {
       return { ok: true, message: `Bought ${def.name} for $${cost}!` };
     }
     if (entry.kind === "rod") {
-      if (!def.isRod || entry.itemId === "tranquil_rod" || entry.itemId === "recoil_rod" || entry.itemId === "portal_rod" || entry.itemId === "forge_rod" || entry.itemId === "birthday_rod") {
+      if (!def.isRod || entry.itemId === "tranquil_rod" || entry.itemId === "recoil_rod" || entry.itemId === "portal_rod" || entry.itemId === "forge_rod" || entry.itemId === "starweaver_rod" || entry.itemId === "birthday_rod") {
         return { ok: false, message: "That isn't a rod." };
       }
       if (this.ownsRod(entry.itemId)) {
@@ -610,7 +616,7 @@ export class InventorySystem {
   /** Buy a shop rod if affordable and not already owned. */
   buyRod(rodId: ItemId): { ok: boolean; message: string } {
     const def = ITEMS[rodId];
-    if (!def?.isRod || def.buyPrice == null || rodId === "tranquil_rod" || rodId === "recoil_rod" || rodId === "portal_rod" || rodId === "forge_rod" || rodId === "birthday_rod") {
+    if (!def?.isRod || def.buyPrice == null || rodId === "tranquil_rod" || rodId === "recoil_rod" || rodId === "portal_rod" || rodId === "forge_rod" || rodId === "starweaver_rod" || rodId === "birthday_rod") {
       return { ok: false, message: "That isn't for sale." };
     }
     if (this.ownsRod(rodId)) {
@@ -1338,7 +1344,10 @@ export class InventorySystem {
    * Unlock a rod skin permanently. Does NOT require owning the matching rod —
    * the finish is saved and auto-applies when the rod is obtained later.
    */
-  private unlockRodSkin(skinId: RodSkinId): {
+  private unlockRodSkin(
+    skinId: RodSkinId,
+    duplicateRefund = SKIN_CRATE_DUPLICATE_REFUND
+  ): {
     duplicate: boolean;
     refund: number;
     message: string;
@@ -1346,11 +1355,11 @@ export class InventorySystem {
     const def = ROD_SKINS[skinId];
     const rodName = ITEMS[def.rodId]?.name ?? "rod";
     if (this.ownsRodSkin(skinId)) {
-      this.coins += SKIN_CRATE_DUPLICATE_REFUND;
+      this.coins += duplicateRefund;
       return {
         duplicate: true,
-        refund: SKIN_CRATE_DUPLICATE_REFUND,
-        message: `Duplicate ${def.label} — $${SKIN_CRATE_DUPLICATE_REFUND.toLocaleString()} refunded.`,
+        refund: duplicateRefund,
+        message: `Duplicate ${def.label} — $${duplicateRefund.toLocaleString()} refunded.`,
       };
     }
     if (!this.ownedRodSkins.includes(skinId)) {
@@ -1513,19 +1522,32 @@ export class InventorySystem {
   }
 
   buySkinCrate(): { ok: boolean; message: string } {
-    if (this.coins < SKIN_CRATE_PRICE) {
+    return this.buyCrate("collectors");
+  }
+
+  buyFrostpeakSkinCrate(): { ok: boolean; message: string } {
+    return this.buyCrate("frostpeak");
+  }
+
+  buyCrate(kind: SkinCrateKind): { ok: boolean; message: string } {
+    const price =
+      kind === "frostpeak" ? FROSTPEAK_CRATE_PRICE : SKIN_CRATE_PRICE;
+    const itemId = crateItemId(kind);
+    const label =
+      kind === "frostpeak" ? "Frostpeak Crate" : "Skin Crate";
+    if (this.coins < price) {
       return {
         ok: false,
-        message: `Need $${SKIN_CRATE_PRICE.toLocaleString()} for a Skin Crate.`,
+        message: `Need $${price.toLocaleString()} for a ${label}.`,
       };
     }
-    if (!this.addItem("skin_crate")) {
+    if (!this.addItem(itemId)) {
       return { ok: false, message: "Bag is full — free a slot first." };
     }
-    this.coins -= SKIN_CRATE_PRICE;
+    this.coins -= price;
     return {
       ok: true,
-      message: "Skin Crate purchased! Open it from your inventory.",
+      message: `${label} purchased! Open it from your inventory.`,
     };
   }
 
@@ -1540,24 +1562,41 @@ export class InventorySystem {
     duplicate?: boolean;
     refund?: number;
   } {
-    if (!this.hasItem("skin_crate")) {
-      return { ok: false, message: "You don't have a Skin Crate." };
+    return this.openCrate("collectors");
+  }
+
+  openCrate(kind: SkinCrateKind): {
+    ok: boolean;
+    message: string;
+    skinId?: RodSkinId;
+    duplicate?: boolean;
+    refund?: number;
+  } {
+    const itemId = crateItemId(kind);
+    const label =
+      kind === "frostpeak" ? "Frostpeak Crate" : "Skin Crate";
+    if (!this.hasItem(itemId)) {
+      return { ok: false, message: `You don't have a ${label}.` };
     }
-    if (!this.removeOneItem("skin_crate")) {
+    if (!this.removeOneItem(itemId)) {
       return { ok: false, message: "Couldn't open the crate." };
     }
 
-    const skinId = rollSkinCrate();
+    const skinId = rollCrateSkin(kind);
     return {
       ok: true,
       skinId,
-      ...this.unlockRodSkin(skinId),
+      ...this.unlockRodSkin(skinId, crateDuplicateRefund(kind)),
     };
   }
 
   /** Peek a crate roll without consuming (for reveal UI). Prefer openSkinCrate. */
   peekSkinCrateRoll(): RodSkinId {
     return rollSkinCrate();
+  }
+
+  peekCrateRoll(kind: SkinCrateKind): RodSkinId {
+    return rollCrateSkin(kind);
   }
 
   /** Grant a rolled skin after the reveal animation (crate already consumed).
@@ -1572,9 +1611,24 @@ export class InventorySystem {
     return this.unlockRodSkin(skinId);
   }
 
+  resolveCrateRoll(
+    skinId: RodSkinId,
+    kind: SkinCrateKind
+  ): {
+    duplicate: boolean;
+    refund: number;
+    message: string;
+  } {
+    return this.unlockRodSkin(skinId, crateDuplicateRefund(kind));
+  }
+
   /** Consume crate only — used before reveal animation. */
   consumeSkinCrate(): boolean {
     return this.removeOneItem("skin_crate");
+  }
+
+  consumeCrate(kind: SkinCrateKind): boolean {
+    return this.removeOneItem(crateItemId(kind));
   }
 
   isBestiaryFound(itemId: ItemId): boolean {

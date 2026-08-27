@@ -79,7 +79,7 @@ const STALL_MUTATIONS: Array<{ id: FishMutationId | null; weight: number }> = [
 /**
  * Curio Trader inventory — restocks every 3 minutes.
  * Earthly Yellowfin ~10%, Earthly Angelfish ~20%,
- * Augment Rod ~30%, craft bobbers ~8%.
+ * Augment Rod ~30%, craft bobbers ~8%, Ore Clusters ~15% ($150).
  * Anvil Shard is always stocked while the Ashencast quest needs it.
  */
 export class CurioTraderStock {
@@ -291,6 +291,16 @@ export class CurioTraderStock {
     if (Math.random() < 0.08) {
       const bobber = this.rollCurioBobber();
       if (bobber) this.entries.push(bobber);
+    }
+
+    if (Math.random() < 0.15) {
+      this.entries.push({
+        id: this.nextId(),
+        kind: "misc",
+        itemId: "ore_cluster",
+        fair: 150,
+        label: ITEMS.ore_cluster.name,
+      });
     }
   }
 

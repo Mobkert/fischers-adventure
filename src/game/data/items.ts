@@ -11,6 +11,7 @@ export type ItemId =
   | "recoil_rod"
   | "portal_rod"
   | "forge_rod"
+  | "starweaver_rod"
   | "birthday_rod"
   | "equipment_bag"
   | "bestiary"
@@ -87,7 +88,8 @@ export type ItemId =
   | "hat_shell"
   | "hat_yellowfin"
   | "hat_gem"
-  | "skin_crate";
+  | "skin_crate"
+  | "frostpeak_crate";
 
 export type AmuletEffectId =
   | "celestial"
@@ -115,7 +117,8 @@ export type FishMutationId =
   | "ashencast"
   | "wrapped"
   | "confetti"
-  | "electric";
+  | "electric"
+  | "tranquil";
 
 export type FishBodyTone = "black" | "orange" | "red";
 
@@ -322,6 +325,18 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     glowColor: 0x7ec8ff,
     toastColor: "#7ec8ff",
     label: "Electric! ",
+  },
+  tranquil: {
+    id: "tranquil",
+    name: "Tranquil",
+    sellMult: 3,
+    // Soft blue body + bright white glow aura
+    tint: 0x6eb8ff,
+    tintFill: true,
+    glowColor: 0xffffff,
+    toastColor: "#a8d8ff",
+    label: "Tranquil! ",
+    chance: 0.0075,
   },
 };
 
@@ -581,6 +596,7 @@ export interface ItemDef {
     | "recoil_kick"
     | "portal_pull"
     | "forge_strike"
+    | "starweaver_weave"
     | "birthday_party";
   /** Quest item — never sold by merchants. */
   isQuestItem?: boolean;
@@ -887,11 +903,12 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "tranquil_rod",
     name: "Tranquil Rod",
     description:
-      "A calm blue rod. 40% chance to cast 1m deeper, 15% chance for 2m deeper, bubble minigame every 2 catches, and its bubble can insta-catch at 25% progress.",
+      "A calm blue rod. 40% chance to cast 1m deeper, 15% chance for 2m deeper, bubble minigame every 2 catches (bubble catch → 75% Tranquil), and 30% Tranquil (3×) on catch.",
     stackable: false,
     textureKey: "rod_tranquil",
     isRod: true,
     rodMinigamePower: "tranquil_bubble",
+    rodMutation: { mutation: "tranquil", chance: 0.3 },
     craftCost: {
       coins: 70000,
       ingredients: [
@@ -1013,8 +1030,14 @@ export const ITEMS: Record<ItemId, ItemDef> = {
         { itemId: "serpent_eel", count: 5, mutation: "blasted" },
         { itemId: "driftwood", count: 5, mutation: "ash" },
         { itemId: "alligator", count: 3, anyMutation: true },
-        { itemId: "taaffite", count: 1 },
-        { itemId: "vivianite", count: 1 },
+        {
+          itemId: "sockeye_salmon",
+          iconKey: "craft_starlight_fish",
+          count: 2,
+          anyFish: true,
+          minRarity: "uncommon",
+          mutation: "starlight",
+        },
       ],
     },
     rodStats: {
@@ -1023,6 +1046,41 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       control: 20,
       progressSpeed: 0,
       lineDepth: 5,
+    },
+  },
+  starweaver_rod: {
+    id: "starweaver_rod",
+    name: "Starweaver Rod",
+    description:
+      "A slender indigo rod tipped with a woven star. After the fish moves 3 times, it sacrifices 5–15% catch progress to stun the fish (5% → 1s, 15% → 3s). Starlight 5%.",
+    stackable: false,
+    textureKey: "rod_starweaver",
+    isRod: true,
+    rodMinigamePower: "starweaver_weave",
+    rodMutation: { mutation: "starlight", chance: 0.05 },
+    craftCost: {
+      coins: 70000,
+      ingredients: [
+        { itemId: "taaffite", count: 2 },
+        { itemId: "rhodochrosite", count: 1 },
+        { itemId: "driftwood", count: 2, mutation: "tranquil" },
+        {
+          itemId: "sockeye_salmon",
+          iconKey: "craft_starlight_fish",
+          count: 1,
+          anyFish: true,
+          minRarity: "uncommon",
+          mutation: "starlight",
+        },
+        { itemId: "ruby", count: 7 },
+      ],
+    },
+    rodStats: {
+      luck: 60,
+      resilience: 0,
+      control: 20,
+      progressSpeed: 10,
+      lineDepth: 3,
     },
   },
   birthday_rod: {
@@ -1091,6 +1149,15 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     stackable: true,
     textureKey: "skin_crate",
     buyPrice: 15000,
+  },
+  frostpeak_crate: {
+    id: "frostpeak_crate",
+    name: "Frostpeak Crate",
+    description:
+      "A frost-sealed crate of icy rod skins. Open from your inventory. Duplicates refund $10,000.",
+    stackable: true,
+    textureKey: "frostpeak_crate",
+    buyPrice: 20000,
   },
   equipment_bag: {
     id: "equipment_bag",
@@ -2104,8 +2171,8 @@ export const FISH_ITEM_IDS: ItemId[] = (
     (ITEMS[id].sellPrice != null || !!ITEMS[id].isCatchable)
 );
 
-/** Ashencast ore peddler — $110 each, 20 stock, 10 min restock. */
-export const ORE_CLUSTER_VENDOR_PRICE = 110;
+/** Ashencast ore peddler — $240 each, 20 stock, 10 min restock. */
+export const ORE_CLUSTER_VENDOR_PRICE = 240;
 export const ORE_CLUSTER_VENDOR_STOCK_MAX = 20;
 export const ORE_CLUSTER_VENDOR_RESTOCK_MS = 10 * 60 * 1000;
 

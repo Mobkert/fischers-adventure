@@ -20,9 +20,54 @@ function isLocalDevHost(): boolean {
 }
 
 export function applyDevInventoryBootstrap(inventory: InventorySystem): void {
-  // Belt-and-suspenders: stubbed in prod, skipped unless Vite DEV + localhost + opt-in
+  // Belt-and-suspenders: stubbed in prod; localhost DEV only
   if (!import.meta.env.DEV) return;
   if (!isLocalDevHost()) return;
+
+  // Explicit one-shot gifts (requested in chat) — no general opt-in needed
+  const starweaverCraftKey = "fischers_granted_starweaver_craft_v1";
+  if (!localStorage.getItem(starweaverCraftKey)) {
+    inventory.coins = Math.max(inventory.coins, 70000);
+    inventory.addItem("taaffite", 2);
+    inventory.addItem("rhodochrosite", 1);
+    inventory.addItem("driftwood", 2, "tranquil");
+    inventory.addItem("angelfish", 1, "starlight");
+    inventory.addItem("ruby", 7);
+    localStorage.setItem(starweaverCraftKey, "1");
+  }
+
+  // Frostpeak crate skins + matching rods for testing
+  const frostpeakSkinsKey = "fischers_granted_frostpeak_skins_v1";
+  if (!localStorage.getItem(frostpeakSkinsKey)) {
+    const frostSkins: Array<{
+      skin: "frigid" | "frozen_lotus" | "icicle" | "halo_of_ice" | "hyperboreal" | "hyperthermic";
+      rod:
+        | "amber_rod"
+        | "wildflower_rod"
+        | "augment_rod"
+        | "coral_rod"
+        | "starweaver_rod"
+        | "forge_rod";
+    }> = [
+      { skin: "frigid", rod: "amber_rod" },
+      { skin: "icicle", rod: "augment_rod" },
+      { skin: "frozen_lotus", rod: "wildflower_rod" },
+      { skin: "halo_of_ice", rod: "coral_rod" },
+      { skin: "hyperboreal", rod: "starweaver_rod" },
+      { skin: "hyperthermic", rod: "forge_rod" },
+    ];
+    for (const { skin, rod } of frostSkins) {
+      if (!inventory.ownsRod(rod)) {
+        inventory.addItem(rod);
+      }
+      if (!inventory.ownsRodSkin(skin)) {
+        inventory.ownedRodSkins.push(skin);
+      }
+      inventory.activeRodSkins[rod] = skin;
+    }
+    localStorage.setItem(frostpeakSkinsKey, "1");
+  }
+
   if (localStorage.getItem(DEV_GRANTS_OPT_IN) !== "1") return;
 
   const forgeClearKey = "fischers_cleared_forge_dev_grant_v1";
@@ -81,14 +126,13 @@ export function applyDevInventoryBootstrap(inventory: InventorySystem): void {
     localStorage.setItem(portalCraftKey, "1");
   }
 
-  const forgeCraftKey = "fischers_granted_forge_craft_v2";
+  const forgeCraftKey = "fischers_granted_forge_craft_v1";
   if (!localStorage.getItem(forgeCraftKey)) {
     inventory.coins = Math.max(inventory.coins, 210000);
     inventory.addItem("serpent_eel", 5, "blasted");
     inventory.addItem("driftwood", 5, "ash");
     inventory.addItem("alligator", 3, "glowing");
-    inventory.addItem("taaffite", 1);
-    inventory.addItem("vivianite", 1);
+    inventory.addItem("angelfish", 2, "starlight");
     localStorage.setItem(forgeCraftKey, "1");
   }
 

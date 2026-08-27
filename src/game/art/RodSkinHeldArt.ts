@@ -493,6 +493,607 @@ export function drawLaserRod(
   }
 }
 
+/** Frigid — Amber blank sheathed in pale ice, hanging icicles, tip crystals. */
+export function drawFrigidRod(
+  g: Phaser.GameObjects.Graphics,
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number
+): void {
+  const ang = Math.atan2(tipY - handY, tipX - handX);
+  const px = Math.cos(ang + Math.PI / 2);
+  const py = Math.sin(ang + Math.PI / 2);
+
+  shaft(g, handX, handY, tipX, tipY, 0x4a7a9a, 0xa8d8f0, 0xe8f8ff);
+
+  // Frost wraps
+  for (const t of [0.2, 0.36, 0.52, 0.68, 0.84]) {
+    const p = lerp(handX, handY, tipX, tipY, t);
+    g.lineStyle(2.1, t < 0.5 ? 0x7ec8e8 : 0xc8ecff, 0.95);
+    g.lineBetween(
+      p.x + px * 3.6,
+      p.y + py * 3.6,
+      p.x - px * 3.6,
+      p.y - py * 3.6
+    );
+  }
+
+  // Hanging icicles along blank
+  for (const t of [0.28, 0.44, 0.6, 0.74]) {
+    const p = lerp(handX, handY, tipX, tipY, t);
+    const len = 4 + (t * 4) % 3;
+    g.fillStyle(0xb8e4f8, 0.85);
+    g.fillTriangle(
+      p.x + px * 2.2 - 1.2,
+      p.y + py * 2.2,
+      p.x + px * 2.2 + 1.2,
+      p.y + py * 2.2,
+      p.x + px * 2.2,
+      p.y + py * 2.2 + len
+    );
+    g.fillStyle(0xffffff, 0.55);
+    g.fillTriangle(
+      p.x + px * 2.2 - 0.5,
+      p.y + py * 2.2 + 0.4,
+      p.x + px * 2.2 + 0.4,
+      p.y + py * 2.2 + 0.4,
+      p.x + px * 2.2,
+      p.y + py * 2.2 + len * 0.7
+    );
+  }
+
+  corkGrip(g, handX, handY, 0x6a9ab8, 0xc8e0f0, 0x8ab8d0);
+  reelSeat(g, handX, handY, 0x9ad0e8, 0xe8f8ff);
+
+  // Ice crystal clusters near tip
+  const crystals: Array<{ t: number; s: number }> = [
+    { t: 0.82, s: 0.9 },
+    { t: 0.9, s: 1.15 },
+  ];
+  for (const c of crystals) {
+    const p = lerp(handX, handY, tipX, tipY, c.t);
+    const s = c.s;
+    g.fillStyle(0x7eb8d8, 0.9);
+    g.fillTriangle(
+      p.x - 2.2 * s,
+      p.y + 2 * s,
+      p.x,
+      p.y - 7 * s,
+      p.x + 2.4 * s,
+      p.y + 1.6 * s
+    );
+    g.fillStyle(0xd0f0ff, 0.9);
+    g.fillTriangle(
+      p.x - 1 * s,
+      p.y + 0.8 * s,
+      p.x + 0.3 * s,
+      p.y - 5 * s,
+      p.x + 1.6 * s,
+      p.y + 0.6 * s
+    );
+    g.fillStyle(0xffffff, 0.85);
+    g.fillCircle(p.x + 0.2 * s, p.y - 2.5 * s, 0.7 * s);
+  }
+
+  g.lineStyle(2.2, 0xc8ecff);
+  g.strokeCircle(tipX, tipY, 3.2);
+  g.fillStyle(0xe8f8ff);
+  g.fillCircle(tipX, tipY, 1.4);
+  g.fillStyle(0xffffff, 0.7);
+  g.fillCircle(tipX - 0.5, tipY - 0.6, 0.6);
+}
+
+/** Frozen Lotus — cool shaft with a white/pale-blue lotus bloom tip. */
+export function drawFrozenLotusRod(
+  g: Phaser.GameObjects.Graphics,
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number
+): void {
+  const ang = Math.atan2(tipY - handY, tipX - handX);
+  const px = Math.cos(ang + Math.PI / 2);
+  const py = Math.sin(ang + Math.PI / 2);
+
+  shaft(g, handX, handY, tipX, tipY, 0x3a6a88, 0x7ab8d8, 0xd0ecff);
+
+  // Cool thread wraps
+  for (const t of [0.22, 0.4, 0.58, 0.76]) {
+    const p = lerp(handX, handY, tipX, tipY, t);
+    g.lineStyle(2, t % 0.3 < 0.15 ? 0xa8d8f0 : 0xe0f4ff, 0.95);
+    g.lineBetween(
+      p.x + px * 3.5,
+      p.y + py * 3.5,
+      p.x - px * 3.5,
+      p.y - py * 3.5
+    );
+  }
+
+  corkGrip(g, handX, handY, 0x5a88a8, 0xb8d8e8, 0x88b0c8);
+  reelSeat(g, handX, handY, 0x9ad0e8, 0xf0faff);
+
+  // Stem near tip
+  const stem = lerp(handX, handY, tipX, tipY, 0.88);
+  g.lineStyle(1.6, 0x8ac0d8, 0.9);
+  g.lineBetween(stem.x, stem.y, tipX + 4, tipY - 3.5);
+
+  // Lotus bloom — layered petals
+  const cx = tipX + 5;
+  const cy = tipY - 4;
+  const petalColors = [0x8ab8d0, 0xb8dcf0, 0xe0f4ff, 0xffffff];
+  for (let layer = 0; layer < 3; layer++) {
+    const r = 5.2 - layer * 1.2;
+    const pr = 2.8 - layer * 0.45;
+    g.fillStyle(petalColors[layer], 0.92);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - Math.PI / 2 + layer * 0.2;
+      g.fillEllipse(
+        cx + Math.cos(a) * r * 0.55,
+        cy + Math.sin(a) * r * 0.55,
+        pr * 1.4,
+        pr
+      );
+    }
+  }
+  g.fillStyle(0xc8e8f8, 0.95);
+  g.fillCircle(cx, cy, 2.4);
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(cx, cy, 1.3);
+  g.fillStyle(0xa8d8f0, 0.8);
+  g.fillCircle(cx - 0.3, cy - 0.3, 0.55);
+
+  // Frost dust around bloom
+  g.fillStyle(0xffffff, 0.75);
+  g.fillCircle(cx - 5, cy - 3, 0.7);
+  g.fillCircle(cx + 5.5, cy + 1, 0.55);
+  g.fillCircle(cx + 2, cy - 6, 0.5);
+}
+
+/** Icicle — long translucent spiky taper with facets and a sharp tip. */
+export function drawIcicleRod(
+  g: Phaser.GameObjects.Graphics,
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number
+): void {
+  const dx = tipX - handX;
+  const dy = tipY - handY;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const half = 5.5;
+
+  // Soft outer glow
+  g.fillStyle(0xa8d8f0, 0.22);
+  g.fillTriangle(
+    handX + nx * (half + 1.5),
+    handY + ny * (half + 1.5),
+    handX - nx * (half + 1.5),
+    handY - ny * (half + 1.5),
+    tipX,
+    tipY
+  );
+
+  // Main translucent body
+  g.fillStyle(0x7ab8d8, 0.72);
+  g.fillTriangle(
+    handX + nx * half,
+    handY + ny * half,
+    handX - nx * half,
+    handY - ny * half,
+    tipX,
+    tipY
+  );
+  g.fillStyle(0xc8ecff, 0.78);
+  g.fillTriangle(
+    handX + nx * (half * 0.55),
+    handY + ny * (half * 0.55),
+    handX - nx * (half * 0.25),
+    handY - ny * (half * 0.25),
+    tipX - dx * 0.08,
+    tipY - dy * 0.08
+  );
+
+  // Facet ridges
+  for (const t of [0.2, 0.38, 0.55, 0.72]) {
+    const p = lerp(handX, handY, tipX, tipY, t);
+    const w = half * (1 - t * 0.75);
+    g.lineStyle(1.2, 0xffffff, 0.55);
+    g.lineBetween(
+      p.x + nx * w * 0.85,
+      p.y + ny * w * 0.85,
+      p.x - nx * w * 0.35,
+      p.y - ny * w * 0.35
+    );
+  }
+
+  // Side spikes
+  for (const t of [0.3, 0.5, 0.68]) {
+    const p = lerp(handX, handY, tipX, tipY, t);
+    const w = half * (1 - t * 0.7);
+    g.fillStyle(0xb0e0f8, 0.85);
+    g.fillTriangle(
+      p.x + nx * w,
+      p.y + ny * w,
+      p.x + nx * (w + 3.5),
+      p.y + ny * (w + 3.5) + dy * 0.04,
+      p.x + nx * w * 0.4 + dx * 0.04,
+      p.y + ny * w * 0.4 + dy * 0.04
+    );
+  }
+
+  // Grip butt
+  g.fillStyle(0x5a7888, 0.95);
+  g.fillRect(handX - 3.5, handY - 2, 9, 9);
+  g.fillStyle(0x90b8c8, 0.9);
+  g.fillRect(handX - 2.5, handY, 7, 2);
+  g.fillStyle(0xd0ecff, 0.85);
+  g.fillRect(handX - 3.5, handY + 6, 9, 2);
+
+  // Sharp tip highlight
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(tipX, tipY, 1.1);
+  g.fillStyle(0xe8f8ff, 0.8);
+  g.fillTriangle(
+    tipX - nx * 1.2,
+    tipY - ny * 1.2,
+    tipX + nx * 1.2,
+    tipY + ny * 1.2,
+    tipX + dx * 0.06,
+    tipY + dy * 0.06
+  );
+}
+
+/** Halo of Ice — coral-branch shaft ending in an ice ring with swirling sparkles. */
+export function drawHaloOfIceRod(
+  g: Phaser.GameObjects.Graphics,
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number
+): void {
+  const ang = Math.atan2(tipY - handY, tipX - handX);
+  const px = Math.cos(ang + Math.PI / 2);
+  const py = Math.sin(ang + Math.PI / 2);
+
+  shaft(g, handX, handY, tipX, tipY, 0x2a5a6a, 0x5ea8b8, 0xb8e8f0);
+
+  // Coral-like ice branches along shaft
+  const branches: Array<{ t: number; side: number; len: number }> = [
+    { t: 0.22, side: 1, len: 5 },
+    { t: 0.38, side: -1, len: 4.2 },
+    { t: 0.52, side: 1, len: 5.5 },
+    { t: 0.66, side: -1, len: 4.8 },
+    { t: 0.8, side: 1, len: 3.8 },
+  ];
+  for (const b of branches) {
+    const p = lerp(handX, handY, tipX, tipY, b.t);
+    const ex = p.x + px * b.side * b.len;
+    const ey = p.y + py * b.side * b.len;
+    g.lineStyle(2.4, 0x7ec8d8, 0.95);
+    g.lineBetween(p.x, p.y, ex, ey);
+    g.fillStyle(0xc8ecff, 0.9);
+    g.fillCircle(ex, ey, 1.6);
+    g.fillStyle(0xffffff, 0.7);
+    g.fillCircle(ex - 0.3, ey - 0.3, 0.6);
+    // Tiny fork
+    g.lineStyle(1.4, 0xa8dce8, 0.85);
+    g.lineBetween(
+      ex,
+      ey,
+      ex + px * b.side * 2.2 + Math.cos(ang) * 1.5,
+      ey + py * b.side * 2.2 + Math.sin(ang) * 1.5
+    );
+  }
+
+  corkGrip(g, handX, handY, 0x4a7888, 0x88b8c8, 0x6a98a8);
+  reelSeat(g, handX, handY, 0x7ec8d8, 0xe0f8ff);
+
+  // Ice halo / ring at tip
+  const hx = tipX + 1;
+  const hy = tipY - 1;
+  g.fillStyle(0xa8d8f0, 0.2);
+  g.fillCircle(hx, hy, 10);
+  g.lineStyle(3.2, 0x6ab0c8, 0.95);
+  g.strokeCircle(hx, hy, 7.5);
+  g.lineStyle(2, 0xd0f0ff, 0.9);
+  g.strokeCircle(hx, hy, 7.5);
+  g.lineStyle(1.2, 0xffffff, 0.75);
+  g.strokeCircle(hx, hy, 6.2);
+
+  // Crystal nubs on ring
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const rx = hx + Math.cos(a) * 7.5;
+    const ry = hy + Math.sin(a) * 7.5;
+    g.fillStyle(0xc8ecff, 0.95);
+    g.fillCircle(rx, ry, 1.5);
+    g.fillStyle(0xffffff, 0.85);
+    g.fillCircle(rx - 0.3, ry - 0.3, 0.55);
+  }
+
+  // Swirling icy sparkles inside ring
+  const swirl = [
+    { a: 0.3, r: 3.2, s: 1.1, c: 0xffffff },
+    { a: 1.4, r: 4.5, s: 0.85, c: 0xd0f0ff },
+    { a: 2.6, r: 2.8, s: 1.0, c: 0xa8e0f8 },
+    { a: 3.8, r: 4.0, s: 0.7, c: 0xffffff },
+    { a: 5.0, r: 3.5, s: 0.95, c: 0xe0f8ff },
+    { a: 5.8, r: 2.2, s: 0.6, c: 0xffffff },
+  ];
+  g.lineStyle(1.2, 0xc8ecff, 0.55);
+  g.beginPath();
+  g.arc(hx, hy, 4, -0.4, 2.8, false);
+  g.strokePath();
+  g.lineStyle(1, 0xffffff, 0.4);
+  g.beginPath();
+  g.arc(hx, hy, 2.8, 1.2, 4.2, false);
+  g.strokePath();
+  for (const s of swirl) {
+    g.fillStyle(s.c, 0.95);
+    g.fillCircle(hx + Math.cos(s.a) * s.r, hy + Math.sin(s.a) * s.r, s.s);
+  }
+  g.fillStyle(0xe8f8ff, 0.9);
+  g.fillCircle(hx, hy, 1.4);
+}
+
+/** Hyperboreal — icy Starweaver: indigo-ice shaft, woven frost star, crystal ridges. */
+export function drawHyperborealRod(
+  g: Phaser.GameObjects.Graphics,
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number
+): void {
+  const ang = Math.atan2(tipY - handY, tipX - handX);
+  const px = Math.cos(ang + Math.PI / 2);
+  const py = Math.sin(ang + Math.PI / 2);
+
+  // Soft polar aura
+  g.lineStyle(10, 0x4a6aff, 0.12);
+  g.lineBetween(handX, handY, tipX, tipY);
+  g.lineStyle(7, 0xa8d0ff, 0.16);
+  g.lineBetween(handX, handY, tipX, tipY);
+
+  shaft(g, handX, handY, tipX, tipY, 0x1a2248, 0x4a6cff, 0xc8e0ff);
+
+  // Crystalline ridges / frost weave along blank
+  for (const t of [0.16, 0.28, 0.4, 0.52, 0.64, 0.76, 0.88]) {
+    const p = lerp(handX, handY, tipX, tipY, t);
+    const w = 4.2 - t * 1.2;
+    g.lineStyle(1.8, 0x8ab4ff, 0.9);
+    g.lineBetween(
+      p.x + px * w,
+      p.y + py * w,
+      p.x - px * w,
+      p.y - py * w
+    );
+    g.fillStyle(0xd0e8ff, 0.85);
+    g.fillCircle(p.x + px * w, p.y + py * w, 1.1);
+    g.fillStyle(0xffffff, 0.7);
+    g.fillCircle(p.x - px * (w * 0.7), p.y - py * (w * 0.7), 0.7);
+  }
+
+  // Ice crystal studs
+  for (const t of [0.34, 0.58, 0.8]) {
+    const p = lerp(handX, handY, tipX, tipY, t);
+    g.fillStyle(0x6a90ff, 0.9);
+    g.fillTriangle(
+      p.x - px * 2.5 - 1.5,
+      p.y - py * 2.5 + 1,
+      p.x - px * 2.5,
+      p.y - py * 2.5 - 5,
+      p.x - px * 2.5 + 1.8,
+      p.y - py * 2.5 + 0.8
+    );
+    g.fillStyle(0xe8f0ff, 0.9);
+    g.fillTriangle(
+      p.x - px * 2.5 - 0.6,
+      p.y - py * 2.5 + 0.3,
+      p.x - px * 2.5 + 0.2,
+      p.y - py * 2.5 - 3.5,
+      p.x - px * 2.5 + 1,
+      p.y - py * 2.5 + 0.2
+    );
+  }
+
+  corkGrip(g, handX, handY, 0x2a3a88, 0x8aa0c8, 0x4a68a8);
+  reelSeat(g, handX, handY, 0x7a9cff, 0xe8f0ff);
+
+  // Woven frost star tip — multi-layer
+  g.fillStyle(0x4a6cff, 0.25);
+  g.fillCircle(tipX, tipY, 11);
+  g.fillStyle(0x8ab4ff, 0.35);
+  g.fillCircle(tipX, tipY, 7.5);
+  g.lineStyle(2.2, 0xe8f0ff, 1);
+  g.strokeCircle(tipX, tipY, 3.4);
+  g.fillStyle(0x6a90ff, 0.95);
+  g.fillCircle(tipX, tipY, 2.4);
+
+  // Outer star arms
+  g.lineStyle(1.8, 0xffffff, 0.95);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+    const len = i % 2 === 0 ? 9 : 5.5;
+    g.lineBetween(
+      tipX + Math.cos(a) * 1.4,
+      tipY + Math.sin(a) * 1.4,
+      tipX + Math.cos(a) * len,
+      tipY + Math.sin(a) * len
+    );
+  }
+  // Inner weave
+  g.lineStyle(1.2, 0xa8c8ff, 0.85);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 - Math.PI / 4;
+    g.lineBetween(
+      tipX + Math.cos(a) * 2,
+      tipY + Math.sin(a) * 2,
+      tipX + Math.cos(a) * 5,
+      tipY + Math.sin(a) * 5
+    );
+  }
+  g.fillStyle(0xffffff, 1);
+  g.fillCircle(tipX, tipY, 1.3);
+
+  // Orbit frost sparkles
+  const sparks = [
+    { dx: -7, dy: -5, r: 1.1 },
+    { dx: 7, dy: -3, r: 0.85 },
+    { dx: 6, dy: 6, r: 1.0 },
+    { dx: -6, dy: 5, r: 0.7 },
+    { dx: 0, dy: -9, r: 0.75 },
+    { dx: 9, dy: 1, r: 0.6 },
+  ];
+  for (const s of sparks) {
+    g.fillStyle(0xffffff, 0.95);
+    g.fillCircle(tipX + s.dx, tipY + s.dy, s.r);
+  }
+}
+
+/** Hyperthermic — icy Forge: frozen iron blank, ice spikes, frost furnace, sparkles. */
+export function drawHyperthermicRod(
+  g: Phaser.GameObjects.Graphics,
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number
+): void {
+  const ang = Math.atan2(tipY - handY, tipX - handX);
+  const px = Math.cos(ang + Math.PI / 2);
+  const py = Math.sin(ang + Math.PI / 2);
+
+  // Thick frozen iron blank
+  g.lineStyle(9, 0x1a2838, 1);
+  g.lineBetween(handX, handY, tipX, tipY);
+  g.lineStyle(6.5, 0x4a6078, 1);
+  g.lineBetween(handX, handY, tipX, tipY);
+  g.lineStyle(3.2, 0x8ab0c8, 0.9);
+  g.lineBetween(handX + px, handY + py, tipX + px, tipY + py);
+  g.lineStyle(1.4, 0xd0ecff, 0.75);
+  g.lineBetween(handX - px * 0.8, handY - py * 0.8, tipX - px * 0.8, tipY - py * 0.8);
+
+  // Riveted frost bands
+  for (const t of [0.16, 0.48, 0.78]) {
+    const p = lerp(handX, handY, tipX, tipY, t);
+    g.lineStyle(2.4, 0x2a3848, 1);
+    g.lineBetween(
+      p.x + px * 5,
+      p.y + py * 5,
+      p.x - px * 5,
+      p.y - py * 5
+    );
+    g.fillStyle(0xa8c8d8);
+    g.fillCircle(p.x + px * 3.6, p.y + py * 3.6, 1.2);
+    g.fillCircle(p.x - px * 3.6, p.y - py * 3.6, 1.2);
+    g.fillStyle(0xffffff, 0.7);
+    g.fillCircle(p.x + px * 3.6 - 0.3, p.y + py * 3.6 - 0.3, 0.45);
+  }
+
+  // Ice spikes along blank
+  for (const t of [0.26, 0.4, 0.58, 0.7, 0.86]) {
+    const p = lerp(handX, handY, tipX, tipY, t);
+    const side = t < 0.5 ? 1 : -1;
+    const s = 1 + (t % 0.2) * 2;
+    g.fillStyle(0x7ab0c8, 0.95);
+    g.fillTriangle(
+      p.x + px * side * 3,
+      p.y + py * side * 3,
+      p.x + px * side * (3 + 4 * s),
+      p.y + py * side * (3 + 4 * s) + Math.sin(ang) * 1.5,
+      p.x + Math.cos(ang) * 2.5 + px * side * 2,
+      p.y + Math.sin(ang) * 2.5 + py * side * 2
+    );
+    g.fillStyle(0xd0ecff, 0.9);
+    g.fillTriangle(
+      p.x + px * side * 3.2,
+      p.y + py * side * 3.2,
+      p.x + px * side * (3 + 2.8 * s),
+      p.y + py * side * (3 + 2.8 * s),
+      p.x + Math.cos(ang) * 1.5 + px * side * 2.2,
+      p.y + Math.sin(ang) * 1.5 + py * side * 2.2
+    );
+  }
+
+  // Leather-frost grip
+  g.fillStyle(0x3a4858, 1);
+  g.fillRect(handX - 4, handY - 3, 10, 10);
+  g.fillStyle(0x6a88a0, 1);
+  g.fillRect(handX - 3, handY - 1, 8, 2);
+  g.fillRect(handX - 3, handY + 2, 8, 2);
+  g.fillStyle(0x2a3848, 1);
+  g.fillRect(handX - 4, handY + 6, 10, 3);
+
+  // Ice-metal reel seat
+  g.fillStyle(0x6a90a8, 1);
+  g.fillCircle(handX + 1, handY + 7, 4);
+  g.fillStyle(0xc8e8f8, 1);
+  g.fillCircle(handX + 1, handY + 7, 2.2);
+
+  // Frost furnace motif (blue flame / ice instead of fire)
+  const furnace = lerp(handX, handY, tipX, tipY, 0.38);
+  const fx = furnace.x;
+  const fy = furnace.y;
+  const s = 0.72;
+  g.fillStyle(0x2a3848, 1);
+  g.fillRoundedRect(fx - 7 * s, fy - 5 * s, 14 * s, 11 * s, 2 * s);
+  g.fillStyle(0x4a6078, 1);
+  g.fillRect(fx - 6 * s, fy - 4 * s, 12 * s, 2 * s);
+  g.fillRect(fx - 6 * s, fy + 2 * s, 12 * s, 2 * s);
+  g.lineStyle(1 * s, 0x1a2838, 0.9);
+  g.strokeRoundedRect(fx - 7 * s, fy - 5 * s, 14 * s, 11 * s, 2 * s);
+  g.fillStyle(0x0a1828, 1);
+  g.fillRect(fx - 4.5 * s, fy - 2 * s, 9 * s, 5 * s);
+  g.fillStyle(0x283848, 1);
+  g.fillRect(fx - 2 * s, fy - 7 * s, 4 * s, 5 * s);
+  g.lineStyle(1 * s, 0x608898, 1);
+  g.strokeRect(fx - 2 * s, fy - 7 * s, 4 * s, 5 * s);
+
+  // Blue ice-flame glow
+  g.fillStyle(0x3a80ff, 0.75);
+  g.fillEllipse(fx, fy + 0.5 * s, 6 * s, 3.5 * s);
+  g.fillStyle(0x70b8ff, 0.9);
+  g.fillEllipse(fx, fy + 0.5 * s, 4 * s, 2.2 * s);
+  g.fillStyle(0xd0f0ff, 0.95);
+  g.fillCircle(fx - 1 * s, fy + 0.2 * s, 1.2 * s);
+  g.fillCircle(fx + 1.4 * s, fy + 0.8 * s, 0.9 * s);
+
+  // Ice shimmer rising from chimney
+  g.lineStyle(1 * s, 0x80c0ff, 0.6);
+  g.lineBetween(fx - 3 * s, fy - 8 * s, fx - 1 * s, fy - 10 * s);
+  g.lineBetween(fx + 1 * s, fy - 9 * s, fx + 3 * s, fy - 11 * s);
+  g.lineStyle(1 * s, 0xc8ecff, 0.5);
+  g.lineBetween(fx, fy - 8.5 * s, fx + 0.5 * s, fy - 11.5 * s);
+
+  // Tip ice ring
+  g.lineStyle(2.6, 0xa8d0e8, 1);
+  g.strokeCircle(tipX, tipY, 3.4);
+  g.lineStyle(1.5, 0xe8f8ff, 0.85);
+  g.strokeCircle(tipX, tipY, 2.1);
+  g.fillStyle(0x70b8ff, 0.8);
+  g.fillCircle(tipX + 2, tipY - 2, 1.3);
+
+  // VFX-like sparkles everywhere
+  const sparks = [
+    { t: 0.2, ox: 4, oy: -3, r: 1.0 },
+    { t: 0.35, ox: -5, oy: 2, r: 0.75 },
+    { t: 0.5, ox: 5, oy: -4, r: 0.9 },
+    { t: 0.62, ox: -4, oy: -2, r: 0.7 },
+    { t: 0.75, ox: 3, oy: 3, r: 0.85 },
+    { t: 0.9, ox: -3, oy: -4, r: 0.65 },
+    { t: 0.95, ox: 4, oy: 1, r: 0.8 },
+  ];
+  for (const sp of sparks) {
+    const p = lerp(handX, handY, tipX, tipY, sp.t);
+    g.fillStyle(0xffffff, 0.95);
+    g.fillCircle(p.x + px * sp.ox * 0.4 + sp.ox * 0.3, p.y + py * sp.oy * 0.4 + sp.oy * 0.3, sp.r);
+    g.fillStyle(0xa8d8ff, 0.7);
+    g.fillCircle(p.x + px * sp.ox * 0.4 + sp.ox * 0.3 + 1.5, p.y + py * sp.oy * 0.4 + sp.oy * 0.3 - 1, sp.r * 0.55);
+  }
+}
+
 export function drawSkinRodIcon(
   g: Phaser.GameObjects.Graphics,
   draw: (

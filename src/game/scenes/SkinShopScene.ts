@@ -1,7 +1,10 @@
 import Phaser from "phaser";
 import {
+  FROSTPEAK_CRATE_DUPLICATE_REFUND,
+  FROSTPEAK_CRATE_PRICE,
   SKIN_CRATE_DUPLICATE_REFUND,
   SKIN_CRATE_PRICE,
+  SkinCrateKind,
 } from "../data/rodSkins";
 import { InventorySystem } from "../systems/InventorySystem";
 
@@ -78,8 +81,7 @@ export class SkinShopScene extends Phaser.Scene {
       g.fillRect(0, y, w, 2);
     }
 
-    // Display shelf behind crate
-    this.drawShelf(w * 0.5, h * 0.38, 280, 180);
+    this.drawShelf(w * 0.5, h * 0.38, 560, 200);
   }
 
   private drawShelf(cx: number, cy: number, sw: number, sh: number): void {
@@ -98,9 +100,9 @@ export class SkinShopScene extends Phaser.Scene {
     const h = this.scale.height;
 
     this.add
-      .text(w / 2, 42, "Collectors Skin Boutique", {
+      .text(w / 2, 36, "Collectors Skin Boutique", {
         fontFamily: "Georgia, serif",
-        fontSize: "32px",
+        fontSize: "30px",
         color: "#f0e0d0",
       })
       .setOrigin(0.5)
@@ -109,11 +111,11 @@ export class SkinShopScene extends Phaser.Scene {
     this.add
       .text(
         w / 2,
-        78,
-        "Rod skins from sealed crates · Duplicates refund $7,500 · W / ESC to leave",
+        68,
+        "Sealed rod-skin crates · Open in Inventory · W / ESC to leave",
         {
           fontFamily: "Arial",
-          fontSize: "14px",
+          fontSize: "13px",
           color: "#c8a888",
         }
       )
@@ -129,63 +131,61 @@ export class SkinShopScene extends Phaser.Scene {
       .setOrigin(1, 0)
       .setDepth(10);
 
-    // Crate product card
-    const cx = w / 2;
     const cy = h * 0.4;
-    const card = this.add
-      .rectangle(cx, cy, 260, 200, 0x2a1814, 0.95)
-      .setStrokeStyle(2, 0xc4a86a)
-      .setDepth(12)
-      .setInteractive({ useHandCursor: true });
-
-    this.add
-      .image(cx, cy - 36, "skin_crate")
-      .setDisplaySize(72, 72)
-      .setDepth(13);
-
-    this.add
-      .text(cx, cy + 24, "Skin Crate", {
-        fontFamily: "Georgia, serif",
-        fontSize: "22px",
-        color: "#f0e0d0",
-      })
-      .setOrigin(0.5)
-      .setDepth(13);
-
-    this.add
-      .text(cx, cy + 52, `$${SKIN_CRATE_PRICE.toLocaleString()}`, {
-        fontFamily: "Arial",
-        fontSize: "18px",
-        color: "#ffe066",
-      })
-      .setOrigin(0.5)
-      .setDepth(13);
-
-    this.add
-      .text(cx, cy + 78, "Click to buy · Open in Inventory", {
-        fontFamily: "Arial",
-        fontSize: "12px",
-        color: "#a89078",
-      })
-      .setOrigin(0.5)
-      .setDepth(13);
-
-    card.on("pointerover", () => card.setStrokeStyle(2, 0xffe066));
-    card.on("pointerout", () => card.setStrokeStyle(2, 0xc4a86a));
-    card.on("pointerdown", () => this.tryBuy());
+    this.buildCrateCard({
+      cx: w / 2 - 150,
+      cy,
+      kind: "collectors",
+      texture: "skin_crate",
+      title: "Skin Crate",
+      price: SKIN_CRATE_PRICE,
+      accent: 0xc4a86a,
+      hover: 0xffe066,
+      fill: 0x2a1814,
+    });
+    this.buildCrateCard({
+      cx: w / 2 + 150,
+      cy,
+      kind: "frostpeak",
+      texture: "frostpeak_crate",
+      title: "Frostpeak Crate",
+      price: FROSTPEAK_CRATE_PRICE,
+      accent: 0x8ec8e8,
+      hover: 0xd8f0ff,
+      fill: 0x142838,
+    });
 
     this.add
       .text(
-        w / 2,
-        h * 0.72,
-        "Odds: Golden Lucky 39% · Universal Portal 25% · Pufferfirm 15%\n" +
-          `Poisoned 10% · Pistol 7% · Laser 3% · Dupes → $${SKIN_CRATE_DUPLICATE_REFUND.toLocaleString()}`,
+        w / 2 - 150,
+        h * 0.68,
+        "Odds: Golden Lucky 39% · Universal Portal 25%\n" +
+          "Pufferfirm 15% · Poisoned 10% · Pistol 7% · Laser 3%\n" +
+          `Dupes → $${SKIN_CRATE_DUPLICATE_REFUND.toLocaleString()}`,
         {
           fontFamily: "Arial",
-          fontSize: "13px",
+          fontSize: "11px",
           color: "#b0a090",
           align: "center",
-          lineSpacing: 4,
+          lineSpacing: 3,
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10);
+
+    this.add
+      .text(
+        w / 2 + 150,
+        h * 0.68,
+        "Odds: Frigid 39% · Icicle 25%\n" +
+          "Frozen Lotus 15% · Halo of Ice 10% · Hyperboreal 7% · Hyperthermic 3%\n" +
+          `Dupes → $${FROSTPEAK_CRATE_DUPLICATE_REFUND.toLocaleString()}`,
+        {
+          fontFamily: "Arial",
+          fontSize: "11px",
+          color: "#a0c0d8",
+          align: "center",
+          lineSpacing: 3,
         }
       )
       .setOrigin(0.5)
@@ -194,8 +194,62 @@ export class SkinShopScene extends Phaser.Scene {
     this.refreshCoins();
   }
 
-  private tryBuy(): void {
-    const result = this.inventory.buySkinCrate();
+  private buildCrateCard(opts: {
+    cx: number;
+    cy: number;
+    kind: SkinCrateKind;
+    texture: string;
+    title: string;
+    price: number;
+    accent: number;
+    hover: number;
+    fill: number;
+  }): void {
+    const card = this.add
+      .rectangle(opts.cx, opts.cy, 240, 200, opts.fill, 0.95)
+      .setStrokeStyle(2, opts.accent)
+      .setDepth(12)
+      .setInteractive({ useHandCursor: true });
+
+    this.add
+      .image(opts.cx, opts.cy - 36, opts.texture)
+      .setDisplaySize(72, 72)
+      .setDepth(13);
+
+    this.add
+      .text(opts.cx, opts.cy + 24, opts.title, {
+        fontFamily: "Georgia, serif",
+        fontSize: "20px",
+        color: "#f0e0d0",
+      })
+      .setOrigin(0.5)
+      .setDepth(13);
+
+    this.add
+      .text(opts.cx, opts.cy + 52, `$${opts.price.toLocaleString()}`, {
+        fontFamily: "Arial",
+        fontSize: "18px",
+        color: "#ffe066",
+      })
+      .setOrigin(0.5)
+      .setDepth(13);
+
+    this.add
+      .text(opts.cx, opts.cy + 78, "Click to buy · Open in Inventory", {
+        fontFamily: "Arial",
+        fontSize: "11px",
+        color: "#a89078",
+      })
+      .setOrigin(0.5)
+      .setDepth(13);
+
+    card.on("pointerover", () => card.setStrokeStyle(2, opts.hover));
+    card.on("pointerout", () => card.setStrokeStyle(2, opts.accent));
+    card.on("pointerdown", () => this.tryBuy(opts.kind));
+  }
+
+  private tryBuy(kind: SkinCrateKind): void {
+    const result = this.inventory.buyCrate(kind);
     this.showToast(result.message, result.ok ? "#7dff9a" : "#ff8866");
     this.refreshCoins();
   }
