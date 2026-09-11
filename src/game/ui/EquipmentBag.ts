@@ -48,6 +48,7 @@ export class EquipmentBag {
   visible = false;
   private tab: BagTab = "rods";
   private onChanged?: (message: string) => void;
+  private onBeforeEquipRod?: (rodId: ItemId) => boolean;
   private onAmuletUsed?: (amuletId: ItemId) => void;
   private onBaitUsed?: (baitId: ItemId) => void;
   private onHatChanged?: () => void;
@@ -240,6 +241,10 @@ export class EquipmentBag {
 
   setOnChanged(cb: (message: string) => void): void {
     this.onChanged = cb;
+  }
+
+  setOnBeforeEquipRod(cb: (rodId: ItemId) => boolean): void {
+    this.onBeforeEquipRod = cb;
   }
 
   setOnAmuletUsed(cb: (amuletId: ItemId) => void): void {
@@ -509,6 +514,10 @@ export class EquipmentBag {
       def.rodMinigamePower === "starweaver_weave"
         ? "\nAfter 5 fish moves: sacrifice 5–15% progress to stun the fish (5%→1s, 15%→3s) · Starlight 5%"
         : "";
+    const starRainLine =
+      def.rodMinigamePower === "star_rain"
+        ? "\nStars attack only in-bar (leave = explode + −11% progress speed until catch; black hole slowly shrinks / loses dupe chance; re-enter restarts cadence) · 0.5s→0.01 · +1% each · each hit grows the black hole (+3% dupe chance, max 55%) · dupes always Starstruck 0.9× · Event Horizon 35% (7×) · Q at port to ride (faster than Jet Ski)"
+        : "";
     const birthdayLine =
       def.rodMinigamePower === "birthday_party"
         ? "\n15% instant catch (Confetti 3×) · balloons (minigame bar → top of screen; right-click: blue +10% progress, red +10% speed, green +10% bar) · +1% progress speed in white zone (0.5s → 0.4s → …, resets off bar)"
@@ -528,6 +537,7 @@ export class EquipmentBag {
           portalLine +
           forgeLine +
           starweaverLine +
+          starRainLine +
           birthdayLine,
         {
           fontFamily: "Arial",
@@ -629,6 +639,7 @@ export class EquipmentBag {
       btn.on("pointerover", () => btn.setFillStyle(0x4a8a62));
       btn.on("pointerout", () => btn.setFillStyle(0x3d6b4f));
       btn.on("pointerdown", () => {
+        if (this.onBeforeEquipRod && !this.onBeforeEquipRod(rodId)) return;
         if (this.inventory.equipRod(rodId)) {
           this.refresh();
           this.onChanged?.(`Equipped ${ITEMS[rodId].name}`);

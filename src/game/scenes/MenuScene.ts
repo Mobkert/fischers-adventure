@@ -129,7 +129,7 @@ export class MenuScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xc4a86a);
 
     const title = this.add
-      .text(0, -panelH / 2 + 28, "Ashencast 1.51", {
+      .text(0, -panelH / 2 + 28, "Ashencast 1.52", {
         fontFamily: "Georgia, serif",
         fontSize: "24px",
         color: "#f0e6d2",
@@ -137,7 +137,7 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const subtitle = this.add
-      .text(0, -panelH / 2 + 56, "What's New · Bait & Appraiser Update", {
+      .text(0, -panelH / 2 + 56, "What's New · Stellar Surfer Update", {
         fontFamily: "Arial",
         fontSize: "13px",
         color: "#9aaa9a",
@@ -161,33 +161,29 @@ export class MenuScene extends Phaser.Scene {
 
     const bodyText =
       "GENERAL\n\n" +
-      "Bait is here — crack Bait Crates, stock the Equipment\n" +
-      "Bag bait tab, and chum the right habitats. On\n" +
-      "Collectors Island, The Appraiser can re-roll a fish's\n" +
-      "mutation and size for a fee. New code SERPENTEELS\n" +
-      "hands out Serpent Lure, Bait Crates, and a Blasted\n" +
-      "Serpent Eel with the Unsellable effect ($0 / can't sell).\n\n" +
+      "The Stellar Surfer is here — a galactic surfboard rod\n" +
+      "with star-rain catches, a growing black hole, catch\n" +
+      "duplicates, and a rideable board at ports (faster than\n" +
+      "the Jet Ski). New mutations: Starstruck (dupe only)\n" +
+      "and Event Horizon (35% on this rod).\n\n" +
       "CHANGES\n\n" +
-      "• Bait Crates + habitat baits (ocean, pond, reef,\n" +
-      "  cave, hotspring, serpent lure, and more)\n" +
-      "• Equipment Bag bait tab — equip & use chum\n" +
-      "• The Appraiser NPC on Collectors Island\n" +
-      "• Zeus Rod buff — bar lightning hits grant +15\n" +
-      "  progress speed (stacks); electrified catch is\n" +
-      "  60% Thunder / 40% Electric\n" +
-      "• Serpent Eels swim shallower (reachable on short rods)\n" +
-      "• Starter Island no longer sells Bait Crates\n" +
-      "• Unsellable fish effect (worth $0, blocked from merchants)\n\n" +
+      "• Stellar Surfer rod — star rain minigame + black hole\n" +
+      "• Stars grow the hole / dupe chance; leaving the bar\n" +
+      "  shrinks it smoothly\n" +
+      "• Black-hole duplicates become Starstruck (0.9×)\n" +
+      "• Event Horizon mutation (7×) — 35% with Stellar Surfer\n" +
+      "• Q at a port to ride the board (galactic trail)\n" +
+      "• Catch toasts above the hotbar with fish icons\n" +
+      "• Twin bobber / multi-catch show per-fish messages\n\n" +
       "CODES (Code Guy)\n\n" +
       "• SERPENTEELS — 15 Serpent Lure, 20 Bait Crates,\n" +
       "  and a Blasted Serpent Eel (Unsellable) (one-time)\n" +
       "• OREAREAWESOME — $2,200 and 10 Ore Clusters\n" +
       "  (one-time)\n" +
       "• NEWSTUFF & FREESKINCRATES — expired\n\n" +
-      "FROM 1.50\n\n" +
-      "• Frostpeak Skin Crate at the Collectors boutique\n" +
-      "• Starweaver Rod forge craft + weave ability\n" +
-      "• Catch bar wall bounce capped (0–3 by impact)";
+      "FROM 1.51\n\n" +
+      "• Bait system + The Appraiser on Collectors Island\n" +
+      "• Zeus Rod lightning bar speed stacks";
 
     const body = this.add
       .text(0, 0, bodyText, {

@@ -24,3 +24,14 @@ export function playCatchSfx(
     // Ignore if audio context isn't ready yet
   }
 }
+
+/** Black-hole duplicate — single ding, higher pitch (never triple). */
+export function playCatchDuplicateDing(scene: Phaser.Scene): void {
+  if (!scene.cache.audio.exists("sfx_ding")) return;
+  try {
+    if (scene.sound.locked) scene.sound.unlock();
+    scene.sound.play("sfx_ding", { volume: 0.55, rate: 1.45 });
+  } catch {
+    // Ignore if audio context isn't ready yet
+  }
+}

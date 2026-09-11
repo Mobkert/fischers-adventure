@@ -1,10 +1,10 @@
-export type BoatId = "sailboat" | "speedboat" | "jetski";
+export type BoatId = "sailboat" | "speedboat" | "jetski" | "stellar_surfer";
 
 export interface BoatDef {
   id: BoatId;
   name: string;
   description: string;
-  /** 0 = free starter. */
+  /** 0 = free starter. Negative = not for sale. */
   buyPrice: number;
   maxSpeed: number;
   hullKey: string;
@@ -14,8 +14,10 @@ export interface BoatDef {
   halfWidth: number;
   seatOffset: { x: number; y: number };
   body: { w: number; h: number; ox: number; oy: number };
-  /** Engine wake strength (null = sail / no wake). */
+  /** Engine wake strength (null = sail / no water wake). */
   wake: { power: number; frequency: number } | null;
+  /** Galactic star trail (Stellar Surfer). */
+  galacticTrail?: boolean;
   /** Hull texture display size (for non-default scales). */
   displayScale?: number;
 }
@@ -63,6 +65,23 @@ export const BOATS: Record<BoatId, BoatDef> = {
     body: { w: 56, h: 12, ox: 10, oy: 18 },
     wake: { power: 1.55, frequency: 16 },
   },
+  stellar_surfer: {
+    id: "stellar_surfer",
+    name: "Stellar Surfer",
+    description:
+      "Your galactic board. Deploy at a port with Q — faster than a Jet Ski.",
+    buyPrice: -1,
+    maxSpeed: 520,
+    hullKey: "stellar_surfer",
+    iconKey: "stellar_surfer_icon",
+    hasSail: false,
+    halfWidth: 50,
+    seatOffset: { x: 0, y: -22 },
+    body: { w: 96, h: 10, ox: 22, oy: 24 },
+    wake: null,
+    galacticTrail: true,
+  },
 };
 
+/** Boats shown in the port shop / spawn menu. */
 export const BOAT_IDS: BoatId[] = ["sailboat", "speedboat", "jetski"];

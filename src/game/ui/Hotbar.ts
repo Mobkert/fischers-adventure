@@ -77,6 +77,12 @@ export class Hotbar {
     this.container.setVisible(visible);
   }
 
+  /** Screen Y for catch toasts — just above the hotbar. */
+  getCatchToastY(): number {
+    const slotHalf = 28 * this.container.scaleY;
+    return this.container.y - slotHalf - 42 * Math.max(1, this.container.scaleY);
+  }
+
   refresh(): void {
     for (let i = 0; i < HOTBAR_SIZE; i++) {
       const slotData = this.inventory.hotbar[i];

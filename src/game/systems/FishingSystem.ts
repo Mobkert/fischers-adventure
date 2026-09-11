@@ -44,6 +44,8 @@ export interface CaughtFishResult {
   speciesId: ItemId;
   mutation: FishMutationId | null;
   size: FishSizeId;
+  /** Black-hole (or similar) copy of a fish already landed this catch. */
+  duplicate?: boolean;
 }
 
 /** How long to wait for a second bite on the twin-hook bobber (ms). */
@@ -726,6 +728,7 @@ export class FishingSystem {
       guaranteeConfetti?: boolean;
       recoilKicks?: number;
       bubbleCatch?: boolean;
+      blackHoleDuplicateChance?: number;
     }
   ): void {
     this.player.hideExclamation();
@@ -780,6 +783,25 @@ export class FishingSystem {
             mutation,
             size,
           });
+          // Black hole dupe: always Starstruck (replaces any other mutation)
+          const dupeChance = meta?.blackHoleDuplicateChance ?? 0;
+          if (dupeChance > 0 && Math.random() < dupeChance) {
+            const dupeMutation: FishMutationId = "starstruck";
+            const duped = this.inventory.addItem(
+              fish.speciesId,
+              1,
+              dupeMutation,
+              size
+            );
+            if (duped) {
+              this.lastCaughtFish.push({
+                speciesId: fish.speciesId,
+                mutation: dupeMutation,
+                size,
+                duplicate: true,
+              });
+            }
+          }
           if (this.inventory.getEquippedRodId() === "recoil_rod") {
             this.inventory.recordRecoilMasteryCatch(1);
           }

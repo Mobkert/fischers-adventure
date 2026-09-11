@@ -4,6 +4,7 @@ import { drawPortalRod } from "../art/PortalRodArt";
 import { drawForgeRod } from "../art/ForgeRodArt";
 import { drawStarweaverRod } from "../art/StarweaverRodArt";
 import { drawBirthdayRod } from "../art/BirthdayRodArt";
+import { drawStellarSurferRod } from "../art/StellarSurferArt";
 import {
   drawGoldenLuckyRod,
   drawUniversalPortalRod,
@@ -74,6 +75,7 @@ export type RodDrawStyle =
   | "forge"
   | "starweaver"
   | "birthday"
+  | "stellar_surfer"
   /** Same poses/tips as other rods, but no baked rod art (Gallery overlay only). */
   | "hidden"
   | "golden_lucky"
@@ -106,6 +108,7 @@ export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
   "forge",
   "starweaver",
   "birthday",
+  "stellar_surfer",
   "hidden",
   "golden_lucky",
   "universal_portal",
@@ -150,6 +153,7 @@ export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "forge_rod") return "forge";
   if (itemId === "starweaver_rod") return "starweaver";
   if (itemId === "birthday_rod") return "birthday";
+  if (itemId === "test_rod") return "stellar_surfer";
   return "starter";
 }
 
@@ -840,6 +844,11 @@ function drawHeldRod(
 
   if (style === "starweaver") {
     drawStarweaverRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+
+  if (style === "stellar_surfer") {
+    drawStellarSurferRod(g, handX, handY, tipX, tipY);
     return;
   }
 

@@ -8,7 +8,8 @@ export type PromoCodeId =
   | "free_skin_crates"
   | "ore_area_awesome"
   | "new_stuff"
-  | "serpent_eels";
+  | "serpent_eels"
+  | "free_stellar_surfer";
 
 export type PromoRedeemResult =
   | { ok: true; message: string }
@@ -23,6 +24,8 @@ const CODE_MAP: Record<string, PromoCodeId> = {
   OREAREAWESOME: "ore_area_awesome",
   NEWSTUFF: "new_stuff",
   SERPENTEELS: "serpent_eels",
+  // Secret — not listed in update log / Code Guy hints
+  ")(freestellarsurfer!!!)(": "free_stellar_surfer",
 };
 
 /** Codes that can no longer be redeemed. */
@@ -157,6 +160,24 @@ export function redeemPromoCode(
         ok: true,
         message:
           "Code Guy hands you 15 Serpent Lure, 20 Bait Crates, and a Blasted Serpent Eel (Unsellable)!",
+      };
+    }
+    case "free_stellar_surfer": {
+      if (inventory.ownsRod("test_rod")) {
+        inventory.markPromoRedeemed(codeId);
+        return {
+          ok: true,
+          message: "You already ride the stars — code marked used.",
+        };
+      }
+      if (!inventory.addItem("test_rod")) {
+        return { ok: false, message: "Couldn't grant the Stellar Surfer." };
+      }
+      inventory.equipRod("test_rod");
+      inventory.markPromoRedeemed(codeId);
+      return {
+        ok: true,
+        message: "Code Guy slips you the Stellar Surfer. Keep it quiet.",
       };
     }
     default:

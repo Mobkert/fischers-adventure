@@ -42,6 +42,14 @@ export function generateBoatArt(scene: Phaser.Scene): void {
   drawJetski(g);
   g.generateTexture("jetski_icon", BW, BH);
 
+  // Stellar Surfer — galactic board
+  g.clear();
+  drawStellarSurfer(g);
+  g.generateTexture("stellar_surfer", BW, BH);
+  g.clear();
+  drawStellarSurfer(g);
+  g.generateTexture("stellar_surfer_icon", BW, BH);
+
   g.destroy();
 
   if (!scene.anims.exists("sail-idle")) {
@@ -444,4 +452,90 @@ function drawJetski(g: Phaser.GameObjects.Graphics): void {
   // Dashboard glint
   g.fillStyle(0x7ec8ff, 0.4);
   g.fillRect(ox + 38, oy + 14, 8, 3);
+}
+
+/** High-detail galactic surfboard hull. */
+function drawStellarSurfer(g: Phaser.GameObjects.Graphics): void {
+  const ox = 18;
+  const oy = 10;
+
+  // Reflection
+  g.fillStyle(0x4a20a0, 0.22);
+  g.fillEllipse(ox + 52, oy + 42, 96, 8);
+
+  // Shadow deck
+  g.fillStyle(0x05020e, 1);
+  g.beginPath();
+  g.moveTo(ox + 4, oy + 30);
+  g.lineTo(ox + 22, oy + 18);
+  g.lineTo(ox + 88, oy + 16);
+  g.lineTo(ox + 108, oy + 26);
+  g.lineTo(ox + 100, oy + 36);
+  g.lineTo(ox + 16, oy + 38);
+  g.closePath();
+  g.fillPath();
+
+  // Nebula core
+  g.fillStyle(0x1a0a48, 1);
+  g.beginPath();
+  g.moveTo(ox + 10, oy + 30);
+  g.lineTo(ox + 26, oy + 20);
+  g.lineTo(ox + 86, oy + 18);
+  g.lineTo(ox + 102, oy + 26);
+  g.lineTo(ox + 94, oy + 34);
+  g.lineTo(ox + 20, oy + 36);
+  g.closePath();
+  g.fillPath();
+
+  // Color washes
+  g.fillStyle(0x6a3cff, 0.55);
+  g.fillEllipse(ox + 52, oy + 26, 70, 14);
+  g.fillStyle(0xff8c42, 0.3);
+  g.fillEllipse(ox + 40, oy + 28, 36, 10);
+  g.fillStyle(0x7ec8ff, 0.35);
+  g.fillEllipse(ox + 70, oy + 24, 32, 9);
+
+  // Rails
+  g.lineStyle(2.2, 0xe8d0ff, 0.85);
+  g.lineBetween(ox + 18, oy + 22, ox + 96, oy + 20);
+  g.lineBetween(ox + 16, oy + 34, ox + 94, oy + 32);
+  g.lineStyle(1.4, 0xffe066, 0.75);
+  g.lineBetween(ox + 24, oy + 27, ox + 90, oy + 25);
+
+  // Fins
+  g.fillStyle(0x2a1848, 1);
+  g.fillTriangle(ox + 8, oy + 32, ox + 2, oy + 40, ox + 18, oy + 36);
+  g.fillTriangle(ox + 100, oy + 28, ox + 112, oy + 24, ox + 104, oy + 36);
+
+  // Star field on deck
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(ox + 34, oy + 24, 1.4);
+  g.fillCircle(ox + 58, oy + 22, 1.2);
+  g.fillCircle(ox + 76, oy + 28, 1.3);
+  g.fillStyle(0xffe066, 0.95);
+  g.fillCircle(ox + 46, oy + 30, 1.5);
+  g.fillCircle(ox + 68, oy + 20, 1.2);
+
+  // Nose star
+  const stx = ox + 96;
+  const sty = oy + 22;
+  g.fillStyle(0xffe066);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+    const a2 = a + Math.PI / 5;
+    g.fillTriangle(
+      stx,
+      sty,
+      stx + Math.cos(a) * 6,
+      sty + Math.sin(a) * 6,
+      stx + Math.cos(a2) * 2.4,
+      sty + Math.sin(a2) * 2.4
+    );
+  }
+  g.fillStyle(0xffffff);
+  g.fillCircle(stx, sty, 1.4);
+
+  // Photon ring hint
+  g.lineStyle(1.5, 0xc9a0ff, 0.55);
+  g.strokeEllipse(ox + 52, oy + 27, 40, 8);
 }

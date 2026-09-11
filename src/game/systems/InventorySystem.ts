@@ -832,6 +832,9 @@ export class InventorySystem {
   buyBoat(boatId: BoatId): { ok: boolean; message: string } {
     const def = BOATS[boatId];
     if (!def) return { ok: false, message: "Unknown boat." };
+    if (def.buyPrice < 0) {
+      return { ok: false, message: "That craft isn't for sale." };
+    }
     if (this.ownsBoat(boatId)) {
       return { ok: false, message: `You already own the ${def.name}.` };
     }

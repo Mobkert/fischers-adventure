@@ -28,6 +28,18 @@ export class Sailboat {
   private readonly turnSmooth = 5;
   private wakeEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
   private wakeTimer = 0;
+  private galacticGfx?: Phaser.GameObjects.Graphics;
+  private galacticSparks: Array<{
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    life: number;
+    maxLife: number;
+    size: number;
+    color: number;
+  }> = [];
+  private galacticSpawn = 0;
 
   constructor(
     scene: Phaser.Scene,
@@ -73,6 +85,7 @@ export class Sailboat {
     });
 
     if (this.def.wake) this.setupWake();
+    if (this.def.galacticTrail) this.setupGalacticTrail();
 
     this.syncVisuals();
     if (this.sail) this.playSail("idle");
@@ -141,6 +154,7 @@ export class Sailboat {
       this.syncVisuals();
       this.wakeEmitter?.stop();
       if (this.sail) this.playSail("idle");
+      this.clearGalacticTrail();
       return;
     }
 
@@ -150,6 +164,7 @@ export class Sailboat {
       this.syncVisuals();
       this.seatPlayer();
       this.updateWake(delta);
+      this.updateGalacticTrail(delta);
       if (this.sail) this.playSail(Math.abs(this.vel) > 20 ? "run" : "idle");
       return;
     }
@@ -175,6 +190,7 @@ export class Sailboat {
     this.syncVisuals();
     this.seatPlayer();
     this.updateWake(delta);
+    this.updateGalacticTrail(delta);
 
     if (this.sail) {
       const moving = Math.abs(this.vel) > 12 && (left || right);
@@ -197,6 +213,93 @@ export class Sailboat {
       emitting: false,
     });
     this.wakeEmitter.setDepth(7);
+  }
+
+  private setupGalacticTrail(): void {
+    this.galacticGfx = this.scene.add
+      .graphics()
+      .setDepth(7)
+      .setBlendMode(Phaser.BlendModes.ADD);
+  }
+
+  private clearGalacticTrail(): void {
+    this.galacticSparks = [];
+    this.galacticGfx?.clear();
+  }
+
+  private updateGalacticTrail(delta: number): void {
+    if (!this.def.galacticTrail || !this.galacticGfx) return;
+    const dt = Math.min(delta / 1000, 0.05);
+    const moving = Math.abs(this.vel) > 40;
+    const palette = [
+      0xffe066,
+      0xff9f43,
+      0xff6bcb,
+      0xc9a0ff,
+      0x8a5cff,
+      0x7ec8ff,
+      0x44ffcc,
+      0xffffff,
+      0xff4d6d,
+      0x5eead4,
+    ];
+    // Trail sits under the stern of the board
+    const dir = this.facingLeft ? 1 : -1;
+    const sternX = this.hull.x + dir * (this.def.halfWidth * 0.62);
+    const sternY = this.hull.y + 14;
+
+    if (!moving) {
+      for (const s of this.galacticSparks) s.life -= dt * 1.4;
+    } else {
+      this.galacticSpawn -= dt;
+      while (this.galacticSpawn <= 0 && this.galacticSparks.length < 42) {
+        this.galacticSpawn += 0.022;
+        this.galacticSparks.push({
+          x: sternX + (Math.random() - 0.5) * 18,
+          y: sternY + (Math.random() - 0.5) * 6,
+          vx: dir * (70 + Math.random() * 100) + this.vel * 0.28,
+          vy: -8 + Math.random() * 22,
+          life: 0.55 + Math.random() * 0.55,
+          maxLife: 1,
+          size: 2.4 + Math.random() * 3.2,
+          color: palette[(Math.random() * palette.length) | 0]!,
+        });
+        const last = this.galacticSparks[this.galacticSparks.length - 1]!;
+        last.maxLife = last.life;
+      }
+    }
+
+    const g = this.galacticGfx;
+    g.clear();
+
+    if (moving) {
+      const sx = this.hull.x + dir * (this.def.halfWidth * 0.25);
+      const sy = sternY + 2;
+      const len = 90 + Math.min(50, Math.abs(this.vel) * 0.1);
+      g.lineStyle(14, 0x4a20a0, 0.22);
+      g.lineBetween(sx, sy, sx + dir * len, sy + 4);
+      g.lineStyle(8, 0x8a5cff, 0.32);
+      g.lineBetween(sx, sy + 1, sx + dir * (len * 0.92), sy + 5);
+      g.lineStyle(4, 0xff6bcb, 0.28);
+      g.lineBetween(sx, sy, sx + dir * (len * 0.8), sy + 3);
+      g.lineStyle(2.5, 0xffe066, 0.4);
+      g.lineBetween(sx, sy - 1, sx + dir * (len * 0.7), sy + 2);
+    }
+
+    for (let i = this.galacticSparks.length - 1; i >= 0; i--) {
+      const s = this.galacticSparks[i]!;
+      s.life -= dt;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.vy += 28 * dt;
+      if (s.life <= 0) {
+        this.galacticSparks.splice(i, 1);
+        continue;
+      }
+      const u = s.life / s.maxLife;
+      g.fillStyle(s.color, 0.25 + u * 0.55);
+      g.fillCircle(s.x, s.y, s.size * u);
+    }
   }
 
   private updateWake(delta: number): void {
@@ -288,6 +391,8 @@ export class Sailboat {
 
   destroy(): void {
     this.wakeEmitter?.destroy();
+    this.galacticGfx?.destroy();
+    this.galacticSparks = [];
     this.hull.destroy();
     this.sail?.destroy();
   }

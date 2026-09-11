@@ -16,6 +16,7 @@ import {
 } from "../data/items";
 import { playWaterSplash } from "../fx/WaterSplash";
 import { playTranquilBubblePopFx } from "../fx/TranquilBubblePop";
+import { drawFishMutationOrnament } from "../fx/FishMutationOrnament";
 import { CAVE_FISH_MAX_DEPTH_PX } from "../world/FrostpeakCaveWorld";
 
 export type FishState = "idle" | "approaching" | "bitten" | "caught";
@@ -24,6 +25,9 @@ export class Fish {
   sprite: Phaser.Physics.Arcade.Sprite;
   /** Soft ADD-blend aura behind the fish for glowing mutations. */
   private glow?: Phaser.GameObjects.Image;
+  /** Extra mutation FX (starstruck sparkles / event-horizon void). */
+  private mutFx?: Phaser.GameObjects.Graphics;
+  private mutFxPhase = 0;
   /** Tranquil Rod — glass bubble enveloping the hooked fish. */
   private tranquilBubble?: Phaser.GameObjects.Arc;
   private tranquilBubbleShine?: Phaser.GameObjects.Arc;
@@ -216,6 +220,13 @@ export class Fish {
   private clearGlow(): void {
     this.glow?.destroy();
     this.glow = undefined;
+    this.clearMutationFx();
+  }
+
+  private clearMutationFx(): void {
+    this.mutFx?.destroy();
+    this.mutFx = undefined;
+    this.mutFxPhase = 0;
   }
 
   private applyMutationVisual(w: number, h: number): void {
@@ -233,6 +244,21 @@ export class Fish {
       .setAlpha(0.5)
       .setBlendMode(Phaser.BlendModes.ADD);
     this.glow.setFlipX(this.sprite.flipX);
+    this.setupMutationFx();
+  }
+
+  private setupMutationFx(): void {
+    this.clearMutationFx();
+    if (
+      this.mutation !== "starstruck" &&
+      this.mutation !== "event_horizon"
+    ) {
+      return;
+    }
+    this.mutFx = this.sprite.scene.add
+      .graphics()
+      .setDepth(this.sprite.depth + 2)
+      .setBlendMode(Phaser.BlendModes.ADD);
   }
 
   private syncGlow(now: number): void {
@@ -242,6 +268,28 @@ export class Fish {
     this.glow.setVisible(this.sprite.visible);
     const pulse = 0.38 + Math.sin(now / 220) * 0.18;
     this.glow.setAlpha(this.sprite.alpha * pulse);
+  }
+
+  private syncMutationFx(_now: number, dt: number): void {
+    const g = this.mutFx;
+    if (!g || !this.mutation) return;
+    if (!this.sprite.visible || this.sprite.alpha < 0.05) {
+      g.clear();
+      g.setVisible(false);
+      return;
+    }
+    g.setVisible(true);
+    g.setPosition(this.sprite.x, this.sprite.y);
+    g.setDepth(this.sprite.depth + 2);
+    this.mutFxPhase += dt;
+    drawFishMutationOrnament(
+      g,
+      this.mutation,
+      this.sprite.displayWidth,
+      this.sprite.displayHeight,
+      this.mutFxPhase,
+      this.sprite.flipX
+    );
   }
 
   private applySpeciesSwimStats(): void {
@@ -513,6 +561,7 @@ export class Fish {
       }
       if (this.despawning) {
         this.syncGlow(now);
+        this.syncMutationFx(now, dt);
         return;
       }
       this.updateIdleSwim(now, dt);
@@ -522,6 +571,7 @@ export class Fish {
       this.clampUnderwater();
     }
     this.syncGlow(now);
+    this.syncMutationFx(now, dt);
     this.syncTranquilBubble(now);
   }
 

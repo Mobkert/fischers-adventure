@@ -9,6 +9,7 @@ import {
 } from "../audio/ForgeRodSfx";
 import { playForgeWeaponHitFx } from "../fx/ForgeRodFx";
 import { playStarweaverWeaveFx, createStarweaverLockOn, StarweaverLockOn } from "../fx/StarweaverFx";
+import { playStarRainDingSfx } from "../audio/StarRainSfx";
 
 export type CatchMinigameResultMeta = {
   guaranteeThunder?: boolean;
@@ -18,6 +19,8 @@ export type CatchMinigameResultMeta = {
   recoilKicks?: number;
   /** Tranquil bubble popped during this fight (75% Tranquil mutation). */
   bubbleCatch?: boolean;
+  /** Test Rod black hole — chance 0–1 to duplicate each caught fish. */
+  blackHoleDuplicateChance?: number;
 };
 
 type BirthdayBalloonKind = "blue" | "red" | "green";
@@ -46,6 +49,21 @@ export class CatchMinigame {
   private frostChromeGfx?: Phaser.GameObjects.Graphics;
   private frostFxGfx?: Phaser.GameObjects.Graphics;
   private frostChromePhase = 0;
+  /** Test Rod — black hole panel chrome. */
+  private blackHoleGfx?: Phaser.GameObjects.Graphics;
+  private blackHoleFxGfx?: Phaser.GameObjects.Graphics;
+  private blackHoleCore?: Phaser.GameObjects.Image;
+  private blackHolePhase = 0;
+  private blackHoleSparks: Array<{
+    a: number;
+    r: number;
+    speed: number;
+    size: number;
+    life: number;
+    maxLife: number;
+    color: number;
+  }> = [];
+  private blackHoleSparkTimer = 0;
   private laserSparkSpawnTimer = 0;
   private laserStars: Array<{
     x: number;
@@ -199,6 +217,42 @@ export class CatchMinigame {
   private starweaverLock: StarweaverLockOn | null = null;
   /** True while bullets are in flight or stun lock is active — blocks move counting. */
   private starweaverBusy = false;
+  /** Test Rod: accelerating star rain onto the fish. */
+  private starRain = false;
+  /** Shared clock — both sides fire together. */
+  private starRainTimer = 0;
+  private starRainInterval = 0.5;
+  private starRainHitCount = 0;
+  /** Continuous black-hole power (hits grow it; leaving the bar drains it). */
+  private blackHolePower = 0;
+  /** Smoothed value used for scale / dupe chance. */
+  private blackHoleVisual = 0;
+  private readonly blackHoleGrowthPerHit = 0.055;
+  private readonly blackHoleGrowthScaleCap = 2.4;
+  private readonly blackHoleDupeChancePerHit = 0.03;
+  private readonly blackHoleDupeChanceCap = 0.55;
+  /** How fast power drains while the fish is outside the white bar (hits/sec). */
+  private readonly blackHoleDecayPerSec = 1.35;
+  /** Visual follow rate — lower = slower, smoother resize. */
+  private readonly blackHoleVisualLerp = 1.65;
+  /** Applied once the fish leaves the bar; lasts until the catch ends. */
+  private starRainSpeedPenalty = 0;
+  private readonly starRainLeaveSpeedPenalty = -11;
+  private readonly starRainProgressGain = 0.01;
+  private readonly starRainCurveDuration = 0.32;
+  private readonly starRainMaxConcurrent = 8;
+  private starRainFalls: Array<{
+    star: Phaser.GameObjects.Image;
+    t: number;
+    startX: number;
+    startY: number;
+    ctrl1X: number;
+    ctrl1Y: number;
+    ctrl2X: number;
+    ctrl2Y: number;
+  }> = [];
+  /** Stars only attack while the fish is in the white zone. */
+  private starRainInZone = true;
   /** Birthday Rod: party balloons, zone tick, instant confetti catch. */
   private birthdayParty = false;
   private birthdayBalloons: BirthdayBalloon[] = [];
@@ -247,6 +301,8 @@ export class CatchMinigame {
   private onResult?: (success: boolean, meta?: CatchMinigameResultMeta) => void;
   private onTranquilBubblePop?: () => void;
   private baseY: number;
+  /** Full-screen dim behind the catch UI (world fades dark). */
+  private worldDim?: Phaser.GameObjects.Rectangle;
 
   constructor(scene: Phaser.Scene) {
     // Sit in the hotbar's place at the bottom of the screen
@@ -441,6 +497,8 @@ export class CatchMinigame {
       forgeStrike?: boolean;
       /** Starweaver Rod progress sacrifice stun. */
       starweaverWeave?: boolean;
+      /** Test Rod accelerating star rain. */
+      starRain?: boolean;
       /** Birthday Rod party abilities. */
       birthdayParty?: boolean;
       /** Active rod skin id (crate / gallery) for VFX overrides. */
@@ -516,6 +574,15 @@ export class CatchMinigame {
     this.forgeStrike = !!options?.forgeStrike;
     this.starweaverWeave = !!options?.starweaverWeave;
     this.resetStarweaverState();
+    this.starRain = !!options?.starRain;
+    this.clearStarRainFalls();
+    this.starRainTimer = Phaser.Math.FloatBetween(1.0, 1.8);
+    this.starRainInterval = 0.5;
+    this.starRainHitCount = 0;
+    this.blackHolePower = 0;
+    this.blackHoleVisual = 0;
+    this.starRainSpeedPenalty = 0;
+    this.starRainInZone = true;
     this.forgeFishMoves = 0;
     this.forgeCooldownMoves = 0;
     this.forgePhase = "idle";
@@ -552,6 +619,7 @@ export class CatchMinigame {
     this.poisonVinePhase = 0;
     this.clearLaserSpaceUi();
     this.clearFrostChromeUi();
+    this.clearBlackHoleUi();
     this.applyRodSkinVisuals();
     this.facesLeft2 = !!options?.second?.facesLeft;
     this.glowColor2 = options?.second?.glowColor ?? null;
@@ -663,11 +731,18 @@ export class CatchMinigame {
     this.fishPauseTimer = 0;
     this.whiteBar.setScale(1, 1);
     this.root.setVisible(true);
+    // World dim is Test Rod (star rain / black hole) only
+    if (this.starRain) this.fadeWorldDim(true);
     this.syncVisuals();
   }
 
   isActive(): boolean {
     return this.active;
+  }
+
+  /** True while catch UI or leftover star arcs still need ticking. */
+  needsUpdate(): boolean {
+    return this.active || this.starRainFalls.length > 0;
   }
 
   /** Bigger catch bar for phone screens. */
@@ -683,9 +758,15 @@ export class CatchMinigame {
     pointerX = 0,
     pointerY = 0
   ): void {
-    if (!this.active) return;
-
     const dt = Math.min(delta / 1000, 0.05);
+
+    // Keep in-flight stars moving even after the catch ends
+    if (!this.active) {
+      if (this.starRainFalls.length > 0) {
+        this.updateStarRainFalls(dt);
+      }
+      return;
+    }
 
     // Silent pause — UI shown, nothing moves yet
     if (!this.ready) {
@@ -708,6 +789,11 @@ export class CatchMinigame {
       if (this.isFrostChromeSkin()) {
         this.updateFrostChromeUi(dt);
       }
+      if (this.starRain) {
+        this.updateBlackHoleUi(dt);
+      }
+      // During ready pause the fish starts in-zone
+      this.updateStarRain(dt, true);
       this.syncVisuals();
       return;
     }
@@ -721,6 +807,9 @@ export class CatchMinigame {
     }
     if (this.isFrostChromeSkin()) {
       this.updateFrostChromeUi(dt);
+    }
+    if (this.starRain) {
+      this.updateBlackHoleUi(dt);
     }
 
     this.updateWhiteBarPhysics(dt, pointerDown || this.holdKey.isDown);
@@ -742,6 +831,8 @@ export class CatchMinigame {
     const overlapping =
       this.fishX >= this.whiteX - halfWhite &&
       this.fishX <= this.whiteX + halfWhite;
+
+    this.updateStarRain(dt, overlapping);
 
     if (this.electrified && overlapping) {
       this.guaranteeThunder = true;
@@ -812,6 +903,382 @@ export class CatchMinigame {
     );
     this.progress = Math.min(1, this.progress + this.crystalBurstProgressGain);
     this.playCrystalBurstFx();
+  }
+
+  private updateStarRain(dt: number, overlapping: boolean): void {
+    if (!this.starRain || !this.active) {
+      this.updateStarRainFalls(dt);
+      return;
+    }
+
+    if (!overlapping) {
+      // Fish left the bar — explode remaining stars + apply speed penalty
+      if (this.starRainInZone) {
+        this.explodeStarRainFalls();
+        if (this.starRainSpeedPenalty === 0) {
+          this.starRainSpeedPenalty = this.starRainLeaveSpeedPenalty;
+          this.applyProgressSpeedFillRate();
+        }
+      }
+      this.starRainInZone = false;
+      // Drain black hole / dupe chance while outside
+      this.blackHolePower = Math.max(
+        0,
+        this.blackHolePower - this.blackHoleDecayPerSec * dt
+      );
+      return;
+    }
+
+    if (!this.starRainInZone) {
+      // Fish returned — restart star cadence from the beginning
+      this.resetStarRainCadence();
+    }
+    this.starRainInZone = true;
+
+    this.starRainTimer -= dt;
+    if (this.starRainTimer <= 0) {
+      // Both sides launch together (need room for a pair)
+      if (this.starRainFalls.length + 2 <= this.starRainMaxConcurrent) {
+        this.spawnStarRainFall(-1);
+        this.spawnStarRainFall(1);
+      }
+      this.starRainTimer = this.starRainInterval;
+      if (this.starRainInterval > 0.1) {
+        this.starRainInterval = Math.max(0.1, this.starRainInterval - 0.1);
+      } else {
+        this.starRainInterval = Math.max(0.01, this.starRainInterval - 0.01);
+      }
+    }
+    this.updateStarRainFalls(dt);
+  }
+
+  private resetStarRainCadence(): void {
+    this.clearStarRainFalls();
+    this.starRainTimer = Phaser.Math.FloatBetween(1.0, 1.8);
+    this.starRainInterval = 0.5;
+    this.starRainHitCount = 0;
+    // Black hole power keeps draining/growing independently of cadence reset
+  }
+
+  /** @param side -1 = left edge of the catch bar, +1 = right */
+  private spawnStarRainFall(side: -1 | 1): void {
+    if (!this.active) return;
+    if (this.starRainFalls.length >= this.starRainMaxConcurrent) return;
+    const scene = this.root.scene;
+    this.ensureStarRainTexture(scene);
+    const fishX = this.root.x + this.fishIcon.x;
+    const fishY = this.root.y + this.fishIcon.y;
+    const half = this.barWidth / 2 + 58;
+    const startX = this.root.x + side * half;
+    // Start low beside the bar, then lob way up before diving in
+    const startY = fishY + Phaser.Math.Between(48, 78);
+    const peakY = fishY - Phaser.Math.Between(220, 300);
+    // Cubic control points: fling outward/up, then sweep high over the fish
+    const ctrl1X = startX + side * Phaser.Math.Between(70, 110);
+    const ctrl1Y = peakY + Phaser.Math.Between(-20, 40);
+    const ctrl2X = fishX + side * Phaser.Math.Between(-30, 30);
+    const ctrl2Y = peakY - Phaser.Math.Between(20, 70);
+    const star = scene.add
+      .image(startX, startY, "star_rain_orb")
+      .setDepth(230)
+      .setScrollFactor(0)
+      .setDisplaySize(18, 18);
+    this.starRainFalls.push({
+      star,
+      t: 0,
+      startX,
+      startY,
+      ctrl1X,
+      ctrl1Y,
+      ctrl2X,
+      ctrl2Y,
+    });
+  }
+
+  private ensureStarRainTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists("star_rain_orb")) return;
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.setVisible(false);
+    g.fillStyle(0xffe066, 1);
+    g.fillCircle(12, 12, 8);
+    g.fillStyle(0xffffff, 0.95);
+    g.fillCircle(12, 12, 3.5);
+    // Simple 4-point sparkle (cheaper than Phaser Star shapes)
+    g.lineStyle(2.5, 0xfff6c8, 1);
+    g.lineBetween(12, 1, 12, 23);
+    g.lineBetween(1, 12, 23, 12);
+    g.lineStyle(1.5, 0xffffff, 0.85);
+    g.lineBetween(4, 4, 20, 20);
+    g.lineBetween(20, 4, 4, 20);
+    g.generateTexture("star_rain_orb", 24, 24);
+    g.destroy();
+  }
+
+  private updateStarRainFalls(dt: number): void {
+    if (this.starRainFalls.length === 0) return;
+    const fishX = this.root.x + this.fishIcon.x;
+    const fishY = this.root.y + this.fishIcon.y;
+    let reachedCap = false;
+    for (let i = this.starRainFalls.length - 1; i >= 0; i--) {
+      const fall = this.starRainFalls[i];
+      fall.t += dt;
+      const u = Math.min(1, fall.t / this.starRainCurveDuration);
+      // Fast constant travel along the arc
+      const s = u;
+      const omt = 1 - s;
+      const omt2 = omt * omt;
+      const omt3 = omt2 * omt;
+      const s2 = s * s;
+      const s3 = s2 * s;
+      const x =
+        omt3 * fall.startX +
+        3 * omt2 * s * fall.ctrl1X +
+        3 * omt * s2 * fall.ctrl2X +
+        s3 * fishX;
+      const y =
+        omt3 * fall.startY +
+        3 * omt2 * s * fall.ctrl1Y +
+        3 * omt * s2 * fall.ctrl2Y +
+        s3 * fishY;
+      fall.star.setPosition(x, y);
+      fall.star.setRotation(s * Math.PI * 1.8 * (fall.startX < fishX ? 1 : -1));
+      if (u < 1) continue;
+      this.starRainFalls.splice(i, 1);
+      fall.star.destroy();
+      if (!this.active) continue;
+      this.progress = Math.min(1, this.progress + this.starRainProgressGain);
+      this.playStarRainDing();
+      this.growBlackHoleFromStarHit();
+      this.playStarRainImpactFx(fishX, fishY);
+      this.syncVisuals();
+      if (this.progress >= 1) {
+        reachedCap = true;
+      }
+    }
+    // Finish after the loop so other in-flight stars keep moving
+    if (reachedCap && this.active) {
+      this.finish(true);
+    }
+  }
+
+  private playStarRainDing(): void {
+    this.starRainHitCount += 1;
+    // One ding per two star hits
+    if (this.starRainHitCount % 2 === 0) {
+      playStarRainDingSfx(this.root.scene, this.starRainHitCount / 2 - 1);
+    }
+  }
+
+  private getBlackHoleScale(): number {
+    return Math.min(
+      this.blackHoleGrowthScaleCap,
+      1 + this.blackHoleVisual * this.blackHoleGrowthPerHit
+    );
+  }
+
+  private getBlackHoleDuplicateChance(): number {
+    if (this.blackHoleVisual <= 0.01) return 0;
+    return Math.min(
+      this.blackHoleDupeChanceCap,
+      this.blackHoleVisual * this.blackHoleDupeChancePerHit
+    );
+  }
+
+  private growBlackHoleFromStarHit(): void {
+    this.blackHolePower += 1;
+  }
+
+  /** Ease visual size toward current power (grow or shrink). */
+  private updateBlackHoleVisual(dt: number): void {
+    const t = 1 - Math.exp(-this.blackHoleVisualLerp * dt);
+    this.blackHoleVisual += (this.blackHolePower - this.blackHoleVisual) * t;
+    if (this.blackHoleVisual < 0.001 && this.blackHolePower <= 0) {
+      this.blackHoleVisual = 0;
+    }
+  }
+
+  private playStarRainImpactFx(x: number, y: number): void {
+    const scene = this.root.scene;
+    const flash = scene.add
+      .circle(x, y, 8, 0xfff6c8, 0.8)
+      .setDepth(229)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    scene.tweens.add({
+      targets: flash,
+      scale: 2.1,
+      alpha: 0,
+      duration: 160,
+      ease: "Cubic.easeOut",
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  /** Detonate every in-flight star with a detailed burst (fish left the bar). */
+  private explodeStarRainFalls(): void {
+    const falls = this.starRainFalls;
+    this.starRainFalls = [];
+    for (let i = 0; i < falls.length; i++) {
+      const fall = falls[i]!;
+      const x = fall.star.x;
+      const y = fall.star.y;
+      fall.star.destroy();
+      // Slight stagger so overlapping bursts read clearly
+      this.root.scene.time.delayedCall(i * 28, () => {
+        this.playStarRainExplodeFx(x, y);
+      });
+    }
+  }
+
+  private playStarRainExplodeFx(x: number, y: number): void {
+    const scene = this.root.scene;
+    const depth = 232;
+
+    // Core flash
+    const core = scene.add
+      .circle(x, y, 6, 0xffffff, 1)
+      .setDepth(depth)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    scene.tweens.add({
+      targets: core,
+      scale: 4.2,
+      alpha: 0,
+      duration: 280,
+      ease: "Cubic.easeOut",
+      onComplete: () => core.destroy(),
+    });
+
+    // Warm bloom
+    const bloom = scene.add
+      .circle(x, y, 14, 0xffb040, 0.85)
+      .setDepth(depth - 1)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    scene.tweens.add({
+      targets: bloom,
+      scale: 3.6,
+      alpha: 0,
+      duration: 420,
+      ease: "Quad.easeOut",
+      onComplete: () => bloom.destroy(),
+    });
+
+    // Violet shock rings
+    for (let r = 0; r < 3; r++) {
+      const ring = scene.add
+        .circle(x, y, 8 + r * 4, r % 2 ? 0xc9a0ff : 0xffe066, 0)
+        .setStrokeStyle(2.4 - r * 0.4, r % 2 ? 0xe0b0ff : 0xffd080, 0.95)
+        .setDepth(depth)
+        .setScrollFactor(0)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      scene.tweens.add({
+        targets: ring,
+        scale: 2.8 + r * 1.1,
+        alpha: 0,
+        duration: 380 + r * 70,
+        delay: r * 40,
+        ease: "Cubic.easeOut",
+        onComplete: () => ring.destroy(),
+      });
+    }
+
+    // Crystal shards
+    for (let i = 0; i < 10; i++) {
+      const ang = (i / 10) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.2, 0.2);
+      const dist = Phaser.Math.Between(36, 78);
+      const shard = scene.add
+        .triangle(
+          x,
+          y,
+          0,
+          -5,
+          4,
+          5,
+          -4,
+          5,
+          i % 2 ? 0xffe066 : 0xd4a0ff,
+          0.95
+        )
+        .setDepth(depth + 1)
+        .setScrollFactor(0)
+        .setRotation(ang);
+      scene.tweens.add({
+        targets: shard,
+        x: x + Math.cos(ang) * dist,
+        y: y + Math.sin(ang) * dist,
+        rotation: ang + Phaser.Math.FloatBetween(-4, 4),
+        alpha: 0,
+        scale: 0.25,
+        duration: Phaser.Math.Between(320, 520),
+        ease: "Cubic.easeOut",
+        onComplete: () => shard.destroy(),
+      });
+    }
+
+    // Spark mist
+    for (let i = 0; i < 14; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const dist = Phaser.Math.Between(18, 64);
+      const spark = scene.add
+        .circle(
+          x,
+          y,
+          Phaser.Math.FloatBetween(1.2, 2.6),
+          Math.random() < 0.5 ? 0xffffff : 0xffc070,
+          1
+        )
+        .setDepth(depth + 2)
+        .setScrollFactor(0)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      scene.tweens.add({
+        targets: spark,
+        x: x + Math.cos(ang) * dist,
+        y: y + Math.sin(ang) * dist * 0.85,
+        alpha: 0,
+        scale: 0.2,
+        duration: Phaser.Math.Between(240, 440),
+        ease: "Quad.easeOut",
+        onComplete: () => spark.destroy(),
+      });
+    }
+
+    // Cross flare
+    const flareH = scene.add
+      .rectangle(x, y, 4, 8, 0xffffff, 0.95)
+      .setDepth(depth + 1)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const flareV = scene.add
+      .rectangle(x, y, 8, 4, 0xffe8b0, 0.9)
+      .setDepth(depth + 1)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    scene.tweens.add({
+      targets: flareH,
+      scaleX: 14,
+      scaleY: 0.3,
+      alpha: 0,
+      duration: 260,
+      ease: "Cubic.easeOut",
+      onComplete: () => flareH.destroy(),
+    });
+    scene.tweens.add({
+      targets: flareV,
+      scaleX: 0.3,
+      scaleY: 14,
+      alpha: 0,
+      duration: 260,
+      ease: "Cubic.easeOut",
+      onComplete: () => flareV.destroy(),
+    });
+  }
+
+  private clearStarRainFalls(): void {
+    for (const fall of this.starRainFalls) {
+      fall.star.destroy();
+    }
+    this.starRainFalls = [];
   }
 
   private updateRecoilKick(dt: number): void {
@@ -939,8 +1406,12 @@ export class CatchMinigame {
       onComplete: () => {
         this.whiteBar.setScale(1, 1);
         if (!this.electrified) {
-          this.whiteBar.setFillStyle(0xffffff, 0.95);
-          this.whiteBar.setStrokeStyle(1, 0xcccccc);
+          if (this.starRain) {
+            this.applyBlackHoleBarColors();
+          } else {
+            this.whiteBar.setFillStyle(0xffffff, 0.95);
+            this.whiteBar.setStrokeStyle(1, 0xcccccc);
+          }
         }
       },
     });
@@ -1254,7 +1725,8 @@ export class CatchMinigame {
       this.forgeSwordSpeedAdd +
       this.zeusBarHitSpeedAdd +
       this.birthdayBalloonSpeedAdd +
-      this.birthdayZoneSpeedAdd
+      this.birthdayZoneSpeedAdd +
+      this.starRainSpeedPenalty
     );
   }
 
@@ -1426,8 +1898,12 @@ export class CatchMinigame {
         }
       }
     } else {
-      this.whiteBar.setFillStyle(0xffffff, 0.95);
-      this.whiteBar.setStrokeStyle(1, 0xcccccc);
+      if (this.starRain) {
+        this.applyBlackHoleBarColors();
+      } else {
+        this.whiteBar.setFillStyle(0xffffff, 0.95);
+        this.whiteBar.setStrokeStyle(1, 0xcccccc);
+      }
       for (const s of this.elecSparks) s.setVisible(false);
       this.applyElectrifiedSlow(false);
     }
@@ -1753,11 +2229,35 @@ export class CatchMinigame {
       this.setupFrostChromeUi();
     }
 
+    if (this.starRain) {
+      this.setupBlackHoleUi();
+    }
+
     this.applyRodSkinThemeColors();
   }
 
   /** Progress / panel tints that must win over start() defaults. */
   private applyRodSkinThemeColors(): void {
+    if (this.starRain && !this.bubbleActive) {
+      // Tall void panel — black hole sits above the catch bar
+      this.panel
+        .setSize(580, 210)
+        .setPosition(0, -28)
+        .setFillStyle(0x000000, 0.08)
+        .setStrokeStyle(2, 0x5a3878, 0.95);
+      this.title
+        .setText("Keep the fish in the event horizon!")
+        .setColor("#f0e0ff")
+        .setY(-108);
+      this.greyBar.setFillStyle(0x0a0a12);
+      this.greyBar.setStrokeStyle(2, 0x2a1840);
+      this.applyBlackHoleBarColors();
+      this.progressBg.setFillStyle(0x08060e);
+      this.progressBg.setStrokeStyle(1, 0x3a2060);
+      this.progressFill.setFillStyle(0x9b5de5);
+      this.hint.setColor("#c8b0e8");
+      return;
+    }
     if (this.rodSkinId === "poisoned" && !this.bubbleActive) {
       this.progressBg.setFillStyle(0x1a3020);
       this.progressBg.setStrokeStyle(1, 0x1a3a1a);
@@ -2027,6 +2527,255 @@ export class CatchMinigame {
     fx.strokeCircle(0, -8, 40 + pulse * 12);
     fx.fillStyle(0xffffff, 0.12 + pulse * 0.08);
     fx.fillCircle(0, -8, 18 + pulse * 6);
+  }
+
+  private applyBlackHoleBarColors(): void {
+    // Moving control zone — black bar with a faint violet rim so it reads on the track
+    this.whiteBar.setFillStyle(0x050508, 0.98);
+    this.whiteBar.setStrokeStyle(2, 0x6a4a8a);
+  }
+
+  private clearBlackHoleUi(): void {
+    this.blackHoleGfx?.destroy();
+    this.blackHoleGfx = undefined;
+    this.blackHoleFxGfx?.destroy();
+    this.blackHoleFxGfx = undefined;
+    this.blackHoleCore?.destroy();
+    this.blackHoleCore = undefined;
+    this.blackHolePhase = 0;
+    this.blackHoleSparks = [];
+    this.blackHoleSparkTimer = 0;
+    // Restore default panel / title layout
+    this.panel.setSize(560, 132).setPosition(0, 0);
+    this.title.setY(-48);
+  }
+
+  private setupBlackHoleUi(): void {
+    const scene = this.root.scene;
+    this.clearBlackHoleUi();
+    this.ensureBlackHoleCoreTexture(scene);
+    this.blackHoleGfx = scene.add.graphics();
+    this.blackHoleFxGfx = scene.add
+      .graphics()
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.blackHoleCore = scene.add
+      .image(0, -72, "black_hole_core")
+      .setDisplaySize(96, 96)
+      .setAlpha(0.98);
+    this.root.addAt(this.blackHoleGfx, 0);
+    const titleIdx = this.root.getIndex(this.title);
+    // Core + FX sit above the panel art but under the title/bars
+    const insertAt = titleIdx >= 0 ? titleIdx : 1;
+    this.root.addAt(this.blackHoleCore, insertAt);
+    this.root.addAt(this.blackHoleFxGfx, insertAt + 1);
+    this.blackHolePhase = 0;
+    this.blackHoleSparkTimer = 0;
+    this.redrawBlackHoleUi();
+  }
+
+  private ensureBlackHoleCoreTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists("black_hole_core")) return;
+    const S = 128;
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.setVisible(false);
+    const cx = S / 2;
+    const cy = S / 2;
+    // Soft halo
+    for (let i = 6; i >= 1; i--) {
+      const a = 0.04 + i * 0.03;
+      g.fillStyle(0x6a3090, a);
+      g.fillCircle(cx, cy, 28 + i * 7);
+    }
+    // Photon ring
+    g.lineStyle(4, 0xffb060, 0.85);
+    g.strokeCircle(cx, cy, 34);
+    g.lineStyle(2, 0xffe0a0, 0.7);
+    g.strokeCircle(cx, cy, 38);
+    g.lineStyle(2, 0xb48cff, 0.55);
+    g.strokeCircle(cx, cy, 42);
+    // Event horizon
+    g.fillStyle(0x000000, 1);
+    g.fillCircle(cx, cy, 30);
+    g.fillStyle(0x0c0818, 1);
+    g.fillCircle(cx, cy, 22);
+    g.fillStyle(0x000000, 1);
+    g.fillCircle(cx, cy, 16);
+    // Tiny lensing highlight
+    g.fillStyle(0xffffff, 0.12);
+    g.fillEllipse(cx - 6, cy - 8, 10, 5);
+    g.generateTexture("black_hole_core", S, S);
+    g.destroy();
+  }
+
+  private updateBlackHoleUi(dt: number): void {
+    if (!this.blackHoleGfx || !this.blackHoleFxGfx) return;
+    this.updateBlackHoleVisual(dt);
+    this.blackHolePhase += dt;
+    this.blackHoleSparkTimer -= dt;
+    while (this.blackHoleSparkTimer <= 0) {
+      this.spawnBlackHoleSpark();
+      this.blackHoleSparkTimer += Phaser.Math.FloatBetween(0.035, 0.09);
+    }
+    for (let i = this.blackHoleSparks.length - 1; i >= 0; i--) {
+      const s = this.blackHoleSparks[i]!;
+      s.a += s.speed * dt;
+      s.r = Math.max(10, s.r - 22 * dt);
+      s.life -= dt;
+      if (s.life <= 0 || s.r < 12) this.blackHoleSparks.splice(i, 1);
+    }
+    this.redrawBlackHoleUi();
+  }
+
+  private spawnBlackHoleSpark(): void {
+    if (this.blackHoleSparks.length > 28) return;
+    this.blackHoleSparks.push({
+      a: Math.random() * Math.PI * 2,
+      r: Phaser.Math.FloatBetween(48, 92),
+      speed: Phaser.Math.FloatBetween(2.8, 5.5) * (Math.random() < 0.5 ? 1 : -1),
+      size: Phaser.Math.FloatBetween(1.2, 2.8),
+      life: Phaser.Math.FloatBetween(0.35, 0.85),
+      maxLife: 1,
+      color: Math.random() < 0.55 ? 0xffc070 : 0xc9a0ff,
+    });
+    const last = this.blackHoleSparks[this.blackHoleSparks.length - 1]!;
+    last.maxLife = last.life;
+  }
+
+  /**
+   * Black hole floats above the catch bar with a detailed accretion disk + VFX.
+   */
+  private redrawBlackHoleUi(): void {
+    const g = this.blackHoleGfx;
+    const fx = this.blackHoleFxGfx;
+    if (!g || !fx) return;
+    g.clear();
+    fx.clear();
+
+    const pw = 580;
+    const ph = 210;
+    const panelY = -28;
+    const t = this.blackHolePhase;
+    const scale = this.getBlackHoleScale();
+    // Hole sits in the upper chrome, well above the catch bar (bar is at y=-8)
+    const cx = 0;
+    const cy = -72;
+
+    // —— Panel void backdrop ——
+    g.fillStyle(0x03010a, 0.97);
+    g.fillRoundedRect(-pw / 2, panelY - ph / 2, pw, ph, 12);
+
+    // Nebula wash behind the hole (grows with the hole)
+    g.fillStyle(0x1a0a28, 0.45);
+    g.fillEllipse(cx - 90 * scale, cy + 6, 160 * scale, 50 * scale);
+    g.fillStyle(0x2a1038, 0.35);
+    g.fillEllipse(cx + 100 * scale, cy - 4, 140 * scale, 44 * scale);
+    g.fillStyle(0x3a1820, 0.2);
+    g.fillEllipse(cx, cy + 10, 200 * scale, 36 * scale);
+
+    // Distant star field
+    for (let i = 0; i < 36; i++) {
+      const sx =
+        ((i * 97) % (pw - 40)) - (pw - 40) / 2 + Math.sin(t * 0.3 + i) * 2;
+      const sy =
+        panelY -
+        ph / 2 +
+        10 +
+        ((i * 53) % (ph - 20)) +
+        Math.cos(t * 0.25 + i * 0.4) * 1.5;
+      // Keep stars out of the bar band
+      if (sy > -28) continue;
+      const twinkle = 0.35 + Math.sin(t * 3 + i * 1.7) * 0.35;
+      g.fillStyle(i % 5 === 0 ? 0xffd0a0 : 0xffffff, twinkle);
+      g.fillCircle(sx, sy, i % 7 === 0 ? 1.6 : 1);
+    }
+
+    // —— Accretion disk (perspective ellipse, above the bar) ——
+    for (let i = 0; i < 6; i++) {
+      const spin = t * (1.35 + i * 0.22) + i * 0.55;
+      const rx = (48 + i * 13) * scale;
+      const ry = (13 + i * 3) * scale;
+      const alpha = 0.14 + (6 - i) * 0.04;
+      const col =
+        i % 3 === 0 ? 0xff8c42 : i % 3 === 1 ? 0x9b5de5 : 0xffd06a;
+      g.lineStyle(Math.max(1.2, 2.6 - i * 0.28), col, alpha);
+      g.beginPath();
+      const segs = 32;
+      for (let s = 0; s <= segs; s++) {
+        const a = (s / segs) * Math.PI * 2 + spin;
+        const warp = 1 + Math.sin(a * 2 + spin * 0.5) * 0.12;
+        const skew = Math.cos(a + spin) * 0.08 * i;
+        const x = cx + Math.cos(a) * rx * warp + skew * 6 * scale;
+        const y = cy + Math.sin(a) * ry * warp;
+        if (s === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.strokePath();
+    }
+
+    // Inner swirling filaments (ADD layer)
+    for (let i = 0; i < 4; i++) {
+      const spin = -t * (2.2 + i * 0.35) + i;
+      const rx = (40 + i * 9) * scale;
+      const ry = (10 + i * 2.2) * scale;
+      fx.lineStyle(1.6, i % 2 ? 0xffe0a8 : 0xe0b0ff, 0.24 + (i % 2) * 0.1);
+      fx.beginPath();
+      const segs = 22;
+      for (let s = 0; s <= segs; s++) {
+        const a = (s / segs) * Math.PI * 2 + spin;
+        const x = cx + Math.cos(a) * rx;
+        const y = cy + Math.sin(a) * ry * (0.85 + Math.sin(a * 3 + t) * 0.1);
+        if (s === 0) fx.moveTo(x, y);
+        else fx.lineTo(x, y);
+      }
+      fx.strokePath();
+    }
+
+    // Spin the baked core — grows with every star hit
+    if (this.blackHoleCore) {
+      this.blackHoleCore.setPosition(cx, cy);
+      this.blackHoleCore.setRotation(t * 0.15);
+      const pulse = 0.75 + Math.sin(t * 2.4) * 0.03;
+      this.blackHoleCore.setDisplaySize(
+        96 * scale * pulse,
+        96 * scale * (0.55 / 0.75) * pulse
+      );
+    }
+
+    // Photon ring (bright)
+    const pulse = 0.55 + Math.sin(t * 4.2) * 0.45;
+    fx.lineStyle(3.5, 0xffc070, 0.45 + pulse * 0.35);
+    fx.strokeEllipse(cx, cy, 78 * scale, 30 * scale);
+    fx.lineStyle(2, 0xfff0c8, 0.35 + pulse * 0.25);
+    fx.strokeEllipse(cx, cy, 88 * scale, 34 * scale);
+    fx.lineStyle(2, 0xc9a0ff, 0.3);
+    fx.strokeEllipse(cx, cy, 98 * scale, 38 * scale);
+
+    // Polar jets
+    const jetPulse = 0.4 + Math.sin(t * 5) * 0.3;
+    fx.lineStyle(2.5, 0xb48cff, 0.25 + jetPulse * 0.25);
+    fx.lineBetween(cx, cy - 18 * scale, cx + Math.sin(t * 2) * 4, cy - 52 * scale);
+    fx.lineBetween(cx, cy + 14 * scale, cx - Math.sin(t * 2) * 4, cy + 30 * scale);
+    fx.lineStyle(1.4, 0xffe0c0, 0.2 + jetPulse * 0.2);
+    fx.lineBetween(cx, cy - 18 * scale, cx + Math.sin(t * 2 + 1) * 3, cy - 48 * scale);
+
+    // Infalling sparks
+    for (const s of this.blackHoleSparks) {
+      const u = s.life / s.maxLife;
+      const x = cx + Math.cos(s.a) * s.r * scale;
+      const y = cy + Math.sin(s.a) * s.r * 0.38 * scale;
+      fx.fillStyle(s.color, 0.35 + u * 0.55);
+      fx.fillCircle(x, y, s.size * u * Math.min(1.4, scale));
+    }
+
+    // Soft glow under the hole bleeding toward the bar (not covering it)
+    fx.fillStyle(0x6a30a0, 0.1);
+    fx.fillEllipse(cx, cy + 26 * scale, 130 * scale, 16 * scale);
+
+    // Frame
+    g.lineStyle(2.5, 0x4a2870, 0.95);
+    g.strokeRoundedRect(-pw / 2, panelY - ph / 2, pw, ph, 12);
+    g.lineStyle(1.2, 0x9b5de5, 0.35 + Math.sin(t * 2) * 0.1);
+    g.strokeRoundedRect(-pw / 2 + 3, panelY - ph / 2 + 3, pw - 6, ph - 6, 10);
   }
 
   private clearLaserSpaceUi(): void {
@@ -2974,12 +3723,17 @@ export class CatchMinigame {
     this.clearRecoilTelegraph();
     this.clearForgeWeapons();
     this.resetStarweaverState();
+    // Don't destroy in-flight stars — they keep arcing after the catch ends
+    this.starRain = false;
     this.clearBirthdayBalloons();
     this.birthdayBalloonLayer.setVisible(false);
     this.forgePhase = "idle";
     this.setElectrified(false);
     this.zeusPhase = "idle";
     this.clearLaserSpaceUi();
+    const blackHoleDuplicateChance = this.getBlackHoleDuplicateChance();
+    this.clearBlackHoleUi();
+    this.fadeWorldDim(false);
     this.root.setVisible(false);
     const cb = this.onResult;
     const meta: CatchMinigameResultMeta | undefined =
@@ -2987,7 +3741,8 @@ export class CatchMinigame {
       this.forgeHadEmberWeapon ||
       this.guaranteeConfetti ||
       this.recoilKickCount > 0 ||
-      this.bubbleCatch
+      this.bubbleCatch ||
+      blackHoleDuplicateChance > 0
         ? {
             ...(this.guaranteeThunder ? { guaranteeThunder: true } : {}),
             ...(this.forgeHadEmberWeapon ? { guaranteeAshencast: true } : {}),
@@ -2996,6 +3751,9 @@ export class CatchMinigame {
               ? { recoilKicks: this.recoilKickCount }
               : {}),
             ...(this.bubbleCatch ? { bubbleCatch: true } : {}),
+            ...(blackHoleDuplicateChance > 0
+              ? { blackHoleDuplicateChance }
+              : {}),
           }
         : undefined;
     this.onResult = undefined;
@@ -3007,6 +3765,53 @@ export class CatchMinigame {
     this.bubbleCatch = false;
     this.birthdayInstaPending = false;
     cb?.(success, meta);
+  }
+
+  /**
+   * Fade the world darker behind the catch UI so only the minigame bar stays bright.
+   * Dim sits under the catch root (depth 150).
+   */
+  private fadeWorldDim(show: boolean): void {
+    const scene = this.root.scene;
+    if (this.worldDim) {
+      scene.tweens.killTweensOf(this.worldDim);
+    }
+
+    if (show) {
+      const { width, height } = scene.scale;
+      if (!this.worldDim || !this.worldDim.active) {
+        this.worldDim = scene.add
+          .rectangle(width / 2, height / 2, width + 40, height + 40, 0x000000, 1)
+          .setScrollFactor(0)
+          .setDepth(145)
+          .setAlpha(0);
+      } else {
+        this.worldDim
+          .setPosition(width / 2, height / 2)
+          .setSize(width + 40, height + 40);
+      }
+      this.worldDim.setAlpha(0);
+      scene.tweens.add({
+        targets: this.worldDim,
+        alpha: 0.78,
+        duration: 480,
+        ease: "Sine.easeOut",
+      });
+      return;
+    }
+
+    const dim = this.worldDim;
+    if (!dim) return;
+    this.worldDim = undefined;
+    scene.tweens.add({
+      targets: dim,
+      alpha: 0,
+      duration: 420,
+      ease: "Sine.easeIn",
+      onComplete: () => {
+        dim.destroy();
+      },
+    });
   }
 
   forceClose(): void {

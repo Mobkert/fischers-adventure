@@ -8,6 +8,7 @@ import { drawPortalRodIcon } from "../art/PortalRodArt";
 import { drawForgeRodIcon } from "../art/ForgeRodArt";
 import { drawStarweaverRodIcon } from "../art/StarweaverRodArt";
 import { drawBirthdayRodIcon } from "../art/BirthdayRodArt";
+import { drawStellarSurferIcon } from "../art/StellarSurferArt";
 import { generateCraftStarlightFishIcon } from "../art/CraftIngredientArt";
 import {
   generateHouseTextures,
@@ -406,6 +407,11 @@ export function generateRodTextures(scene: Phaser.Scene): void {
   drawBirthdayRodIcon(g);
   g.generateTexture("rod_birthday", S, S);
 
+  // —— Stellar Surfer: galactic surfboard icon ——
+  g.clear();
+  drawStellarSurferIcon(g);
+  g.generateTexture("rod_test", S, S);
+
   g.destroy();
 }
 
@@ -661,6 +667,7 @@ export function ensureRodIconTextures(scene: Phaser.Scene): void {
     "rod_starweaver",
     "rod_portal",
     "rod_recoil",
+    "rod_test",
   ];
   for (const key of required) {
     if (!scene.textures.exists(key)) {

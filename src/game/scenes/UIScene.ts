@@ -16,6 +16,7 @@ import {
   MUTATIONS,
   FISH_SIZES,
   sizeScale,
+  applyMutationTint,
 } from "../data/items";
 import { BoatMenu } from "../ui/BoatMenu";
 import { CoinDisplay } from "../ui/CoinDisplay";
@@ -38,9 +39,10 @@ import { InventorySystem } from "../systems/InventorySystem";
 import { FishingSystem } from "../systems/FishingSystem";
 import type { CaughtFishResult } from "../systems/FishingSystem";
 import { WeatherSystem } from "../systems/WeatherSystem";
+import { drawFishMutationOrnament } from "../fx/FishMutationOrnament";
 import { DayNightCycle } from "../systems/DayNightCycle";
 import { CurioStockEntry } from "../systems/CurioTraderStock";
-import { playCatchSfx } from "../audio/CatchSfx";
+import { playCatchSfx, playCatchDuplicateDing } from "../audio/CatchSfx";
 import type { Player } from "../entities/Player";
 
 interface UISceneData {
@@ -57,6 +59,8 @@ interface UISceneData {
   buyBoat: (
     id: import("../data/boats").BoatId
   ) => { ok: boolean; message: string };
+  tryDeployStellarSurfer: () => boolean;
+  isRidingStellarSurfer: () => boolean;
   tryBoardOrExitBoat: () => boolean;
   tryTalkToMerchant: () => boolean;
   tryVaultGemInteract: () => boolean;
@@ -111,6 +115,8 @@ export class UIScene extends Phaser.Scene {
   private buyBoat!: (
     id: import("../data/boats").BoatId
   ) => { ok: boolean; message: string };
+  private tryDeployStellarSurfer!: () => boolean;
+  private isRidingStellarSurfer!: () => boolean;
   private tryBoardOrExitBoat!: () => boolean;
   private tryTalkToMerchant!: () => boolean;
   private tryVaultGemInteract!: () => boolean;
@@ -173,6 +179,8 @@ export class UIScene extends Phaser.Scene {
   private oceanMarkers!: OceanMarkers;
   private promptText!: Phaser.GameObjects.Text;
   private toast?: Phaser.GameObjects.Text;
+  private catchToast?: Phaser.GameObjects.Container;
+  private catchToastDupeTimer?: Phaser.Time.TimerEvent;
   private weatherBanner?: Phaser.GameObjects.Text;
   private areaBanner?: Phaser.GameObjects.Text;
 
@@ -192,6 +200,8 @@ export class UIScene extends Phaser.Scene {
     this.canOpenBoatMenu = data.canOpenBoatMenu;
     this.spawnBoat = data.spawnBoat;
     this.buyBoat = data.buyBoat;
+    this.tryDeployStellarSurfer = data.tryDeployStellarSurfer;
+    this.isRidingStellarSurfer = data.isRidingStellarSurfer;
     this.tryBoardOrExitBoat = data.tryBoardOrExitBoat;
     this.tryTalkToMerchant = data.tryTalkToMerchant;
     this.tryVaultGemInteract = data.tryVaultGemInteract;
@@ -295,6 +305,16 @@ export class UIScene extends Phaser.Scene {
       this.persistSave();
     });
     this.equipmentBag = new EquipmentBag(this, this.inventory);
+    this.equipmentBag.setOnBeforeEquipRod((rodId) => {
+      if (this.isRidingStellarSurfer() && rodId !== "test_rod") {
+        this.showToast(
+          "Can't switch rods while riding the Stellar Surfer.",
+          "#ffaa66"
+        );
+        return false;
+      }
+      return true;
+    });
     this.equipmentBag.setOnChanged((message) => {
       this.hotbar.refresh();
       this.showToast(message, "#ffe066");
@@ -495,7 +515,13 @@ export class UIScene extends Phaser.Scene {
       onCast: () => this.tryMobileCast(),
       onInteract: () => this.handleInteractKey(),
       onInventory: () => this.handleInventoryKey(),
-      onBoat: () => this.handleBoatKey(),
+      onBoat: () => {
+        if (this.inventory.getEquippedRodId() === "test_rod") {
+          this.handleStellarSurferKey();
+        } else {
+          this.handleBoatKey();
+        }
+      },
     });
     this.hotbar.setOnSlotSelect((i) => this.selectHotbarSlot(i));
     this.coins = new CoinDisplay(this, this.inventory);
@@ -622,6 +648,11 @@ export class UIScene extends Phaser.Scene {
       this.handleBoatKey();
     });
 
+    keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q).on("down", () => {
+      if (this.isTextEntryOpen()) return;
+      this.handleStellarSurferKey();
+    });
+
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F).on("down", () => {
       if (this.isTextEntryOpen()) return;
       this.handleInteractKey();
@@ -740,7 +771,6 @@ export class UIScene extends Phaser.Scene {
         this.inventory.getFishingStats(),
         this.inventory.getEquippedRodId()
       );
-      const rarity = def.rarity ?? "common";
       const sizeMult = sizeScale(this.fishing.getTargetSize());
       const worldMut = this.fishing.isBobberInWhirlpool()
         ? "thunder"
@@ -781,38 +811,23 @@ export class UIScene extends Phaser.Scene {
         (success, meta) => {
           this.hotbar.setVisible(true);
           this.hotbar.refresh();
-          const wasNew = !this.inventory.isBestiaryFound(speciesId);
+          const wasNewBySpecies = new Map<ItemId, boolean>();
+          wasNewBySpecies.set(
+            speciesId,
+            !this.inventory.isBestiaryFound(speciesId)
+          );
+          if (dual && secondId) {
+            wasNewBySpecies.set(
+              secondId,
+              !this.inventory.isBestiaryFound(secondId)
+            );
+          }
           this.fishing.completeCatch(success, meta);
           if (success) {
-            const caught = this.fishing.lastCaughtFish;
-            if (caught.length > 1) {
-              playCatchSfx(this, rarity, caught[0]?.mutation ?? null);
-              this.showToast(
-                `Twin catch! Landed ${caught.length} fish!`,
-                "#ffe066"
-              );
-            } else {
-              const article = /^[aeiou]/i.test(def.name) ? "an" : "a";
-              const mut = this.fishing.lastCatchMutation;
-              const mutDef = mut ? MUTATIONS[mut] : null;
-              const size = this.fishing.lastCatchSize;
-              const sizeDef =
-                size && size !== "normal" ? FISH_SIZES[size] : null;
-              playCatchSfx(this, rarity, mut);
-              const bits: string[] = [];
-              if (mutDef) bits.push(mutDef.label.trim());
-              if (sizeDef) bits.push(sizeDef.name);
-              bits.push(RARITY_LABEL[rarity].trim());
-              const prefix = bits.length ? `${bits.join(" ")} ` : "";
-              const newEntry =
-                wasNew && this.inventory.isBestiaryFound(speciesId)
-                  ? " · New bestiary entry!"
-                  : "";
-              this.showToast(
-                `${prefix}Caught ${article} ${def.name}!${newEntry}`,
-                mutDef?.toastColor ?? RARITY_COLOR[rarity]
-              );
-            }
+            this.presentCatchToasts(
+              this.fishing.lastCaughtFish,
+              wasNewBySpecies
+            );
             this.inventoryPanel.refresh();
             this.coins.refresh();
             this.persistSave();
@@ -867,6 +882,9 @@ export class UIScene extends Phaser.Scene {
           starweaverWeave:
             ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
             "starweaver_weave",
+          starRain:
+            ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+            "star_rain",
           birthdayParty:
             ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
             "birthday_party",
@@ -965,6 +983,16 @@ export class UIScene extends Phaser.Scene {
     if (this.codeGuyPanel.isOpen()) return;
     if (this.bargainPanel.visible) return;
     if (this.augmentUpgrade.visible) return;
+    if (this.isRidingStellarSurfer()) {
+      const itemId = this.inventory.hotbar[i]?.itemId;
+      if (itemId && ITEMS[itemId]?.isRod && itemId !== "test_rod") {
+        this.showToast(
+          "Can't switch rods while riding the Stellar Surfer.",
+          "#ffaa66"
+        );
+        return;
+      }
+    }
     if (this.fishing.isBusy()) {
       if (i === 0) return;
       this.fishing.cancelCast();
@@ -993,6 +1021,21 @@ export class UIScene extends Phaser.Scene {
     this.equipmentBag.setOpen(false);
     this.bestiaryPanel.setOpen(false);
     this.inventoryPanel.toggle();
+  }
+
+  private handleStellarSurferKey(): void {
+    if (this.isTextEntryOpen()) return;
+    if (this.tutorial.visible) return;
+    if (this.minigame.isActive()) return;
+    if (
+      this.inventoryPanel.visible ||
+      this.equipmentBag.visible ||
+      this.bestiaryPanel.visible ||
+      this.boatMenu.visible
+    )
+      return;
+    if (this.player.isOnBoat()) return;
+    this.tryDeployStellarSurfer();
   }
 
   private handleBoatKey(): void {
@@ -1220,6 +1263,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   showToast(message: string, color: string): void {
+    this.clearCatchToast();
     this.toast?.destroy();
     this.toast = this.add
       .text(this.scale.width / 2, 80, message, {
@@ -1246,6 +1290,205 @@ export class UIScene extends Phaser.Scene {
     });
   }
 
+  private clearCatchToast(): void {
+    if (this.catchToastDupeTimer) {
+      this.catchToastDupeTimer.remove(false);
+      this.catchToastDupeTimer = undefined;
+    }
+    if (!this.catchToast) return;
+    this.tweens.killTweensOf(this.catchToast);
+    this.catchToast.destroy(true);
+    this.catchToast = undefined;
+  }
+
+  private formatCatchLine(
+    entry: CaughtFishResult,
+    wasNewBySpecies: Map<ItemId, boolean>
+  ): { message: string; color: string } {
+    const def = ITEMS[entry.speciesId];
+    const rarity = def?.rarity ?? "common";
+    const mutDef = entry.mutation ? MUTATIONS[entry.mutation] : null;
+    const sizeDef =
+      entry.size && entry.size !== "normal" ? FISH_SIZES[entry.size] : null;
+    const name = def?.name ?? "fish";
+    const article = /^[aeiou]/i.test(name) ? "an" : "a";
+    const bits: string[] = [];
+    if (mutDef) bits.push(mutDef.label.trim());
+    if (sizeDef) bits.push(sizeDef.name);
+    bits.push(RARITY_LABEL[rarity].trim());
+    const prefix = bits.length ? `${bits.join(" ")} ` : "";
+    const wasNew = wasNewBySpecies.get(entry.speciesId) === true;
+    // Only the first non-dupe of a species keeps the "new" callout
+    if (wasNew && !entry.duplicate) {
+      wasNewBySpecies.set(entry.speciesId, false);
+    }
+    const newEntry =
+      wasNew && !entry.duplicate ? " · New bestiary entry!" : "";
+    return {
+      message: `${prefix}Caught ${article} ${name}!${newEntry}`,
+      color: mutDef?.toastColor ?? RARITY_COLOR[rarity],
+    };
+  }
+
+  /** One column: text above that fish's icon. */
+  private buildCatchToastColumn(
+    entry: CaughtFishResult,
+    message: string,
+    color: string,
+    x: number
+  ): Phaser.GameObjects.Container {
+    const col = this.add.container(x, 0);
+    const def = ITEMS[entry.speciesId];
+    const icon = this.add
+      .image(0, 18, def?.textureKey ?? "fish")
+      .setAlpha(0.55);
+    const dw = def?.displayWidth ?? 42;
+    const dh = def?.displayHeight ?? 14;
+    const fit = Math.min(100 / dw, 48 / dh) * sizeScale(entry.size);
+    const iw = Math.round(dw * fit);
+    const ih = Math.round(dh * fit);
+    icon.setDisplaySize(iw, ih);
+    applyMutationTint(icon, entry.mutation);
+
+    const fx = this.add
+      .graphics()
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setPosition(0, 18);
+    let phase = Math.random() * 10;
+    const redraw = () => {
+      if (!fx.active) return;
+      drawFishMutationOrnament(fx, entry.mutation, iw, ih, phase);
+    };
+    redraw();
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 40,
+      repeat: 100,
+      onRepeat: () => {
+        phase += 0.07;
+        redraw();
+      },
+    });
+
+    const text = this.add
+      .text(0, -22, message, {
+        fontFamily: "Arial",
+        fontSize: "18px",
+        color,
+        stroke: "#000000",
+        strokeThickness: 5,
+        align: "center",
+        wordWrap: { width: 200 },
+      })
+      .setOrigin(0.5, 1);
+
+    col.add([icon, fx, text]);
+    return col;
+  }
+
+  /**
+   * Primary catches (incl. twin bobber) show immediately — one line each.
+   * Black-hole duplicates pop in 0.5s later with a higher single ding.
+   */
+  presentCatchToasts(
+    caught: CaughtFishResult[],
+    wasNewBySpecies: Map<ItemId, boolean>
+  ): void {
+    this.toast?.destroy();
+    this.toast = undefined;
+    this.clearCatchToast();
+    if (caught.length === 0) return;
+
+    const primary = caught.filter((c) => !c.duplicate);
+    const dupes = caught.filter((c) => c.duplicate);
+    const show = primary.length > 0 ? primary : caught;
+
+    const cx = this.scale.width / 2;
+    const cy = this.hotbar.getCatchToastY();
+    const root = this.add.container(cx, cy).setScrollFactor(0).setDepth(160);
+    this.catchToast = root;
+
+    const colGap = 210;
+    const layoutX = (count: number, i: number) =>
+      count <= 1 ? 0 : -((count - 1) * colGap) / 2 + i * colGap;
+
+    for (let i = 0; i < show.length; i++) {
+      const entry = show[i]!;
+      const { message, color } = this.formatCatchLine(entry, wasNewBySpecies);
+      root.add(
+        this.buildCatchToastColumn(
+          entry,
+          message,
+          color,
+          layoutX(show.length, i)
+        )
+      );
+      const def = ITEMS[entry.speciesId];
+      playCatchSfx(this, def?.rarity ?? "common", entry.mutation);
+    }
+
+    root.setAlpha(0);
+    root.y = cy + 14;
+    this.tweens.add({
+      targets: root,
+      alpha: 1,
+      y: cy,
+      duration: 220,
+      ease: "Quad.easeOut",
+    });
+
+    const fadeOutDelay = dupes.length > 0 ? 2200 : 1600;
+    this.tweens.add({
+      targets: root,
+      alpha: 0,
+      y: cy - 16,
+      delay: fadeOutDelay,
+      duration: 450,
+      onComplete: () => {
+        if (this.catchToast === root) this.catchToast = undefined;
+        root.destroy(true);
+      },
+    });
+
+    if (dupes.length === 0) return;
+
+    this.catchToastDupeTimer = this.time.delayedCall(500, () => {
+      this.catchToastDupeTimer = undefined;
+      if (this.catchToast !== root || !root.active) return;
+
+      const baseCount = show.length;
+      const total = baseCount + dupes.length;
+      // Re-space existing columns, then add dupe columns
+      for (let i = 0; i < root.length; i++) {
+        const child = root.getAt(i) as Phaser.GameObjects.Container;
+        child.x = layoutX(total, i);
+      }
+      for (let i = 0; i < dupes.length; i++) {
+        const entry = dupes[i]!;
+        const { message, color } = this.formatCatchLine(
+          entry,
+          wasNewBySpecies
+        );
+        const col = this.buildCatchToastColumn(
+          entry,
+          message,
+          color,
+          layoutX(total, baseCount + i)
+        );
+        col.setAlpha(0);
+        root.add(col);
+        playCatchDuplicateDing(this);
+        this.tweens.add({
+          targets: col,
+          alpha: 1,
+          duration: 200,
+          ease: "Quad.easeOut",
+        });
+      }
+    });
+  }
+
   /** Top-of-screen ore reveal — icon + rarity-colored name. */
   showOreFound(itemId: ItemId): void {
     const def = ITEMS[itemId];
@@ -1255,6 +1498,7 @@ export class UIScene extends Phaser.Scene {
     const label =
       rarity.charAt(0).toUpperCase() + rarity.slice(1);
 
+    this.clearCatchToast();
     this.toast?.destroy();
     this.tweens.killTweensOf(this.toast ?? []);
 
@@ -1403,7 +1647,7 @@ export class UIScene extends Phaser.Scene {
     this.questTracker.refresh();
     this.bargainPanel.update();
 
-    if (this.minigame.isActive()) {
+    if (this.minigame.needsUpdate()) {
       const p = this.input.activePointer;
       this.minigame.update(
         delta,

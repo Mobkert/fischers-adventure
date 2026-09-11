@@ -25,6 +25,14 @@ export function applyDevInventoryBootstrap(inventory: InventorySystem): void {
   if (!isLocalDevHost()) return;
 
   // Explicit one-shot gifts (requested in chat) — no general opt-in needed
+  const testRodKey = "fischers_granted_test_rod_v1";
+  if (!localStorage.getItem(testRodKey)) {
+    if (!inventory.ownsRod("test_rod")) {
+      inventory.addItem("test_rod");
+    }
+    localStorage.setItem(testRodKey, "1");
+  }
+
   const starweaverCraftKey = "fischers_granted_starweaver_craft_v1";
   if (!localStorage.getItem(starweaverCraftKey)) {
     inventory.coins = Math.max(inventory.coins, 70000);

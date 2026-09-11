@@ -13,6 +13,7 @@ export type ItemId =
   | "forge_rod"
   | "starweaver_rod"
   | "birthday_rod"
+  | "test_rod"
   | "equipment_bag"
   | "bestiary"
   | "bobber_starter"
@@ -137,7 +138,9 @@ export type FishMutationId =
   | "wrapped"
   | "confetti"
   | "electric"
-  | "tranquil";
+  | "tranquil"
+  | "starstruck"
+  | "event_horizon";
 
 export type FishBodyTone = "black" | "orange" | "red";
 
@@ -356,6 +359,25 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     toastColor: "#a8d8ff",
     label: "Tranquil! ",
     chance: 0.0075,
+  },
+  starstruck: {
+    id: "starstruck",
+    name: "Starstruck",
+    sellMult: 0.9,
+    tint: 0xd8c8ff,
+    glowColor: 0xffe066,
+    toastColor: "#ffe8a0",
+    label: "Starstruck! ",
+  },
+  event_horizon: {
+    id: "event_horizon",
+    name: "Event Horizon",
+    sellMult: 7,
+    tint: 0x2a1848,
+    tintFill: true,
+    glowColor: 0xc9a0ff,
+    toastColor: "#c9a0ff",
+    label: "Event Horizon! ",
   },
 };
 
@@ -624,7 +646,8 @@ export interface ItemDef {
     | "portal_pull"
     | "forge_strike"
     | "starweaver_weave"
-    | "birthday_party";
+    | "birthday_party"
+    | "star_rain";
   /** Quest item — never sold by merchants. */
   isQuestItem?: boolean;
   /** Quest catchable that has no sell price (e.g. anvil shard). */
@@ -1130,6 +1153,24 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       control: 20,
       progressSpeed: 0,
       lineDepth: 4,
+    },
+  },
+  test_rod: {
+    id: "test_rod",
+    name: "Stellar Surfer",
+    description:
+      "A high-detail galactic surfboard rod. Stars rain in the catch bar and grow a black hole (+3% dupe chance per hit, max 55%). Duplicates are always Starstruck (0.9×), replacing other mutations. 35% Event Horizon (7×) on catch. At a port, press Q to ride it — faster than a Jet Ski, with a galactic trail. Fish while riding; you can't switch rods until you dock.",
+    stackable: false,
+    textureKey: "rod_test",
+    isRod: true,
+    rodMinigamePower: "star_rain",
+    rodMutation: { mutation: "event_horizon", chance: 0.35 },
+    rodStats: {
+      luck: 100,
+      resilience: 30,
+      control: 25,
+      progressSpeed: 0,
+      lineDepth: 5,
     },
   },
   gem_red: {
@@ -3226,6 +3267,8 @@ const ROD_ONLY_MUTATIONS = new Set<FishMutationId>([
   "wrapped",
   "confetti",
   "electric",
+  "starstruck",
+  "event_horizon",
 ]);
 
 /** Full moon catch odds (mutually exclusive; lunar checked first). */

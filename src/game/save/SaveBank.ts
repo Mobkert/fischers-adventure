@@ -342,6 +342,7 @@ function normalizePromoCodes(raw: unknown): PromoCodeId[] {
     "ore_area_awesome",
     "new_stuff",
     "serpent_eels",
+    "free_stellar_surfer",
   ];
   if (!Array.isArray(raw)) return [];
   return raw.filter(

@@ -446,6 +446,14 @@ export class Player {
     return this.carriedRodStyle === "laser";
   }
 
+  /** Stellar Surfer held / cast sparkles. */
+  isStellarSurferInHand(): boolean {
+    if (this.isFishingAnim()) {
+      return this.fishingRodStyle === "stellar_surfer";
+    }
+    return this.carriedRodStyle === "stellar_surfer";
+  }
+
   /**
    * Frostpeak held-rod VFX theme, or null if none of those skins are in hand.
    */

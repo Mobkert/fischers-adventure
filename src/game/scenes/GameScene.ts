@@ -36,6 +36,7 @@ import { ensureRodIconTextures } from "./BootScene";
 import { ForgeRodTipVfx } from "../fx/ForgeRodFx";
 import { LaserRodHeldVfx } from "../fx/LaserRodFx";
 import { FrostRodHeldVfx } from "../fx/FrostRodHeldVfx";
+import { StellarSurferHeldVfx } from "../fx/StellarSurferHeldVfx";
 import { WorldZoneLoader } from "../world/WorldZoneLoader";
 import {
   placeFrostpeakCave,
@@ -153,6 +154,7 @@ export class GameScene extends Phaser.Scene {
   private forgeRodVfx: ForgeRodTipVfx | null = null;
   private laserRodVfx: LaserRodHeldVfx | null = null;
   private frostRodVfx: FrostRodHeldVfx | null = null;
+  private stellarSurferVfx: StellarSurferHeldVfx | null = null;
   private music!: AmbientMusic;
   private tutorialDone = false;
   private autosaveTimer?: Phaser.Time.TimerEvent;
@@ -543,6 +545,8 @@ export class GameScene extends Phaser.Scene {
         this.fishing.state === "idle",
       spawnBoat: (id: BoatId) => this.spawnBoat(id),
       buyBoat: (id: BoatId) => this.buyBoat(id),
+      tryDeployStellarSurfer: () => this.tryDeployStellarSurfer(),
+      isRidingStellarSurfer: () => this.isRidingStellarSurfer(),
       tryBoardOrExitBoat: () => this.tryBoardOrExitBoat(),
       tryTalkToMerchant: () => this.tryTalkToMerchant(),
       tryVaultGemInteract: () => this.tryVaultGemInteract(),
@@ -806,7 +810,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   spawnBoat(boatId: BoatId = "sailboat"): void {
-    if (!this.inventory.ownsBoat(boatId)) return;
+    if (boatId !== "stellar_surfer" && !this.inventory.ownsBoat(boatId)) return;
     if (this.sailboat) {
       if (this.sailboat.occupied) return;
       this.sailboat.destroy();
@@ -880,6 +884,39 @@ export class GameScene extends Phaser.Scene {
       waterL,
       waterR,
       boatId
+    );
+  }
+
+  /** Equip Stellar Surfer + stand on a port + Q → board underfoot. */
+  tryDeployStellarSurfer(): boolean {
+    const ui = this.scene.get("UIScene") as UIScene;
+    if (this.inventory.getEquippedRodId() !== "test_rod") return false;
+    if (!this.isPlayerOnPort()) {
+      ui.showToast("Stand on a port to ride the Stellar Surfer.", "#ffaa66");
+      return true;
+    }
+    if (this.player.isOnBoat()) return false;
+    if (this.fishing.isBusy() || this.fishing.state !== "idle") {
+      ui.showToast("Finish fishing first.", "#ffaa66");
+      return true;
+    }
+    if (this.sailboat?.occupied) {
+      ui.showToast("Leave your current boat first.", "#ffaa66");
+      return true;
+    }
+    this.spawnBoat("stellar_surfer");
+    if (!this.sailboat) return true;
+    this.sailboat.board(this.player);
+    ui.showToast(
+      "Stellar Surfer deployed! A/D to ride · LMB cast · F near port to dock",
+      "#c9a0ff"
+    );
+    return true;
+  }
+
+  isRidingStellarSurfer(): boolean {
+    return (
+      this.player.isOnBoat() && this.sailboat?.boatId === "stellar_surfer"
     );
   }
 
@@ -2224,7 +2261,18 @@ export class GameScene extends Phaser.Scene {
       }
 
       this.sailboat.disembark(this.player, landX, this.groundY);
-      ui.showToast(`Left the ${this.sailboat.def.name}.`, "#c8c8c8");
+      const leftName = this.sailboat.def.name;
+      const wasStellar = this.sailboat.boatId === "stellar_surfer";
+      if (wasStellar) {
+        this.sailboat.destroy();
+        this.sailboat = null;
+      }
+      ui.showToast(
+        wasStellar
+          ? "Stellar Surfer back in hand."
+          : `Left the ${leftName}.`,
+        "#c8c8c8"
+      );
       return true;
     }
 
@@ -3651,6 +3699,7 @@ export class GameScene extends Phaser.Scene {
     this.syncForgeRodVfx();
     this.syncLaserRodVfx();
     this.syncFrostRodVfx();
+    this.syncStellarSurferVfx();
     if (!this.inFrostpeakCave) {
       if (
         Math.abs(this.player.sprite.x - (this.jungleLeft + this.jungleRight) / 2) <
@@ -3711,9 +3760,17 @@ export class GameScene extends Phaser.Scene {
       } else if (this.isNearCoralRodOnBoat()) {
         ui.setPrompt("F — Approach the floating rod");
       } else if (this.isBoatNearAnyPort()) {
-        ui.setPrompt("LMB cast · F leave port");
+        ui.setPrompt(
+          this.sailboat.boatId === "stellar_surfer"
+            ? "LMB cast · F dock (board returns to hand)"
+            : "LMB cast · F leave port"
+        );
       } else {
-        ui.setPrompt("A/D sail · LMB cast");
+        ui.setPrompt(
+          this.sailboat.boatId === "stellar_surfer"
+            ? "A/D ride · LMB cast"
+            : "A/D sail · LMB cast"
+        );
       }
     } else if (ui.isBargainOpen()) {
       ui.setPrompt("");
@@ -3837,7 +3894,11 @@ export class GameScene extends Phaser.Scene {
       ) {
         ui.setPrompt(`F — Board ${this.sailboat.def.name}`);
       } else if (this.isPlayerOnPort()) {
-        ui.setPrompt("B — Boat menu");
+        if (this.inventory.getEquippedRodId() === "test_rod") {
+          ui.setPrompt("Q — Ride Stellar Surfer · B — Boat menu");
+        } else {
+          ui.setPrompt("B — Boat menu");
+        }
       } else {
         ui.setPrompt(null);
       }
@@ -4309,6 +4370,26 @@ export class GameScene extends Phaser.Scene {
     const tip = this.player.getRodTip();
     this.frostRodVfx.setDepth(this.player.sprite.depth + 2);
     this.frostRodVfx.update(hand.x, hand.y, tip.x, tip.y, this.time.now);
+  }
+
+  /** Galactic sparkles on the held Stellar Surfer (not while the board is underfoot). */
+  private syncStellarSurferVfx(): void {
+    const show =
+      !this.inFrostpeakCave &&
+      !this.isRidingStellarSurfer() &&
+      this.player.isStellarSurferInHand();
+    if (!show) {
+      this.stellarSurferVfx?.setActive(false);
+      return;
+    }
+    if (!this.stellarSurferVfx) {
+      this.stellarSurferVfx = new StellarSurferHeldVfx(this);
+    }
+    this.stellarSurferVfx.setActive(true);
+    const hand = this.player.getRodHandWorld();
+    const tip = this.player.getRodTip();
+    this.stellarSurferVfx.setDepth(this.player.sprite.depth + 2);
+    this.stellarSurferVfx.update(hand.x, hand.y, tip.x, tip.y, this.time.now);
   }
 
   /** Hotbar rod + optional active skin (baked styles; Gallery overlay only). */
