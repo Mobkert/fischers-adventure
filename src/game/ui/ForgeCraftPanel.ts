@@ -8,6 +8,11 @@ import {
   fitCraftIngredientIconSize,
 } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
+import {
+  createLimitedEditionBadge,
+  createLimitedTooltipHost,
+  LimitedTooltipHost,
+} from "./LimitedEditionBadge";
 
 const FORGE_ROD_IDS: ItemId[] = [
   "tranquil_rod",
@@ -43,6 +48,7 @@ export class ForgeCraftPanel {
   private statusText?: Phaser.GameObjects.Text;
   private scrollY = 0;
   private contentH = 0;
+  private limitedTooltip!: LimitedTooltipHost;
   private wheelHandler: (
     pointer: Phaser.Input.Pointer,
     _gos: unknown,
@@ -129,6 +135,13 @@ export class ForgeCraftPanel {
       this.detailRoot,
       hint,
     ]);
+
+    this.limitedTooltip = createLimitedTooltipHost(
+      scene,
+      this.root,
+      this.panelCx,
+      this.panelCy
+    );
 
     this.wheelHandler = (pointer, _gos, _dx, dy) => {
       if (!this.open || !this.listShell.visible) return;
@@ -228,6 +241,19 @@ export class ForgeCraftPanel {
       })
       .setOrigin(0, 0.5);
 
+    const nodes: Phaser.GameObjects.GameObject[] = [hit, icon, name, tag];
+    if (def.limitedEdition) {
+      nodes.push(
+        createLimitedEditionBadge(
+          this.scene,
+          def.limitedEdition,
+          -120 + name.width + 36,
+          cy - 12,
+          this.limitedTooltip
+        )
+      );
+    }
+
     hit.on("pointerover", () =>
       hit.setFillStyle(owned ? 0x354830 : 0x3a2c20, 0.95)
     );
@@ -236,10 +262,11 @@ export class ForgeCraftPanel {
     );
     hit.on("pointerdown", (p: Phaser.Input.Pointer) => {
       p.event?.stopPropagation?.();
+      this.limitedTooltip.hide();
       this.showDetail(id);
     });
 
-    this.listContent.add([hit, icon, name, tag]);
+    this.listContent.add(nodes);
   }
 
   private ingredientLabel(ing: BobberCraftIngredient): string {
@@ -308,6 +335,17 @@ export class ForgeCraftPanel {
       .setOrigin(0.5);
 
     this.detailRoot.add([back, icon, name, desc, needTitle]);
+    if (def.limitedEdition) {
+      this.detailRoot.add(
+        createLimitedEditionBadge(
+          this.scene,
+          def.limitedEdition,
+          -110 + name.width + 36,
+          -168,
+          this.limitedTooltip
+        )
+      );
+    }
 
     let y = -28;
     if (cost) {
@@ -412,6 +450,7 @@ export class ForgeCraftPanel {
   hide(): void {
     if (!this.open) return;
     this.open = false;
+    this.limitedTooltip.hide();
     this.root.setVisible(false);
     const cb = this.onClose;
     this.onClose = undefined;

@@ -8,6 +8,11 @@ import {
   RARITY_COLOR,
 } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
+import {
+  createLimitedEditionBadge,
+  createLimitedTooltipHost,
+  LimitedTooltipHost,
+} from "./LimitedEditionBadge";
 
 const PANEL_W = 460;
 const PANEL_H = 520;
@@ -56,6 +61,7 @@ export class EquipmentBag {
   private contentH = 0;
   private masteryPanel: Phaser.GameObjects.Container | null = null;
   private skinPanel: Phaser.GameObjects.Container | null = null;
+  private limitedTooltip!: LimitedTooltipHost;
   private wheelHandler: (
     pointer: Phaser.Input.Pointer,
     _gos: unknown,
@@ -206,6 +212,13 @@ export class EquipmentBag {
       hint,
     ]);
 
+    this.limitedTooltip = createLimitedTooltipHost(
+      scene,
+      this.root,
+      this.panelCx,
+      this.panelCy
+    );
+
     this.wheelHandler = (pointer, _gos, _dx, dy) => {
       if (!this.visible) return;
       const localX = pointer.x - this.panelCx;
@@ -267,6 +280,7 @@ export class EquipmentBag {
     this.visible = open;
     this.root.setVisible(open);
     if (!open) {
+      this.limitedTooltip.hide();
       this.closeMasteryPanel();
       this.closeSkinPanel();
       return;
@@ -277,6 +291,7 @@ export class EquipmentBag {
   }
 
   refresh(): void {
+    this.limitedTooltip.hide();
     for (const child of [...this.listContent.list]) {
       child.destroy(true);
     }
@@ -471,6 +486,20 @@ export class EquipmentBag {
       })
       .setOrigin(0, 0);
 
+    const row = this.scene.add.container(0, 0);
+    row.add([card, icon, name]);
+
+    if (def.limitedEdition) {
+      const badge = createLimitedEditionBadge(
+        this.scene,
+        def.limitedEdition,
+        -112 + name.width + 36,
+        y + 22,
+        this.limitedTooltip
+      );
+      row.add(badge);
+    }
+
     const statsLines = formatRodStats(stats);
     const mutBlock = formatRodMutationLines(def);
     const mutLine = mutBlock ? `\n${mutBlock}` : "";
@@ -548,8 +577,7 @@ export class EquipmentBag {
       )
       .setOrigin(0, 0);
 
-    const row = this.scene.add.container(0, 0);
-    row.add([card, icon, name, statsText]);
+    row.add(statsText);
 
     const hasMasteryBtn =
       rodId === "recoil_rod" && InventorySystem.RECOIL_MASTERY_ENABLED;

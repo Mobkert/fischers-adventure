@@ -174,7 +174,12 @@ export class MenuScene extends Phaser.Scene {
       "• Event Horizon mutation (7×) — 35% with Stellar Surfer\n" +
       "• Q at a port to ride the board (galactic trail)\n" +
       "• Catch toasts above the hotbar with fish icons\n" +
-      "• Twin bobber / multi-catch show per-fish messages\n\n" +
+      "• Twin bobber / multi-catch show per-fish messages\n" +
+      "• Blue Limited badge on Starweaver & Birthday rods\n" +
+      "  (hover for when they were / are obtainable)\n" +
+      "• Starweaver is Limited at the Ashencast Forge\n" +
+      "  (still craftable)\n" +
+      "• Wildflower Rod Bloom chance raised to 30%\n\n" +
       "CODES (Code Guy)\n\n" +
       "• SERPENTEELS — 15 Serpent Lure, 20 Bait Crates,\n" +
       "  and a Blasted Serpent Eel (Unsellable) (one-time)\n" +

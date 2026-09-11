@@ -596,6 +596,22 @@ export function fitCraftIngredientIconSize(
   return fitItemDisplaySize(ITEMS[ing.itemId], maxW, maxH);
 }
 
+export type LimitedEditionInfo = {
+  /** Badge text (default "Limited"). */
+  badge?: string;
+  /** When / where players could get it. */
+  obtainableWindow: string;
+  /** Still available right now (forge, promo, etc.). */
+  currentlyObtainable: boolean;
+};
+
+export function formatLimitedEditionTooltip(info: LimitedEditionInfo): string {
+  const status = info.currentlyObtainable
+    ? "Still obtainable"
+    : "No longer obtainable";
+  return `Obtainable: ${info.obtainableWindow}\n${status}`;
+}
+
 export interface ItemDef {
   id: ItemId;
   name: string;
@@ -648,6 +664,11 @@ export interface ItemDef {
     | "starweaver_weave"
     | "birthday_party"
     | "star_rain";
+  /**
+   * Limited / seasonal rod — blue badge in bag (and forge when craftable).
+   * Tooltip shows when it was / is obtainable.
+   */
+  limitedEdition?: LimitedEditionInfo;
   /** Quest item — never sold by merchants. */
   isQuestItem?: boolean;
   /** Quest catchable that has no sell price (e.g. anvil shard). */
@@ -883,7 +904,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "wildflower_rod",
     name: "Wildflower Rod",
     description:
-      "Orange and pink swamp rod. Deep line, high luck — 15% Bloom (3× sell).",
+      "Orange and pink swamp rod. Deep line, high luck — 30% Bloom (3× sell).",
     stackable: false,
     textureKey: "rod_wildflower",
     isRod: true,
@@ -896,7 +917,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       progressSpeed: 10,
       lineDepth: 3,
     },
-    rodMutation: { mutation: "bloom", chance: 0.15 },
+    rodMutation: { mutation: "bloom", chance: 0.3 },
   },
   zeus_rod: {
     id: "zeus_rod",
@@ -1112,6 +1133,10 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     isRod: true,
     rodMinigamePower: "starweaver_weave",
     rodMutation: { mutation: "starlight", chance: 0.05 },
+    limitedEdition: {
+      obtainableWindow: "Ashencast Forge",
+      currentlyObtainable: true,
+    },
     craftCost: {
       coins: 70000,
       ingredients: [
@@ -1147,6 +1172,10 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     isRod: true,
     rodMinigamePower: "birthday_party",
     rodMutations: [{ mutation: "wrapped", chance: 0.2 }],
+    limitedEdition: {
+      obtainableWindow: "Birthday promo codes",
+      currentlyObtainable: false,
+    },
     rodStats: {
       luck: 60,
       resilience: 30,
