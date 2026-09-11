@@ -749,8 +749,8 @@ export class FishingSystem {
         const mutation =
           meta?.guaranteeThunder && !fish.mutation
             ? // Electrified Zeus bar: only if fish has no mutation already
-              // 75% Electric (2.5×), 25% Thunder (5×)
-              Math.random() < 0.25
+              // 60% Thunder (5×), 40% Electric (2.5×)
+              Math.random() < 0.6
                 ? ("thunder" as const)
                 : ("electric" as const)
             : meta?.guaranteeThunder && fish.mutation

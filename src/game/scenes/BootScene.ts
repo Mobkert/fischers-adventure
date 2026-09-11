@@ -19,6 +19,7 @@ import { generateBoatArt } from "../entities/BoatArt";
 import { generateMerchantTexture, generateCodeGuyTexture } from "../entities/FishMerchant";
 import { generateHatTextures } from "./hatTextures";
 import { generateRodSkinTextures } from "../art/RodSkinArt";
+import { generateBaitTextures } from "../art/BaitArt";
 
 /** Detailed fishing-rod icons (handle bottom-left → tip top-right). */
 export function generateRodTextures(scene: Phaser.Scene): void {
@@ -815,6 +816,7 @@ function makeTextures(scene: Phaser.Scene): void {
   g.generateTexture("equipment_bag", 32, 32);
 
   generateHatTextures(scene);
+  generateBaitTextures(scene);
 
   // Bestiary book
   g.clear();

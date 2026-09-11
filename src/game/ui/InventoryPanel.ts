@@ -47,6 +47,7 @@ export class InventoryPanel {
   private onChanged?: () => void;
   private onOpenSkinCrate?: (kind: SkinCrateKind) => void;
   private onOpenOreCluster?: () => void;
+  private onOpenBaitCrate?: () => void;
   visible = false;
   private panelH = 560;
 
@@ -227,6 +228,16 @@ export class InventoryPanel {
     this.onOpenSkinCrate?.(kind);
   }
 
+  setOnOpenBaitCrate(cb: () => void): void {
+    this.onOpenBaitCrate = cb;
+  }
+
+  private tryOpenBaitCrate(getSlot: () => InventorySlot): void {
+    const slot = getSlot();
+    if (slot.itemId !== "bait_crate" || slot.count <= 0) return;
+    this.onOpenBaitCrate?.();
+  }
+
   private tryOpenOreCluster(getSlot: () => InventorySlot): void {
     const slot = getSlot();
     if (slot.itemId !== "ore_cluster" || slot.count <= 0) return;
@@ -237,6 +248,10 @@ export class InventoryPanel {
     const slot = getSlot();
     if (slot.itemId === "skin_crate" || slot.itemId === "frostpeak_crate") {
       this.tryOpenCrate(getSlot);
+      return;
+    }
+    if (slot.itemId === "bait_crate") {
+      this.tryOpenBaitCrate(getSlot);
       return;
     }
     if (slot.itemId === "ore_cluster") {
@@ -303,6 +318,9 @@ export class InventoryPanel {
         mutationSellMult(slot.mutation) *
         sizeSellMult(slot.size);
       lines.push(`Sell: $${Math.round(unit)}`);
+      if (slot.size === "unsellable") {
+        lines.push("Cannot be sold to merchants");
+      }
       if (slot.keep) {
         lines.push(
           ITEMS[slot.itemId!]?.isMineral
@@ -313,10 +331,16 @@ export class InventoryPanel {
       if (slot.itemId === "ore_cluster") {
         lines.push("Left-click to open");
       }
+      if (slot.itemId === "bait_crate") {
+        lines.push("Left-click to open");
+      }
     } else if (slot.itemId === "skin_crate" || slot.itemId === "frostpeak_crate") {
       lines.push(def.description);
       lines.push("Left-click to open");
     } else if (slot.itemId === "ore_cluster") {
+      lines.push(def.description);
+      lines.push("Left-click to open");
+    } else if (slot.itemId === "bait_crate") {
       lines.push(def.description);
       lines.push("Left-click to open");
     } else {

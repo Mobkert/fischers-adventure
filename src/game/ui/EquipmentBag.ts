@@ -5,6 +5,7 @@ import {
   formatRodStats,
   formatBobberStats,
   formatRodMutationLines,
+  RARITY_COLOR,
 } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
 
@@ -19,7 +20,7 @@ const ROW_GAP = 12;
 const AMULET_ROW_H = 100;
 const HAT_ROW_H = 96;
 
-type BagTab = "rods" | "bobbers" | "amulets" | "hats";
+type BagTab = "rods" | "bobbers" | "amulets" | "bait" | "hats";
 
 /** Vertical rod / bobber / amulet / hat list opened from hotbar slot 2. */
 export class EquipmentBag {
@@ -33,10 +34,12 @@ export class EquipmentBag {
   private tabRodsBg!: Phaser.GameObjects.Rectangle;
   private tabBobbersBg!: Phaser.GameObjects.Rectangle;
   private tabAmuletsBg!: Phaser.GameObjects.Rectangle;
+  private tabBaitBg!: Phaser.GameObjects.Rectangle;
   private tabHatsBg!: Phaser.GameObjects.Rectangle;
   private tabRodsLabel!: Phaser.GameObjects.Text;
   private tabBobbersLabel!: Phaser.GameObjects.Text;
   private tabAmuletsLabel!: Phaser.GameObjects.Text;
+  private tabBaitLabel!: Phaser.GameObjects.Text;
   private tabHatsLabel!: Phaser.GameObjects.Text;
   private inventory: InventorySystem;
   private scene: Phaser.Scene;
@@ -46,6 +49,7 @@ export class EquipmentBag {
   private tab: BagTab = "rods";
   private onChanged?: (message: string) => void;
   private onAmuletUsed?: (amuletId: ItemId) => void;
+  private onBaitUsed?: (baitId: ItemId) => void;
   private onHatChanged?: () => void;
   private scrollY = 0;
   private contentH = 0;
@@ -91,48 +95,60 @@ export class EquipmentBag {
       })
       .setOrigin(0.5);
 
-    // Tabs — four across
+    // Tabs — five across
+    const tabW = 84;
     this.tabRodsBg = scene.add
-      .rectangle(-162, -200, 96, 28, 0x3a3428, 0.95)
+      .rectangle(-168, -200, tabW, 28, 0x3a3428, 0.95)
       .setStrokeStyle(2, 0xc4a86a)
       .setInteractive({ useHandCursor: true });
     this.tabRodsLabel = scene.add
-      .text(-162, -200, "Rods", {
+      .text(-168, -200, "Rods", {
         fontFamily: "Arial",
-        fontSize: "12px",
+        fontSize: "11px",
         color: "#f0e6d2",
       })
       .setOrigin(0.5);
     this.tabBobbersBg = scene.add
-      .rectangle(-54, -200, 96, 28, 0x2a2f3a, 0.95)
+      .rectangle(-84, -200, tabW, 28, 0x2a2f3a, 0.95)
       .setStrokeStyle(2, 0x666666)
       .setInteractive({ useHandCursor: true });
     this.tabBobbersLabel = scene.add
-      .text(-54, -200, "Bobbers", {
+      .text(-84, -200, "Bobbers", {
         fontFamily: "Arial",
-        fontSize: "12px",
+        fontSize: "11px",
         color: "#aaaaaa",
       })
       .setOrigin(0.5);
     this.tabAmuletsBg = scene.add
-      .rectangle(54, -200, 96, 28, 0x2a2f3a, 0.95)
+      .rectangle(0, -200, tabW, 28, 0x2a2f3a, 0.95)
       .setStrokeStyle(2, 0x666666)
       .setInteractive({ useHandCursor: true });
     this.tabAmuletsLabel = scene.add
-      .text(54, -200, "Amulets", {
+      .text(0, -200, "Amulets", {
         fontFamily: "Arial",
-        fontSize: "12px",
+        fontSize: "11px",
+        color: "#aaaaaa",
+      })
+      .setOrigin(0.5);
+    this.tabBaitBg = scene.add
+      .rectangle(84, -200, tabW, 28, 0x2a2f3a, 0.95)
+      .setStrokeStyle(2, 0x666666)
+      .setInteractive({ useHandCursor: true });
+    this.tabBaitLabel = scene.add
+      .text(84, -200, "Bait", {
+        fontFamily: "Arial",
+        fontSize: "11px",
         color: "#aaaaaa",
       })
       .setOrigin(0.5);
     this.tabHatsBg = scene.add
-      .rectangle(162, -200, 96, 28, 0x2a2f3a, 0.95)
+      .rectangle(168, -200, tabW, 28, 0x2a2f3a, 0.95)
       .setStrokeStyle(2, 0x666666)
       .setInteractive({ useHandCursor: true });
     this.tabHatsLabel = scene.add
-      .text(162, -200, "Hats", {
+      .text(168, -200, "Hats", {
         fontFamily: "Arial",
-        fontSize: "12px",
+        fontSize: "11px",
         color: "#aaaaaa",
       })
       .setOrigin(0.5);
@@ -140,6 +156,7 @@ export class EquipmentBag {
     this.tabRodsBg.on("pointerdown", () => this.setTab("rods"));
     this.tabBobbersBg.on("pointerdown", () => this.setTab("bobbers"));
     this.tabAmuletsBg.on("pointerdown", () => this.setTab("amulets"));
+    this.tabBaitBg.on("pointerdown", () => this.setTab("bait"));
     this.tabHatsBg.on("pointerdown", () => this.setTab("hats"));
 
     this.listRoot = scene.add.container(0, LIST_TOP);
@@ -177,6 +194,8 @@ export class EquipmentBag {
       this.tabBobbersLabel,
       this.tabAmuletsBg,
       this.tabAmuletsLabel,
+      this.tabBaitBg,
+      this.tabBaitLabel,
       this.tabHatsBg,
       this.tabHatsLabel,
       this.subtitle,
@@ -227,6 +246,10 @@ export class EquipmentBag {
     this.onAmuletUsed = cb;
   }
 
+  setOnBaitUsed(cb: (baitId: ItemId) => void): void {
+    this.onBaitUsed = cb;
+  }
+
   setOnHatChanged(cb: () => void): void {
     this.onHatChanged = cb;
   }
@@ -265,6 +288,7 @@ export class EquipmentBag {
     styleTab(this.tabRodsBg, this.tabRodsLabel, this.tab === "rods");
     styleTab(this.tabBobbersBg, this.tabBobbersLabel, this.tab === "bobbers");
     styleTab(this.tabAmuletsBg, this.tabAmuletsLabel, this.tab === "amulets");
+    styleTab(this.tabBaitBg, this.tabBaitLabel, this.tab === "bait");
     styleTab(this.tabHatsBg, this.tabHatsLabel, this.tab === "hats");
 
     this.subtitle.setText(
@@ -274,7 +298,9 @@ export class EquipmentBag {
           ? "Your bobbers · Equip for the next cast"
           : this.tab === "amulets"
             ? "Amulets · Use to change weather or time"
-            : "Hats · Wear cosmetics on your head"
+            : this.tab === "bait"
+              ? "Bait · Ocean chum · 2 min cooldown after use"
+              : "Hats · Wear cosmetics on your head"
     );
 
     let y = 0;
@@ -337,6 +363,27 @@ export class EquipmentBag {
       }
       for (const { id, count } of amulets) {
         this.listContent.add(this.makeAmuletRow(id, count, y, AMULET_ROW_H));
+        y += AMULET_ROW_H + ROW_GAP;
+      }
+    } else if (this.tab === "bait") {
+      const bait = this.inventory.getOwnedBait();
+      if (bait.length === 0) {
+        this.listContent.add(
+          this.scene.add
+            .text(0, 80, "No bait yet.\nBuy crates on other islands — not Starter Isle.", {
+              fontFamily: "Arial",
+              fontSize: "14px",
+              color: "#888888",
+              align: "center",
+            })
+            .setOrigin(0.5)
+        );
+        this.contentH = LIST_VIEW_H;
+        this.applyScroll();
+        return;
+      }
+      for (const { id, count } of bait) {
+        this.listContent.add(this.makeBaitRow(id, count, y, AMULET_ROW_H));
         y += AMULET_ROW_H + ROW_GAP;
       }
     } else {
@@ -439,7 +486,7 @@ export class EquipmentBag {
         : "";
     const zeusLine =
       def.rodMinigamePower === "zeus_strike"
-        ? "\nLightning 25%/s then halves each strike — fish hit = instant; bar hit = electrify (slow · 75% Electric / 25% Thunder on unmutated fish only)"
+        ? "\nLightning 25%/s then halves each strike — fish hit = instant; bar hit = electrify (+15 progress speed · slow · 60% Thunder / 40% Electric on unmutated fish only)"
         : "";
     const recoilLine =
       def.rodMinigamePower === "recoil_kick"
@@ -460,7 +507,7 @@ export class EquipmentBag {
         : "";
     const starweaverLine =
       def.rodMinigamePower === "starweaver_weave"
-        ? "\nAfter 3 fish moves: sacrifice 5–15% progress to stun the fish (5%→1s, 15%→3s) · Starlight 5%"
+        ? "\nAfter 5 fish moves: sacrifice 5–15% progress to stun the fish (5%→1s, 15%→3s) · Starlight 5%"
         : "";
     const birthdayLine =
       def.rodMinigamePower === "birthday_party"
@@ -1105,6 +1152,85 @@ export class EquipmentBag {
 
     const row = this.scene.add.container(0, 0);
     row.add([card, icon, name, desc, btn, label]);
+    return row;
+  }
+
+  private makeBaitRow(
+    baitId: ItemId,
+    count: number,
+    y: number,
+    rowH: number
+  ): Phaser.GameObjects.Container {
+    const def = ITEMS[baitId];
+    const rarity = def.baitRarity ?? "common";
+    const rarityColor = RARITY_COLOR[rarity];
+
+    const card = this.scene.add
+      .rectangle(0, y, 400, rowH, 0x2a2f3a, 0.95)
+      .setStrokeStyle(2, Phaser.Display.Color.HexStringToColor(rarityColor).color)
+      .setOrigin(0.5, 0);
+
+    const [iw, ih] = this.fitIcon(def.textureKey, 52);
+    const icon = this.scene.add
+      .image(-150, y + rowH / 2, def.textureKey)
+      .setDisplaySize(iw, ih);
+
+    const name = this.scene.add
+      .text(-112, y + 10, `${def.name}  ×${count}`, {
+        fontFamily: "Georgia, serif",
+        fontSize: "17px",
+        color: "#ffffff",
+      })
+      .setOrigin(0, 0);
+
+    const rarityLabel = this.scene.add
+      .text(-112, y + 32, rarity, {
+        fontFamily: "Arial",
+        fontSize: "11px",
+        color: rarityColor,
+      })
+      .setOrigin(0, 0);
+
+    const desc = this.scene.add
+      .text(-112, y + 50, def.description, {
+        fontFamily: "Arial",
+        fontSize: "11px",
+        color: "#c8c8c8",
+        wordWrap: { width: 210 },
+      })
+      .setOrigin(0, 0);
+
+    const cd = this.inventory.getBaitCooldownMs();
+    const onCooldown = cd > 0;
+    const btn = this.scene.add
+      .rectangle(140, y + rowH / 2, 100, 36, onCooldown ? 0x2a3440 : 0x284858)
+      .setStrokeStyle(1, 0x7ec8ff)
+      .setInteractive({ useHandCursor: true });
+    const cdSec = Math.ceil(cd / 1000);
+    const cdLabel = `${Math.floor(cdSec / 60)}:${(cdSec % 60)
+      .toString()
+      .padStart(2, "0")}`;
+    const label = this.scene.add
+      .text(140, y + rowH / 2, onCooldown ? cdLabel : "Use", {
+        fontFamily: "Arial",
+        fontSize: "15px",
+        color: "#ffffff",
+      })
+      .setOrigin(0.5);
+    if (onCooldown) btn.setAlpha(0.55);
+
+    btn.on("pointerover", () => {
+      if (!onCooldown) btn.setFillStyle(0x345868);
+    });
+    btn.on("pointerout", () =>
+      btn.setFillStyle(onCooldown ? 0x2a3440 : 0x284858)
+    );
+    btn.on("pointerdown", () => {
+      this.onBaitUsed?.(baitId);
+    });
+
+    const row = this.scene.add.container(0, 0);
+    row.add([card, icon, name, rarityLabel, desc, btn, label]);
     return row;
   }
 }

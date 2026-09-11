@@ -6,6 +6,8 @@ import {
   ItemId,
   RARITY_COLOR,
   FishHabitat,
+  formatFishSpawnChanceLabel,
+  formatFishBaitPreferenceLabel,
 } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
 
@@ -37,6 +39,7 @@ export class BestiaryPanel {
   private onChanged?: (message: string) => void;
   private scrollY = 0;
   private contentH = 0;
+  private inspectLayer?: Phaser.GameObjects.Container;
   private wheelHandler: (
     pointer: Phaser.Input.Pointer,
     _gos: unknown,
@@ -70,7 +73,7 @@ export class BestiaryPanel {
       .setOrigin(0.5);
 
     const subtitle = scene.add
-      .text(0, -212, "Catch fish to reveal them · Claim discovery rewards", {
+      .text(0, -212, "Catch fish to reveal them · Click a fish for details", {
         fontFamily: "Arial",
         fontSize: "13px",
         color: "#aaaaaa",
@@ -194,6 +197,7 @@ export class BestiaryPanel {
   setOpen(open: boolean): void {
     this.visible = open;
     this.root.setVisible(open);
+    if (!open) this.closeInspect();
     if (open) {
       this.scrollY = 0;
       this.redrawMask();
@@ -249,7 +253,14 @@ export class BestiaryPanel {
 
     const card = this.scene.add
       .rectangle(0, 0, CELL_W, CELL_H, 0x22262e, 0.95)
-      .setStrokeStyle(2, found ? Phaser.Display.Color.HexStringToColor(RARITY_COLOR[rarity]).color : 0x444444);
+      .setStrokeStyle(2, found ? Phaser.Display.Color.HexStringToColor(RARITY_COLOR[rarity]).color : 0x444444)
+      .setInteractive({ useHandCursor: true });
+    card.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      pointer.event.stopPropagation();
+      this.openInspect(fishId);
+    });
+    card.on("pointerover", () => card.setFillStyle(0x2a3038, 0.98));
+    card.on("pointerout", () => card.setFillStyle(0x22262e, 0.95));
 
     const icon = this.scene.add.image(0, -28, def.textureKey);
     const maxDim = 56;
@@ -288,17 +299,18 @@ export class BestiaryPanel {
 
     if (found && !claimed) {
       const claimBtn = this.scene.add
-        .rectangle(0, 58, 100, 22, 0x3a5a2a, 1)
+        .rectangle(0, 58, 88, 20, 0x3a5a2a, 1)
         .setStrokeStyle(1, 0x7CFC00)
         .setInteractive({ useHandCursor: true });
       const claimLabel = this.scene.add
-        .text(0, 58, `Claim $${reward}`, {
+        .text(0, 58, `Claim +$${reward}`, {
           fontFamily: "Arial",
-          fontSize: "11px",
+          fontSize: "10px",
           color: "#d8ffb0",
         })
         .setOrigin(0.5);
-      claimBtn.on("pointerdown", () => {
+      claimBtn.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+        pointer.event.stopPropagation();
         const result = this.inventory.claimBestiaryReward(fishId);
         if (result.ok) {
           this.onChanged?.(result.message);
@@ -310,23 +322,152 @@ export class BestiaryPanel {
       const done = this.scene.add
         .text(0, 58, "Claimed", {
           fontFamily: "Arial",
-          fontSize: "11px",
+          fontSize: "10px",
           color: "#666666",
         })
         .setOrigin(0.5);
       cell.add(done);
-    } else {
-      const hint = this.scene.add
-        .text(0, 58, "Not caught", {
-          fontFamily: "Arial",
-          fontSize: "11px",
-          color: "#555555",
-        })
-        .setOrigin(0.5);
-      cell.add(hint);
     }
 
     return cell;
+  }
+
+  private closeInspect(): void {
+    this.inspectLayer?.destroy(true);
+    this.inspectLayer = undefined;
+  }
+
+  private openInspect(fishId: ItemId): void {
+    this.closeInspect();
+    const def = ITEMS[fishId];
+    const found = this.inventory.isBestiaryFound(fishId);
+    const rarity = def.rarity ?? "common";
+    const area =
+      BESTIARY_AREAS.find((a) => a.id === this.areaId) ?? BESTIARY_AREAS[0]!;
+
+    const layer = this.scene.add
+      .container(0, 0)
+      .setDepth(200)
+      .setScrollFactor(0);
+    this.inspectLayer = layer;
+    this.root.add(layer);
+
+    const dim = this.scene.add
+      .rectangle(0, 0, PANEL_W + 80, PANEL_H + 80, 0x000000, 0.55)
+      .setInteractive();
+    dim.on("pointerdown", () => this.closeInspect());
+
+    const panel = this.scene.add
+      .rectangle(0, 0, 360, 320, 0x1e2228, 0.98)
+      .setStrokeStyle(2, 0xc4a86a);
+
+    const icon = this.scene.add.image(0, -88, def.textureKey);
+    const maxDim = 72;
+    icon.setScale(Math.min(maxDim / icon.width, maxDim / icon.height));
+    if (def.facesLeft) icon.setFlipX(true);
+    if (found) {
+      icon.clearTint();
+      icon.setAlpha(1);
+    } else {
+      icon.setTint(0x000000);
+      icon.setAlpha(0.92);
+    }
+
+    const title = this.scene.add
+      .text(0, -28, found ? def.name : "???", {
+        fontFamily: "Georgia, serif",
+        fontSize: "20px",
+        color: "#f0e6d2",
+      })
+      .setOrigin(0.5);
+
+    const rarityText = this.scene.add
+      .text(0, -4, found ? rarity : "unknown", {
+        fontFamily: "Arial",
+        fontSize: "12px",
+        color: found ? RARITY_COLOR[rarity] : "#666666",
+      })
+      .setOrigin(0.5);
+
+    const spawnLine = formatFishSpawnChanceLabel(fishId, area.id);
+    const spawnText = this.scene.add
+      .text(0, 22, `Starting chance: ${spawnLine}`, {
+        fontFamily: "Arial",
+        fontSize: "12px",
+        color: "#9ad8ff",
+        align: "center",
+        wordWrap: { width: 320 },
+      })
+      .setOrigin(0.5, 0);
+
+    const baitLine = formatFishBaitPreferenceLabel(fishId);
+    const baitText = this.scene.add
+      .text(0, 22 + spawnText.height + 4, `Likes bait: ${baitLine}`, {
+        fontFamily: "Arial",
+        fontSize: "12px",
+        color: "#c8b0ff",
+        align: "center",
+        wordWrap: { width: 320 },
+      })
+      .setOrigin(0.5, 0);
+
+    const descY = 22 + spawnText.height + baitText.height + 10;
+    const descBody = found
+      ? def.description
+      : "Catch this species to unlock its full entry and claim a discovery reward.";
+    const desc = this.scene.add
+      .text(0, descY, descBody, {
+        fontFamily: "Arial",
+        fontSize: "13px",
+        color: found ? "#c8c8c8" : "#888888",
+        align: "center",
+        wordWrap: { width: 320 },
+        lineSpacing: 4,
+      })
+      .setOrigin(0.5, 0);
+
+    const sellY = descY + desc.height + 6;
+    const sell =
+      found && def.sellPrice != null
+        ? this.scene.add
+            .text(0, sellY, `Sell value: $${def.sellPrice.toLocaleString()}`, {
+              fontFamily: "Arial",
+              fontSize: "11px",
+              color: "#aaaaaa",
+            })
+            .setOrigin(0.5)
+        : null;
+
+    const closeY = sell ? sellY + 22 : descY + desc.height + 22;
+    const closeBtn = this.scene.add
+      .rectangle(0, closeY, 100, 28, 0x3a3428, 1)
+      .setStrokeStyle(1, 0xc4a86a)
+      .setInteractive({ useHandCursor: true });
+    const closeLabel = this.scene.add
+      .text(0, closeY, "Close", {
+        fontFamily: "Arial",
+        fontSize: "13px",
+        color: "#f0e6d2",
+      })
+      .setOrigin(0.5);
+    closeBtn.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      pointer.event.stopPropagation();
+      this.closeInspect();
+    });
+
+    layer.add([
+      dim,
+      panel,
+      icon,
+      title,
+      rarityText,
+      spawnText,
+      baitText,
+      desc,
+      ...(sell ? [sell] : []),
+      closeBtn,
+      closeLabel,
+    ]);
   }
 
   private setScroll(y: number): void {

@@ -89,7 +89,26 @@ export type ItemId =
   | "hat_yellowfin"
   | "hat_gem"
   | "skin_crate"
-  | "frostpeak_crate";
+  | "frostpeak_crate"
+  | "bait_crate"
+  | "bait_worms"
+  | "bait_magnet"
+  | "bait_krill"
+  | "bait_brine_pellets"
+  | "bait_squid_strips"
+  | "bait_moonmoth"
+  | "bait_shimmer_scale"
+  | "bait_coral_flakes"
+  | "bait_swamp_grub"
+  | "bait_lily_pad"
+  | "bait_sulfur_grit"
+  | "bait_ember_gel"
+  | "bait_reef_shiny"
+  | "bait_ice_shavings"
+  | "bait_crystal_shards"
+  | "bait_serpent_lure"
+  | "bait_gator_chunks"
+  | "bait_ashen_flies";
 
 export type AmuletEffectId =
   | "celestial"
@@ -122,7 +141,7 @@ export type FishMutationId =
 
 export type FishBodyTone = "black" | "orange" | "red";
 
-export type FishSizeId = "normal" | "big" | "giant";
+export type FishSizeId = "normal" | "big" | "giant" | "unsellable";
 
 export type FishHabitat = "ocean" | "pond" | "reef" | "cave" | "hotspring";
 
@@ -359,6 +378,14 @@ export const FISH_SIZES: Record<FishSizeId, SizeDef> = {
     sellMult: 4,
     scale: 2.15,
     spawnChance: 0.015,
+  },
+  /** Promo / special grant — worth $0 and cannot be sold to merchants. */
+  unsellable: {
+    id: "unsellable",
+    name: "Unsellable",
+    sellMult: 0,
+    scale: 1,
+    spawnChance: 0,
   },
 };
 
@@ -604,6 +631,10 @@ export interface ItemDef {
   isCatchable?: boolean;
   /** Sellable mineral — not a fish (no bestiary entry). */
   isMineral?: boolean;
+  /** Consumable fishing bait — stored in equipment bag, not inventory. */
+  isBait?: boolean;
+  /** Rarity tier shown in bait tab / crate rolls. */
+  baitRarity?: FishRarity;
   /** Only rolls in Ashencast hotsprings via special trout chance. */
   ashencastExclusive?: boolean;
   /** Bob slowly up/down in place (magma jellyfish). */
@@ -848,7 +879,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "zeus_rod",
     name: "Zeus Rod",
     description:
-      "Forged in storm clouds — 5% Thunder (5×). +15% stats in Thunderstorms (not depth). In the catch minigame: lightning zones start at 25%/s then halve each strike — fish struck = instant catch; your bar struck = electrified (slows fish in zone; 75% Electric 2.5× / 25% Thunder 5× on unmutated fish only).",
+      "Forged in storm clouds — 5% Thunder (5×). +15% stats in Thunderstorms (not depth). In the catch minigame: lightning zones start at 25%/s then halve each strike — fish struck = instant catch; your bar struck = electrified (+15 progress speed per hit, stacks; slows fish in zone; 60% Thunder 5× / 40% Electric 2.5× on unmutated fish only).",
     stackable: false,
     textureKey: "rod_zeus",
     isRod: true,
@@ -1052,7 +1083,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "starweaver_rod",
     name: "Starweaver Rod",
     description:
-      "A slender indigo rod tipped with a woven star. After the fish moves 3 times, it sacrifices 5–15% catch progress to stun the fish (5% → 1s, 15% → 3s). Starlight 5%.",
+      "A slender indigo rod tipped with a woven star. After the fish moves 5 times, it sacrifices 5–15% catch progress to stun the fish (5% → 1s, 15% → 3s). Starlight 5%.",
     stackable: false,
     textureKey: "rod_starweaver",
     isRod: true,
@@ -1903,7 +1934,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     minigameJerky: true,
     minigameChaos: 0.65,
     catchProgress: -25,
-    depthBand: { min: 50, max: 280 },
+    depthBand: { min: 28, max: 100 },
     displayWidth: 110,
     displayHeight: 22,
     bodyTones: ["black"],
@@ -2034,7 +2065,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       "A mythical magma jelly. Hovers in place, pulsing up and down — blazing fast on the line.",
     stackable: true,
     textureKey: "magma_jellyfish",
-    sellPrice: 10000,
+    sellPrice: 5105,
     rarity: "mythical",
     habitat: "hotspring",
     spawnWeight: 1,
@@ -2161,15 +2192,193 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     displayWidth: 52,
     displayHeight: 30,
   },
+  bait_crate: {
+    id: "bait_crate",
+    name: "Bait Crate",
+    description:
+      "A sealed crate of assorted bait. Left-click in your bag to open — bait goes to the Equipment Bag bait tab.",
+    stackable: true,
+    textureKey: "bait_crate",
+    sellPrice: 80,
+  },
+  bait_worms: {
+    id: "bait_worms",
+    name: "Worms",
+    description: "Classic wriggling worms. Salmon, flounder, and tuna love them.",
+    stackable: true,
+    textureKey: "bait_worms",
+    isBait: true,
+    baitRarity: "common",
+  },
+  bait_krill: {
+    id: "bait_krill",
+    name: "Krill",
+    description: "Tiny pink crustaceans. Draws sunfish and eels in open ocean.",
+    stackable: true,
+    textureKey: "bait_krill",
+    isBait: true,
+    baitRarity: "common",
+  },
+  bait_brine_pellets: {
+    id: "bait_brine_pellets",
+    name: "Brine Pellets",
+    description: "Salty forge-pressed pellets. Bluefin and perch go wild.",
+    stackable: true,
+    textureKey: "bait_brine_pellets",
+    isBait: true,
+    baitRarity: "uncommon",
+  },
+  bait_magnet: {
+    id: "bait_magnet",
+    name: "Magnet",
+    description:
+      "Lodestone chum — pulls floating junk: driftwood in the ocean, mushrooms in the swamp pond, ore in Ashencast springs.",
+    stackable: true,
+    textureKey: "bait_magnet",
+    isBait: true,
+    baitRarity: "uncommon",
+  },
+  bait_squid_strips: {
+    id: "bait_squid_strips",
+    name: "Squid Strips",
+    description: "Oily strips of calamari. Predators chase the scent.",
+    stackable: true,
+    textureKey: "bait_squid_strips",
+    isBait: true,
+    baitRarity: "rare",
+  },
+  bait_moonmoth: {
+    id: "bait_moonmoth",
+    name: "Moonmoth Larvae",
+    description:
+      "Bioluminescent faux-moth grubs. Mythical swimmers can't resist the glow.",
+    stackable: true,
+    textureKey: "bait_moonmoth",
+    isBait: true,
+    baitRarity: "rare",
+  },
+  bait_shimmer_scale: {
+    id: "bait_shimmer_scale",
+    name: "Shimmer Scale",
+    description:
+      "Ground scale dust from legendaries. A lavish chum for trophy hunters.",
+    stackable: true,
+    textureKey: "bait_shimmer_scale",
+    isBait: true,
+    baitRarity: "epic",
+  },
+  bait_coral_flakes: {
+    id: "bait_coral_flakes",
+    name: "Coral Flakes",
+    description: "Crushed reef coral. Clownfish, angelfish, and puffers swarm it.",
+    stackable: true,
+    textureKey: "bait_coral_flakes",
+    isBait: true,
+    baitRarity: "common",
+  },
+  bait_swamp_grub: {
+    id: "bait_swamp_grub",
+    name: "Swamp Grub",
+    description: "Fat pond larvae. Perch and catfish can't resist.",
+    stackable: true,
+    textureKey: "bait_swamp_grub",
+    isBait: true,
+    baitRarity: "common",
+  },
+  bait_lily_pad: {
+    id: "bait_lily_pad",
+    name: "Lily Pad Scraps",
+    description: "Soggy greens from the swamp. Frogs and giants lurk beneath.",
+    stackable: true,
+    textureKey: "bait_lily_pad",
+    isBait: true,
+    baitRarity: "uncommon",
+  },
+  bait_sulfur_grit: {
+    id: "bait_sulfur_grit",
+    name: "Sulfur Grit",
+    description: "Ashencast spring minerals. Hermit crabs and flounder gather.",
+    stackable: true,
+    textureKey: "bait_sulfur_grit",
+    isBait: true,
+    baitRarity: "uncommon",
+  },
+  bait_ember_gel: {
+    id: "bait_ember_gel",
+    name: "Ember Gel",
+    description: "Molten spring goo. Epic and legendary hotspring fish chase it.",
+    stackable: true,
+    textureKey: "bait_ember_gel",
+    isBait: true,
+    baitRarity: "rare",
+  },
+  bait_reef_shiny: {
+    id: "bait_reef_shiny",
+    name: "Reef Shiny",
+    description: "Oily glitter for deep reef predators — sharks and surgeonfish.",
+    stackable: true,
+    textureKey: "bait_reef_shiny",
+    isBait: true,
+    baitRarity: "rare",
+  },
+  bait_ice_shavings: {
+    id: "bait_ice_shavings",
+    name: "Ice Shavings",
+    description: "Frozen flakes for Frostpeak cave lakes — clownfish and crystal frogs.",
+    stackable: true,
+    textureKey: "bait_ice_shavings",
+    isBait: true,
+    baitRarity: "common",
+  },
+  bait_crystal_shards: {
+    id: "bait_crystal_shards",
+    name: "Crystal Shards",
+    description: "Glittering cave chips. Crystalfin tuna and nautilus hunt these.",
+    stackable: true,
+    textureKey: "bait_crystal_shards",
+    isBait: true,
+    baitRarity: "rare",
+  },
+  bait_serpent_lure: {
+    id: "bait_serpent_lure",
+    name: "Serpent Lure",
+    description: "A writhing cave scent bundle — draws legendary serpent eels.",
+    stackable: true,
+    textureKey: "bait_serpent_lure",
+    isBait: true,
+    baitRarity: "uncommon",
+  },
+  bait_gator_chunks: {
+    id: "bait_gator_chunks",
+    name: "Gator Chunks",
+    description: "Rank swamp meat. Mythical alligators stalk the chum.",
+    stackable: true,
+    textureKey: "bait_gator_chunks",
+    isBait: true,
+    baitRarity: "rare",
+  },
+  bait_ashen_flies: {
+    id: "bait_ashen_flies",
+    name: "Ashen Flies",
+    description: "Smoldering spring gnats. Mystical Ashencast trout rise for them.",
+    stackable: true,
+    textureKey: "bait_ashen_flies",
+    isBait: true,
+    baitRarity: "rare",
+  },
 };
+
+/** Catchable / sellable species that appear in the bestiary UI. */
+export function isBestiarySpecies(itemId: ItemId): boolean {
+  if (itemId === "bait_crate") return false;
+  const def = ITEMS[itemId];
+  if (!def || def.isMineral || def.isQuestItem) return false;
+  return def.sellPrice != null || !!def.isCatchable;
+}
 
 export const FISH_ITEM_IDS: ItemId[] = (
   Object.keys(ITEMS) as ItemId[]
-).filter(
-  (id) =>
-    !ITEMS[id].isMineral &&
-    (ITEMS[id].sellPrice != null || !!ITEMS[id].isCatchable)
-);
+).filter((id) => isBestiarySpecies(id));
 
 /** Ashencast ore peddler — $240 each, 20 stock, 10 min restock. */
 export const ORE_CLUSTER_VENDOR_PRICE = 240;
@@ -2197,6 +2406,340 @@ export function rollOreFromCluster(): ItemId {
     if (r <= 0) return d.itemId;
   }
   return ORE_CLUSTER_DROPS[0]!.itemId;
+}
+
+/** Bait types stored in the equipment bag (not main inventory). */
+export const BAIT_ITEM_IDS: ItemId[] = [
+  "bait_worms",
+  "bait_krill",
+  "bait_brine_pellets",
+  "bait_magnet",
+  "bait_squid_strips",
+  "bait_moonmoth",
+  "bait_shimmer_scale",
+  "bait_coral_flakes",
+  "bait_swamp_grub",
+  "bait_lily_pad",
+  "bait_sulfur_grit",
+  "bait_ember_gel",
+  "bait_reef_shiny",
+  "bait_ice_shavings",
+  "bait_crystal_shards",
+  "bait_serpent_lure",
+  "bait_gator_chunks",
+  "bait_ashen_flies",
+];
+
+/** Island bait crate vendor — unlimited stock, type 1–50. */
+export const BAIT_CRATE_PRICE = 280;
+export const BAIT_CRATE_BUY_MAX = 50;
+/** Shared cooldown after casting any bait. */
+export const BAIT_USE_COOLDOWN_MS = 2 * 60 * 1000;
+
+/** Bait crate left-click loot table (weights sum to 100). */
+export const BAIT_CRATE_DROPS: { itemId: ItemId; weight: number }[] = [
+  { itemId: "bait_worms", weight: 16 },
+  { itemId: "bait_krill", weight: 12 },
+  { itemId: "bait_coral_flakes", weight: 12 },
+  { itemId: "bait_swamp_grub", weight: 12 },
+  { itemId: "bait_ice_shavings", weight: 10 },
+  { itemId: "bait_brine_pellets", weight: 8 },
+  { itemId: "bait_magnet", weight: 7 },
+  { itemId: "bait_sulfur_grit", weight: 6 },
+  { itemId: "bait_squid_strips", weight: 4 },
+  { itemId: "bait_lily_pad", weight: 4 },
+  { itemId: "bait_serpent_lure", weight: 3.5 },
+  { itemId: "bait_moonmoth", weight: 2 },
+  { itemId: "bait_reef_shiny", weight: 1.5 },
+  { itemId: "bait_crystal_shards", weight: 1 },
+  { itemId: "bait_gator_chunks", weight: 0.6 },
+  { itemId: "bait_ashen_flies", weight: 0.5 },
+  { itemId: "bait_ember_gel", weight: 0.3 },
+  { itemId: "bait_shimmer_scale", weight: 0.2 },
+];
+
+/** Species drawn when bait is cast in matching water. */
+export const BAIT_ATTRACTS: Partial<Record<ItemId, ItemId[]>> = {
+  bait_worms: ["sockeye_salmon", "flounder", "yellowfin_tuna"],
+  bait_krill: ["sunfish", "phantom_eel"],
+  bait_brine_pellets: ["bluefin_tuna"],
+  bait_magnet: ["driftwood"],
+  bait_squid_strips: ["phantom_eel", "yellowfin_tuna", "bluefin_tuna"],
+  bait_moonmoth: ["sunfish"],
+  bait_shimmer_scale: ["bluefin_tuna", "sunfish", "phantom_eel"],
+  bait_coral_flakes: ["clownfish", "angelfish", "pufferfish"],
+  bait_swamp_grub: ["white_perch", "whisker_catfish"],
+  bait_lily_pad: ["swamp_frog", "arapaima"],
+  bait_gator_chunks: ["alligator"],
+  bait_sulfur_grit: ["volcanic_hermitcrab", "ash_flounder"],
+  bait_ember_gel: ["molter", "pyrefin", "magma_jellyfish"],
+  bait_ashen_flies: ["ashencast_trout"],
+  bait_reef_shiny: ["nurse_shark", "surgeon_fish"],
+  bait_ice_shavings: ["chilled_clownfish", "crystal_frog"],
+  bait_crystal_shards: ["crystalfin_tuna", "nautilus"],
+  bait_serpent_lure: ["serpent_eel"],
+};
+
+/** Never pulled by bait (e.g. abundance-only cave whale). */
+export const BAIT_EXCLUDED_SPECIES: ItemId[] = ["cave_whale"];
+
+/** True when a species can be explicitly listed on a bait target table. */
+export function isBaitTargetSpecies(speciesId: ItemId): boolean {
+  if (BAIT_EXCLUDED_SPECIES.includes(speciesId)) return false;
+  const def = ITEMS[speciesId];
+  return !!def && !def.isQuestItem;
+}
+
+/** Non-fish floaters pulled only by magnet bait. */
+export const BAIT_HABITAT_JUNK: Partial<Record<FishHabitat, ItemId>> = {
+  ocean: "driftwood",
+  pond: "mushroom_cluster",
+  hotspring: "ore_cluster",
+};
+
+export function rollBaitFromCrate(): ItemId {
+  const total = BAIT_CRATE_DROPS.reduce((s, d) => s + d.weight, 0);
+  let r = Math.random() * total;
+  for (const d of BAIT_CRATE_DROPS) {
+    r -= d.weight;
+    if (r <= 0) return d.itemId;
+  }
+  return BAIT_CRATE_DROPS[0]!.itemId;
+}
+
+/** Full chum spawn pool — bait targets plus habitat junk (mushrooms, ore, etc.). */
+export function getBaitSpawnPool(
+  baitId: ItemId,
+  habitat: FishHabitat,
+  excludeSpecies: ItemId[] = []
+): ItemId[] {
+  if (baitId === "bait_magnet") {
+    const junk = BAIT_HABITAT_JUNK[habitat];
+    if (!junk || excludeSpecies.includes(junk) || !ITEMS[junk]) return [];
+    return [junk, junk, junk];
+  }
+
+  return [...getBaitAttractsForHabitat(baitId, habitat)];
+}
+
+/** Species a bait can pull in a given habitat. */
+export function getBaitAttractsForHabitat(
+  baitId: ItemId,
+  habitat: FishHabitat
+): ItemId[] {
+  if (baitId === "bait_magnet") {
+    const junk = BAIT_HABITAT_JUNK[habitat];
+    return junk && ITEMS[junk] ? [junk] : [];
+  }
+
+  const list = BAIT_ATTRACTS[baitId] ?? [];
+  return list.filter((id) => {
+    if (!isBaitTargetSpecies(id)) return false;
+    return (ITEMS[id]!.habitat ?? "ocean") === habitat;
+  });
+}
+
+/** True when a bait type can attract at least one listed target somewhere. */
+export function baitHasFishTargets(baitId: ItemId): boolean {
+  if (baitId === "bait_magnet") {
+    return Object.values(BAIT_HABITAT_JUNK).some((id) => !!ITEMS[id!]);
+  }
+  const list = BAIT_ATTRACTS[baitId] ?? [];
+  return list.some((id) => isBaitTargetSpecies(id));
+}
+
+/** @deprecated use getBaitAttractsForHabitat */
+export function getBaitOceanAttracts(baitId: ItemId): ItemId[] {
+  return getBaitAttractsForHabitat(baitId, "ocean");
+}
+
+/** Bestiary inspect — which baits attract this species. */
+export function formatFishBaitPreferenceLabel(fishId: ItemId): string {
+  const def = ITEMS[fishId];
+  if (!def) return "—";
+  if (def.ignoresBobber && fishId !== "driftwood") {
+    return "Ignores bait";
+  }
+  const baits = BAIT_ITEM_IDS.filter((id) =>
+    (BAIT_ATTRACTS[id] ?? []).includes(fishId)
+  );
+  if (baits.length === 0) return "No known bait preference";
+  return baits.map((id) => ITEMS[id]!.name).join(", ");
+}
+
+/** World bounds for bait placement validation. */
+export type BaitCastBounds = {
+  westWaterLeft: number;
+  ashenLeft: number;
+  ashenRight: number;
+  collectorLeft: number;
+  collectorRight: number;
+  ashenSpringALeft: number;
+  ashenSpringARight: number;
+  ashenSpringBLeft: number;
+  ashenSpringBRight: number;
+  reefLeft: number;
+  reefBlendEnd: number;
+  westWaterRight: number;
+  islandLeft: number;
+  islandRight: number;
+  eastWaterLeft: number;
+  eastWaterRight: number;
+  jungleLeft: number;
+  jungleRight: number;
+  farWaterLeft: number;
+  frostLeft: number;
+  frostRight: number;
+  farWaterRight: number;
+  pondLeft: number;
+  pondRight: number;
+  /** Frostpeak cave lakes — world X spans while inside the cave. */
+  caveZones?: { left: number; right: number }[];
+};
+
+/** @deprecated alias */
+export type OceanBaitBounds = BaitCastBounds;
+
+export type BaitWaterZone = {
+  left: number;
+  right: number;
+  habitat: FishHabitat;
+};
+
+export type BaitCastZone = {
+  habitat: FishHabitat;
+  left: number;
+  right: number;
+};
+
+function rangesOverlap(
+  aLeft: number,
+  aRight: number,
+  bLeft: number,
+  bRight: number
+): boolean {
+  return aLeft < bRight && aRight > bLeft;
+}
+
+/** Fishable water stretches — ocean corridors, reef, pond, hotsprings, and cave lakes. */
+export function getBaitWaterZones(bounds: BaitCastBounds): BaitWaterZone[] {
+  const zones: BaitWaterZone[] = [
+    { left: bounds.westWaterLeft, right: bounds.ashenLeft, habitat: "ocean" },
+    {
+      left: bounds.ashenRight,
+      right: bounds.collectorLeft,
+      habitat: "ocean",
+    },
+    {
+      left: bounds.ashenSpringALeft,
+      right: bounds.ashenSpringARight,
+      habitat: "hotspring",
+    },
+    {
+      left: bounds.ashenSpringBLeft,
+      right: bounds.ashenSpringBRight,
+      habitat: "hotspring",
+    },
+    { left: bounds.reefLeft, right: bounds.reefBlendEnd, habitat: "reef" },
+    {
+      left: bounds.reefBlendEnd,
+      right: bounds.westWaterRight,
+      habitat: "ocean",
+    },
+    {
+      left: bounds.eastWaterLeft,
+      right: bounds.eastWaterRight,
+      habitat: "ocean",
+    },
+    { left: bounds.farWaterLeft, right: bounds.frostLeft, habitat: "ocean" },
+    {
+      left: bounds.frostRight,
+      right: bounds.farWaterRight,
+      habitat: "ocean",
+    },
+    { left: bounds.pondLeft, right: bounds.pondRight, habitat: "pond" },
+  ];
+  if (bounds.caveZones) {
+    for (const cave of bounds.caveZones) {
+      zones.push({ left: cave.left, right: cave.right, habitat: "cave" });
+    }
+  }
+  return zones;
+}
+
+/** Resolve a clipped chum zone when the cast center lies in fishable water. */
+export function resolveBaitCastZone(
+  centerX: number,
+  halfWidth: number,
+  bounds: BaitCastBounds
+): BaitCastZone | null {
+  const zoneLeft = centerX - halfWidth;
+  const zoneRight = centerX + halfWidth;
+  for (const water of getBaitWaterZones(bounds)) {
+    if (centerX < water.left || centerX > water.right) continue;
+    const clipLeft = Math.max(zoneLeft, water.left);
+    const clipRight = Math.min(zoneRight, water.right);
+    if (clipRight - clipLeft < 72) continue;
+    return {
+      habitat: water.habitat,
+      left: clipLeft,
+      right: clipRight,
+    };
+  }
+  return null;
+}
+
+export function isBaitCastZone(
+  centerX: number,
+  halfWidth: number,
+  bounds: BaitCastBounds
+): boolean {
+  return resolveBaitCastZone(centerX, halfWidth, bounds) != null;
+}
+
+/** Dry land segments the chum box must not overlap. */
+function getBaitBlockedLandRanges(bounds: BaitCastBounds): [number, number][] {
+  return [
+    [bounds.ashenLeft, bounds.ashenRight],
+    [bounds.collectorLeft, bounds.collectorRight],
+    [bounds.islandLeft, bounds.islandRight],
+    [bounds.jungleLeft, bounds.jungleRight],
+    [bounds.frostLeft, bounds.frostRight],
+  ];
+}
+
+/** @deprecated ocean-only check — use isBaitCastZone */
+export function isOceanBaitCastX(x: number, bounds: BaitCastBounds): boolean {
+  const inRange = (a: number, b: number) => x >= a && x <= b;
+  const inHotspring =
+    inRange(bounds.ashenSpringALeft, bounds.ashenSpringARight) ||
+    inRange(bounds.ashenSpringBLeft, bounds.ashenSpringBRight);
+  const inReef = inRange(bounds.reefLeft, bounds.reefBlendEnd);
+  const inPond = inRange(bounds.pondLeft, bounds.pondRight);
+  if (inHotspring || inReef || inPond) return false;
+  return (
+    inRange(bounds.westWaterLeft, bounds.ashenLeft) ||
+    inRange(bounds.ashenRight, bounds.collectorLeft) ||
+    inRange(bounds.reefBlendEnd, bounds.westWaterRight) ||
+    inRange(bounds.eastWaterLeft, bounds.eastWaterRight) ||
+    inRange(bounds.farWaterLeft, bounds.frostLeft) ||
+    inRange(bounds.frostRight, bounds.farWaterRight)
+  );
+}
+
+/** @deprecated use isBaitCastZone */
+export function isOceanBaitCastZone(
+  centerX: number,
+  halfWidth: number,
+  bounds: BaitCastBounds
+): boolean {
+  if (!resolveBaitCastZone(centerX, halfWidth, bounds)) return false;
+  const zoneLeft = centerX - halfWidth;
+  const zoneRight = centerX + halfWidth;
+  for (const [landLeft, landRight] of getBaitBlockedLandRanges(bounds)) {
+    if (rangesOverlap(zoneLeft, zoneRight, landLeft, landRight)) return false;
+  }
+  return true;
 }
 
 /** Merchant-sellable fish or minerals. */
@@ -2411,6 +2954,32 @@ export function rollFishSpecies(
   habitat: FishHabitat = "ocean",
   exclude: readonly ItemId[] = []
 ): ItemId {
+  const { fish, weights } = computeFishSpawnWeights(luckPercent, habitat, exclude);
+  if (fish.length === 0) {
+    if (habitat === "reef") return "clownfish";
+    if (habitat === "cave") return "chilled_clownfish";
+    if (habitat === "hotspring") return "ore_cluster";
+    return "sockeye_salmon";
+  }
+
+  let total = 0;
+  for (const w of weights) total += w;
+  if (total <= 0) return fish[0];
+
+  let roll = Math.random() * total;
+  for (let i = 0; i < fish.length; i++) {
+    roll -= weights[i]!;
+    if (roll <= 0) return fish[i]!;
+  }
+  return fish[0]!;
+}
+
+/** Build normalized spawn weights for a habitat (matches rollFishSpecies). */
+function computeFishSpawnWeights(
+  luckPercent: number,
+  habitat: FishHabitat,
+  exclude: readonly ItemId[] = []
+): { fish: ItemId[]; weights: number[] } {
   const excluded = new Set(exclude);
   const fish = FISH_ITEM_IDS.filter(
     (id) =>
@@ -2421,18 +2990,15 @@ export function rollFishSpecies(
       !excluded.has(id)
   );
   if (fish.length === 0) {
-    if (habitat === "reef") return "clownfish";
-    if (habitat === "cave") return "chilled_clownfish";
-    if (habitat === "hotspring") return "ore_cluster";
-    return "sockeye_salmon";
+    return { fish: [], weights: [] };
   }
 
-  const weights = new Array(fish.length).fill(0);
+  const weights = new Array<number>(fish.length).fill(0);
   let fixedTotal = 0;
   let poolWeight = 0;
 
   for (let i = 0; i < fish.length; i++) {
-    const def = ITEMS[fish[i]];
+    const def = ITEMS[fish[i]!]!;
     const rarity = def.rarity ?? "common";
     const abs = absoluteRareShare(rarity, luckPercent, habitat);
     if (abs != null) {
@@ -2440,7 +3006,6 @@ export function rollFishSpecies(
       fixedTotal += abs;
       continue;
     }
-    // Common / uncommon / rare share the remainder by spawnWeight
     let w = def.spawnWeight ?? 1;
     if (rarity === "rare") {
       w *=
@@ -2451,16 +3016,15 @@ export function rollFishSpecies(
       w *= 1 + Math.max(0, luckPercent / 25) * 0.005;
     }
     weights[i] = Math.max(0.01, w);
-    poolWeight += weights[i];
+    poolWeight += weights[i]!;
   }
 
-  // Cap fixed rarities if they somehow exceed 100%
   if (fixedTotal > 0.95) {
     const scale = 0.95 / fixedTotal;
     for (let i = 0; i < fish.length; i++) {
-      const rarity = ITEMS[fish[i]].rarity ?? "common";
+      const rarity = ITEMS[fish[i]!]!.rarity ?? "common";
       if (absoluteRareShare(rarity, luckPercent, habitat) != null) {
-        weights[i] *= scale;
+        weights[i]! *= scale;
       }
     }
     fixedTotal = 0.95;
@@ -2469,31 +3033,74 @@ export function rollFishSpecies(
   const remainder = Math.max(0, 1 - fixedTotal);
   if (poolWeight > 0 && remainder > 0) {
     for (let i = 0; i < fish.length; i++) {
-      const rarity = ITEMS[fish[i]].rarity ?? "common";
+      const rarity = ITEMS[fish[i]!]!.rarity ?? "common";
       if (absoluteRareShare(rarity, luckPercent, habitat) == null) {
-        weights[i] = (weights[i] / poolWeight) * remainder;
+        weights[i] = (weights[i]! / poolWeight) * remainder;
       }
     }
   } else if (remainder <= 0 || poolWeight <= 0) {
-    // No pool fish — renormalize fixed shares only
     for (let i = 0; i < fish.length; i++) {
-      const rarity = ITEMS[fish[i]].rarity ?? "common";
+      const rarity = ITEMS[fish[i]!]!.rarity ?? "common";
       if (absoluteRareShare(rarity, luckPercent, habitat) == null) {
         weights[i] = 0;
       }
     }
   }
 
-  let total = 0;
-  for (const w of weights) total += w;
-  if (total <= 0) return fish[0];
+  return { fish, weights };
+}
 
-  let roll = Math.random() * total;
-  for (let i = 0; i < fish.length; i++) {
-    roll -= weights[i];
-    if (roll <= 0) return fish[i];
+/** Starting spawn chance (0 luck rod) for bestiary inspect. */
+export function getFishStartingSpawnChancePercent(
+  fishId: ItemId,
+  habitat: FishHabitat
+): number | null {
+  const def = ITEMS[fishId];
+  if (!def || def.isQuestItem) return null;
+  if (def.abundanceOnly) return null;
+  if (def.ashencastExclusive) {
+    if (habitat === "hotspring") {
+      return ashencastTroutChance(0, false, false) * 100;
+    }
+    return null;
   }
-  return fish[0];
+  if ((def.habitat ?? "ocean") !== habitat) return null;
+
+  const { fish, weights } = computeFishSpawnWeights(0, habitat);
+  const idx = fish.indexOf(fishId);
+  if (idx < 0) return null;
+  const total = weights.reduce((s, w) => s + w, 0);
+  if (total <= 0) return null;
+  return (weights[idx]! / total) * 100;
+}
+
+/** Human-readable spawn line for the bestiary inspect panel. */
+export function formatFishSpawnChanceLabel(
+  fishId: ItemId,
+  habitat: FishHabitat
+): string {
+  const def = ITEMS[fishId];
+  if (!def) return "—";
+  if (def.abundanceOnly) {
+    return "Abundance event only (not in normal rolls)";
+  }
+  if (def.ashencastExclusive) {
+    if (habitat === "hotspring") {
+      const pct = ashencastTroutChance(0, false, false) * 100;
+      return `~${formatSpawnPct(pct)} per hotspring cast (mystical)`;
+    }
+    return "Ashencast hotsprings only";
+  }
+  const pct = getFishStartingSpawnChancePercent(fishId, habitat);
+  if (pct == null) return "Not in this area";
+  return `${formatSpawnPct(pct)} starting chance (0% luck)`;
+}
+
+function formatSpawnPct(pct: number): string {
+  if (pct >= 10) return `${pct.toFixed(1)}%`;
+  if (pct >= 1) return `${pct.toFixed(2)}%`;
+  if (pct >= 0.1) return `${pct.toFixed(2)}%`;
+  return `${pct.toFixed(3)}%`;
 }
 
 /**
@@ -2568,6 +3175,11 @@ export function applyMutationTint(
 export function sizeSellMult(size?: FishSizeId | null): number {
   if (!size || size === "normal") return 1;
   return FISH_SIZES[size]?.sellMult ?? 1;
+}
+
+/** Size effect that zeros sell value and blocks merchant sales. */
+export function hasUnsellableEffect(size?: FishSizeId | null): boolean {
+  return size === "unsellable";
 }
 
 export function sizeScale(size?: FishSizeId | null): number {

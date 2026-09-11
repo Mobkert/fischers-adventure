@@ -22,6 +22,8 @@ import { CoinDisplay } from "../ui/CoinDisplay";
 import { QuestTracker } from "../ui/QuestTracker";
 import { WildflowerBuyPanel } from "../ui/WildflowerBuyPanel";
 import { OreVendorPanel } from "../ui/OreVendorPanel";
+import { BaitVendorPanel } from "../ui/BaitVendorPanel";
+import { AppraiserPanel, rollAppraiseBonuses } from "../ui/AppraiserPanel";
 import { CoralRodOfferPanel } from "../ui/CoralRodOfferPanel";
 import { BargainPanel, BargainSession } from "../ui/BargainPanel";
 import { AugmentUpgradePanel } from "../ui/AugmentUpgradePanel";
@@ -75,6 +77,9 @@ interface UISceneData {
   tryEnterFrostpeakCave: () => boolean;
   tryLeaveFrostpeakCave: () => boolean;
   tryUseAmulet: (id: import("../data/items").ItemId) => boolean;
+  tryUseBait: (id: import("../data/items").ItemId) => boolean;
+  isBaitPlacing: () => boolean;
+  cancelBaitPlacement: () => void;
   isNearCaveCrack: () => boolean;
   isInFrostpeakCave: () => boolean;
   isNearCoralRodOnBoat: () => boolean;
@@ -126,6 +131,9 @@ export class UIScene extends Phaser.Scene {
   private tryEnterFrostpeakCave!: () => boolean;
   private tryLeaveFrostpeakCave!: () => boolean;
   private tryUseAmulet!: (id: import("../data/items").ItemId) => boolean;
+  private tryUseBait!: (id: import("../data/items").ItemId) => boolean;
+  private isBaitPlacing!: () => boolean;
+  private cancelBaitPlacement!: () => void;
   private isInFrostpeakCave!: () => boolean;
   private tryOpenCoralRodOffer!: () => boolean;
   private offerCoralRodGift!: (amount: number) => boolean;
@@ -150,6 +158,8 @@ export class UIScene extends Phaser.Scene {
   private boatMenu!: BoatMenu;
   private wildflowerBuy!: WildflowerBuyPanel;
   private oreVendor!: OreVendorPanel;
+  private baitVendor!: BaitVendorPanel;
+  private appraiserPanel!: AppraiserPanel;
   private coralRodOffer!: CoralRodOfferPanel;
   private bargainPanel!: BargainPanel;
   private forgePanel!: ForgeCraftPanel;
@@ -202,6 +212,9 @@ export class UIScene extends Phaser.Scene {
     this.tryEnterFrostpeakCave = data.tryEnterFrostpeakCave;
     this.tryLeaveFrostpeakCave = data.tryLeaveFrostpeakCave;
     this.tryUseAmulet = data.tryUseAmulet;
+    this.tryUseBait = data.tryUseBait;
+    this.isBaitPlacing = data.isBaitPlacing;
+    this.cancelBaitPlacement = data.cancelBaitPlacement;
     this.isInFrostpeakCave = data.isInFrostpeakCave;
     this.tryOpenCoralRodOffer = data.tryOpenCoralRodOffer;
     this.offerCoralRodGift = data.offerCoralRodGift;
@@ -270,6 +283,17 @@ export class UIScene extends Phaser.Scene {
       this.onCoinsChanged();
       this.persistSave();
     });
+    this.inventoryPanel.setOnOpenBaitCrate(() => {
+      const result = this.inventory.openBaitCrate();
+      if (!result.ok || !result.baitId) {
+        this.showToast(result.message, "#ff8866");
+        return;
+      }
+      this.showToast(result.message, "#7ec8ff");
+      this.inventoryPanel.refresh();
+      this.onCoinsChanged();
+      this.persistSave();
+    });
     this.equipmentBag = new EquipmentBag(this, this.inventory);
     this.equipmentBag.setOnChanged((message) => {
       this.hotbar.refresh();
@@ -285,6 +309,12 @@ export class UIScene extends Phaser.Scene {
       this.tryUseAmulet(amuletId);
       this.equipmentBag.refresh();
       this.persistSave();
+    });
+    this.equipmentBag.setOnBaitUsed((baitId) => {
+      this.equipmentBag.setOpen(false);
+      if (this.tryUseBait(baitId)) {
+        this.equipmentBag.refresh();
+      }
     });
     this.equipmentBag.setOnHatChanged(() => {
       const game = this.scene.get("GameScene") as
@@ -339,6 +369,52 @@ export class UIScene extends Phaser.Scene {
         if (result.ok && this.inventory.getOreVendorStock(Date.now()) <= 0) {
           // keep panel open to show sold-out timer
         }
+      },
+      () => {
+        /* closed */
+      }
+    );
+    this.baitVendor = new BaitVendorPanel(this);
+    this.baitVendor.setCallbacks(
+      (amount) => {
+        const result = this.inventory.buyBaitCrates(amount);
+        this.showToast(result.message, result.ok ? "#7CFC00" : "#ffaa66");
+        this.onCoinsChanged();
+        this.inventoryPanel.refresh();
+        this.persistSave();
+      },
+      () => {
+        /* closed */
+      }
+    );
+    this.appraiserPanel = new AppraiserPanel(this);
+    this.appraiserPanel.setInventory(this.inventory);
+    this.appraiserPanel.setCallbacks(
+      () => {
+        const slot = this.appraiserPanel.getSelectedSlot();
+        if (!slot) return;
+        const roll = rollAppraiseBonuses();
+        const result = this.inventory.appraiseFish(
+          slot,
+          roll.mutation,
+          roll.size
+        );
+        this.showToast(result.message, result.ok ? "#7CFC00" : "#ffaa66");
+        if (result.ok) {
+          if (roll.gotMutation || roll.gotSize) {
+            this.playAppraiseDing(roll.gotMutation);
+          }
+          this.onCoinsChanged();
+          this.hotbar.refresh();
+          this.inventoryPanel.refresh();
+          this.persistSave();
+        }
+        this.appraiserPanel.afterAppraise(result.ok, {
+          message: result.message,
+          itemId: result.itemId,
+          mutation: result.mutation,
+          size: result.size,
+        });
       },
       () => {
         /* closed */
@@ -472,6 +548,10 @@ export class UIScene extends Phaser.Scene {
       const key = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE + i);
       key.on("down", () => {
         if (this.isTextEntryOpen()) return;
+        if (this.isBaitPlacing()) {
+          this.cancelBaitPlacement();
+          return;
+        }
         this.selectHotbarSlot(i);
       });
     }
@@ -485,6 +565,10 @@ export class UIScene extends Phaser.Scene {
       if (this.tutorial.visible) return;
       if (this.settings.isOpen()) {
         this.settings.setOpen(false);
+        return;
+      }
+      if (this.appraiserPanel.visible) {
+        this.closeAppraiser();
         return;
       }
       if (this.forgePanel.isOpen()) {
@@ -567,6 +651,18 @@ export class UIScene extends Phaser.Scene {
         this.closeOreVendor();
         return;
       }
+      if (this.baitVendor.visible) {
+        this.closeBaitVendor();
+        return;
+      }
+      if (this.appraiserPanel.visible) {
+        this.closeAppraiser();
+        return;
+      }
+      if (this.isBaitPlacing()) {
+        this.cancelBaitPlacement();
+        return;
+      }
       if (this.wildflowerBuy.visible) {
         this.closeWildflowerBuy();
         return;
@@ -598,6 +694,18 @@ export class UIScene extends Phaser.Scene {
       }
       if (this.oreVendor.visible) {
         this.oreVendor.handleKey(event);
+        return;
+      }
+      if (this.baitVendor.visible) {
+        this.baitVendor.handleKey(event);
+        return;
+      }
+      if (this.appraiserPanel.visible) {
+        this.appraiserPanel.handleKey(event);
+        return;
+      }
+      if (this.isBaitPlacing() && event.key === "Escape") {
+        this.cancelBaitPlacement();
       }
     });
 
@@ -847,6 +955,10 @@ export class UIScene extends Phaser.Scene {
 
   selectHotbarSlot(i: number): void {
     if (this.isTextEntryOpen()) return;
+    if (this.isBaitPlacing()) {
+      this.cancelBaitPlacement();
+      return;
+    }
     if (this.tutorial.visible) return;
     if (this.minigame.isActive() || this.boatMenu.visible) return;
     if (this.coralRodOffer.visible || this.wildflowerBuy.visible) return;
@@ -912,6 +1024,7 @@ export class UIScene extends Phaser.Scene {
     if (this.codeGuyPanel.isOpen()) return;
     if (this.augmentUpgrade.visible) return;
     if (this.bargainPanel.visible) return;
+    if (this.appraiserPanel.visible) return;
     if (this.forgePanel.isOpen()) {
       this.closeForge();
       return;
@@ -953,6 +1066,8 @@ export class UIScene extends Phaser.Scene {
       this.boatMenu.visible ||
       this.wildflowerBuy.visible ||
       this.oreVendor.visible ||
+      this.baitVendor.visible ||
+      this.appraiserPanel.visible ||
       this.coralRodOffer.visible ||
       this.bargainPanel.visible ||
       this.codeGuyPanel.isOpen() ||
@@ -1033,6 +1148,41 @@ export class UIScene extends Phaser.Scene {
 
   isOreVendorOpen(): boolean {
     return this.oreVendor.visible;
+  }
+
+  isBaitVendorOpen(): boolean {
+    return this.baitVendor.visible;
+  }
+
+  openBaitVendor(islandName: string): void {
+    this.baitVendor.open(islandName);
+  }
+
+  closeBaitVendor(): void {
+    this.baitVendor.setOpen(false);
+  }
+
+  openAppraiser(): void {
+    this.appraiserPanel.open();
+  }
+
+  closeAppraiser(): void {
+    this.appraiserPanel.setOpen(false);
+  }
+
+  isAppraiserOpen(): boolean {
+    return this.appraiserPanel.visible;
+  }
+
+  private playAppraiseDing(fancy: boolean): void {
+    const key = fancy ? "sfx_ding_triple" : "sfx_ding";
+    if (!this.cache.audio.exists(key)) return;
+    try {
+      if (this.sound.locked) this.sound.unlock();
+      this.sound.play(key, { volume: 0.6 });
+    } catch {
+      /* audio not ready */
+    }
   }
 
   /** Keep sold-out timer live while the panel is open. */

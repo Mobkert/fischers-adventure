@@ -7,6 +7,7 @@ import {
   FishMutationId,
   FishSizeId,
   MUTATIONS,
+  isBestiarySpecies,
   FISH_SIZES,
   ROD_ITEM_IDS,
   HAT_ITEM_IDS,
@@ -42,6 +43,8 @@ export interface SaveData {
   equippedBobberId: ItemId;
   /** Amulet stacks — not sellable. */
   ownedAmulets: Partial<Record<ItemId, number>>;
+  /** Bait stacks — equipment bag tab, not main inventory. */
+  ownedBait: Partial<Record<ItemId, number>>;
   /** Highest backpack owned — cannot downgrade. */
   backpackId: ItemId;
   hotbar: InventorySlot[];
@@ -170,11 +173,7 @@ function parseFishIdList(raw: unknown): ItemId[] {
   if (!Array.isArray(raw)) return [];
   const out: ItemId[] = [];
   for (const id of raw) {
-    if (
-      typeof id === "string" &&
-      id in ITEMS &&
-      ITEMS[id as ItemId].sellPrice != null
-    ) {
+    if (typeof id === "string" && id in ITEMS && isBestiarySpecies(id as ItemId)) {
       out.push(id as ItemId);
     }
   }
@@ -194,6 +193,7 @@ export function defaultSave(): SaveData {
     ownedBobbers: ["bobber_starter"],
     equippedBobberId: "bobber_starter",
     ownedAmulets: {},
+    ownedBait: {},
     backpackId: "backpack_starter",
     hotbar,
     bag: Array.from({ length: MAX_INVENTORY_SIZE }, emptySlot),
@@ -314,6 +314,19 @@ function normalizeOwnedAmulets(
   return out;
 }
 
+function normalizeOwnedBait(raw: unknown): Partial<Record<ItemId, number>> {
+  const out: Partial<Record<ItemId, number>> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!(key in ITEMS)) continue;
+    const id = key as ItemId;
+    if (!ITEMS[id].isBait) continue;
+    const n = Math.floor(Number(value) || 0);
+    if (n > 0) out[id] = n;
+  }
+  return out;
+}
+
 function normalizeBackpackId(id: unknown): ItemId | null {
   if (typeof id !== "string" || !(id in ITEMS)) return null;
   return ITEMS[id as ItemId].isBackpack ? (id as ItemId) : null;
@@ -328,6 +341,7 @@ function normalizePromoCodes(raw: unknown): PromoCodeId[] {
     "free_skin_crates",
     "ore_area_awesome",
     "new_stuff",
+    "serpent_eels",
   ];
   if (!Array.isArray(raw)) return [];
   return raw.filter(
@@ -410,6 +424,7 @@ export function cloneSave(raw: unknown): SaveData {
   }
 
   const ownedAmulets = normalizeOwnedAmulets(s.ownedAmulets);
+  const ownedBait = normalizeOwnedBait(s.ownedBait);
 
   let backpackId =
     normalizeBackpackId(s.backpackId) ?? "backpack_starter";
@@ -437,7 +452,7 @@ export function cloneSave(raw: unknown): SaveData {
   const bestiaryClaimed = parseFishIdList(s.bestiaryClaimed);
   // Retroactively unlock any fish already in inventory (pre-bestiary saves)
   for (const slot of [...hotbar, ...bag]) {
-    if (slot.itemId && ITEMS[slot.itemId]?.sellPrice != null) {
+    if (slot.itemId && isBestiarySpecies(slot.itemId)) {
       if (!bestiaryFound.includes(slot.itemId)) bestiaryFound.push(slot.itemId);
     }
   }
@@ -471,6 +486,7 @@ export function cloneSave(raw: unknown): SaveData {
     ownedBobbers: uniqueBobbers,
     equippedBobberId: equippedBobber,
     ownedAmulets,
+    ownedBait,
     backpackId,
     hotbar,
     bag,

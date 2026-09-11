@@ -1,10 +1,12 @@
 import {
   FISH_ITEM_IDS,
+  FISH_SIZES,
   HOTBAR_SIZE,
   MAX_INVENTORY_SIZE,
   ITEMS,
   ItemId,
   InventorySlot,
+  MUTATIONS,
   RodStats,
   ZERO_ROD_STATS,
   ROD_ITEM_IDS,
@@ -13,6 +15,7 @@ import {
   FishSizeId,
   mutationSellMult,
   sizeSellMult,
+  hasUnsellableEffect,
   BESTIARY_CLAIM_REWARD,
   BASE_ATTRACT_RADIUS,
   backpackSlotCount,
@@ -31,6 +34,12 @@ import {
   ORE_CLUSTER_VENDOR_STOCK_MAX,
   ORE_CLUSTER_VENDOR_RESTOCK_MS,
   rollOreFromCluster,
+  BAIT_CRATE_PRICE,
+  BAIT_CRATE_BUY_MAX,
+  BAIT_ITEM_IDS,
+  rollBaitFromCrate,
+  baitHasFishTargets,
+  BAIT_USE_COOLDOWN_MS,
 } from "../data/items";
 import { SaveData, cloneSave, defaultSave } from "../save/SaveBank";
 import type { WeatherId } from "./WeatherSystem";
@@ -115,6 +124,9 @@ export class InventorySystem {
   ownedBobbers: ItemId[] = ["bobber_starter"];
   equippedBobberId: ItemId = "bobber_starter";
   ownedAmulets: Partial<Record<ItemId, number>> = {};
+  ownedBait: Partial<Record<ItemId, number>> = {};
+  /** Session-only bait cooldown — not saved (chummed fish don't persist). */
+  baitCooldownUntil = 0;
   ownedBoats: BoatId[] = ["sailboat"];
   frostpeakQuestStage: FrostpeakQuestStage = 0;
   frostpeakEpicRods: ItemId[] = [];
@@ -188,6 +200,8 @@ export class InventorySystem {
     this.ownedBobbers = [...save.ownedBobbers];
     this.equippedBobberId = save.equippedBobberId;
     this.ownedAmulets = { ...save.ownedAmulets };
+    this.ownedBait = { ...save.ownedBait };
+    this.baitCooldownUntil = 0;
     this.ownedBoats = [...save.ownedBoats];
     this.frostpeakQuestStage = save.frostpeakQuestStage;
     this.frostpeakEpicRods = [...save.frostpeakEpicRods];
@@ -301,6 +315,7 @@ export class InventorySystem {
       ownedBobbers: [...this.ownedBobbers],
       equippedBobberId: this.equippedBobberId,
       ownedAmulets: { ...this.ownedAmulets },
+      ownedBait: { ...this.ownedBait },
       ownedBoats: [...this.ownedBoats],
       backpackId: this.backpackId,
       hotbar: this.hotbar.map((s) => ({ ...s })),
@@ -683,6 +698,127 @@ export class InventorySystem {
       id,
       count: this.getAmuletCount(id),
     })).filter((e) => e.count > 0);
+  }
+
+  getBaitCount(baitId: ItemId): number {
+    return Math.max(0, this.ownedBait[baitId] ?? 0);
+  }
+
+  getOwnedBait(): Array<{ id: ItemId; count: number }> {
+    return BAIT_ITEM_IDS.map((id) => ({
+      id,
+      count: this.getBaitCount(id),
+    })).filter((e) => e.count > 0);
+  }
+
+  addBait(baitId: ItemId, count = 1): boolean {
+    const def = ITEMS[baitId];
+    if (!def?.isBait || count <= 0) return false;
+    this.ownedBait[baitId] = this.getBaitCount(baitId) + count;
+    return true;
+  }
+
+  getBaitCooldownMs(nowMs = Date.now()): number {
+    if (this.baitCooldownUntil <= 0) return 0;
+    const left = this.baitCooldownUntil - nowMs;
+    if (left <= 0) {
+      this.baitCooldownUntil = 0;
+      return 0;
+    }
+    return left;
+  }
+
+  useBait(baitId: ItemId): { ok: boolean; message: string } {
+    const check = this.canStartBaitUse(baitId);
+    if (!check.ok) return check;
+    const next = this.getBaitCount(baitId) - 1;
+    if (next <= 0) delete this.ownedBait[baitId];
+    else this.ownedBait[baitId] = next;
+    this.baitCooldownUntil = Date.now() + BAIT_USE_COOLDOWN_MS;
+    return {
+      ok: true,
+      message: `Cast ${ITEMS[baitId]!.name} · bait cooldown 2:00`,
+    };
+  }
+
+  canStartBaitUse(baitId: ItemId): { ok: boolean; message: string } {
+    const def = ITEMS[baitId];
+    if (!def?.isBait) {
+      return { ok: false, message: "That isn't bait." };
+    }
+    if (this.getBaitCount(baitId) <= 0) {
+      return { ok: false, message: `You have no ${def.name}.` };
+    }
+    if (!baitHasFishTargets(baitId)) {
+      return { ok: false, message: "This bait has no fish targets." };
+    }
+    const cd = this.getBaitCooldownMs();
+    if (cd > 0) {
+      const totalSec = Math.ceil(cd / 1000);
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      return {
+        ok: false,
+        message: `Bait cooldown ${m}:${s.toString().padStart(2, "0")}`,
+      };
+    }
+    return { ok: true, message: "" };
+  }
+
+  buyBaitCrates(amount: number): { ok: boolean; message: string; bought: number } {
+    const n = Math.floor(amount);
+    if (n < 1) {
+      return { ok: false, message: "Pick an amount.", bought: 0 };
+    }
+    if (n > BAIT_CRATE_BUY_MAX) {
+      return {
+        ok: false,
+        message: `Max ${BAIT_CRATE_BUY_MAX} at a time.`,
+        bought: 0,
+      };
+    }
+    const total = n * BAIT_CRATE_PRICE;
+    if (this.coins < total) {
+      return {
+        ok: false,
+        message: `Need $${total.toLocaleString("en-US")} — you have $${this.coins.toLocaleString("en-US")}.`,
+        bought: 0,
+      };
+    }
+    this.coins -= total;
+    let added = 0;
+    for (let i = 0; i < n; i++) {
+      if (!this.addItem("bait_crate")) break;
+      added++;
+    }
+    if (added < n) {
+      this.coins += (n - added) * BAIT_CRATE_PRICE;
+    }
+    if (added <= 0) {
+      return { ok: false, message: "Bag is full.", bought: 0 };
+    }
+    return {
+      ok: true,
+      message: `Purchased ${added} bait crate${added === 1 ? "" : "s"}!`,
+      bought: added,
+    };
+  }
+
+  /** Crack one bait crate — loot goes to bait tab, not bag. */
+  openBaitCrate(): { ok: boolean; baitId?: ItemId; message: string } {
+    if (!this.hasItem("bait_crate")) {
+      return { ok: false, message: "No bait crate." };
+    }
+    const baitId = rollBaitFromCrate();
+    if (!this.removeOneItem("bait_crate")) {
+      return { ok: false, message: "No bait crate." };
+    }
+    this.addBait(baitId);
+    return {
+      ok: true,
+      baitId,
+      message: `Found ${ITEMS[baitId].name}! (Equipment Bag › Bait)`,
+    };
   }
 
   ownsBoat(boatId: BoatId): boolean {
@@ -1907,6 +2043,7 @@ export class InventorySystem {
           s.itemId != null &&
           isMerchantSellable(s.itemId) &&
           !s.keep &&
+          !hasUnsellableEffect(s.size) &&
           !ITEMS[s.itemId].isQuestItem &&
           ITEMS[s.itemId].sellPrice != null
       )
@@ -1922,6 +2059,7 @@ export class InventorySystem {
         !isMerchantSellable(slot.itemId) ||
         slot.count <= 0 ||
         slot.keep ||
+        hasUnsellableEffect(slot.size) ||
         ITEMS[slot.itemId].isQuestItem ||
         ITEMS[slot.itemId].sellPrice == null
       ) {
@@ -1956,6 +2094,7 @@ export class InventorySystem {
         !isMerchantSellable(slot.itemId) ||
         slot.count <= 0 ||
         slot.keep ||
+        hasUnsellableEffect(slot.size) ||
         ITEMS[slot.itemId].isQuestItem ||
         ITEMS[slot.itemId].sellPrice == null
       ) {
@@ -1979,13 +2118,156 @@ export class InventorySystem {
 
   /** Fair coin value for one unit in a sellable fish slot. */
   getFishUnitFairValue(slot: InventorySlot): number {
-    if (!slot.itemId || !isMerchantSellable(slot.itemId) || slot.keep) {
+    if (
+      !slot.itemId ||
+      !isMerchantSellable(slot.itemId) ||
+      slot.keep ||
+      hasUnsellableEffect(slot.size)
+    ) {
       return 0;
     }
     const price = ITEMS[slot.itemId].sellPrice ?? 0;
     return Math.round(
       price * mutationSellMult(slot.mutation) * sizeSellMult(slot.size)
     );
+  }
+
+  /** Fish stacks The Appraiser will re-roll (favorites allowed). */
+  listAppraisableFishSlots(): InventorySlot[] {
+    return [...this.bag, ...this.hotbar].filter((s) => {
+      if (!s.itemId || s.count <= 0) return false;
+      if (hasUnsellableEffect(s.size)) return false;
+      const def = ITEMS[s.itemId];
+      if (!def || def.isMineral || def.isQuestItem || def.isRod || def.isBait) {
+        return false;
+      }
+      return isMerchantSellable(s.itemId) || !!def.isCatchable;
+    });
+  }
+
+  /** Appraisal fee — scales with the fish's current worth. */
+  getAppraiseCost(slot: InventorySlot): number {
+    if (!slot.itemId) return 0;
+    const base = ITEMS[slot.itemId].sellPrice ?? 0;
+    const fair = Math.round(
+      base * mutationSellMult(slot.mutation) * sizeSellMult(slot.size)
+    );
+    return Math.max(50, Math.round(fair * 0.45));
+  }
+
+  /**
+   * Pay to wipe mutation/size on one fish unit, then apply rolled bonuses.
+   * Splits stacks when count > 1.
+   */
+  appraiseFish(
+    slot: InventorySlot,
+    mutation: FishMutationId | null,
+    size: FishSizeId | null
+  ): {
+    ok: boolean;
+    message: string;
+    paid: number;
+    itemId?: ItemId;
+    mutation?: FishMutationId | null;
+    size?: FishSizeId | null;
+  } {
+    if (!slot.itemId || slot.count <= 0) {
+      return { ok: false, message: "Nothing to appraise.", paid: 0 };
+    }
+    if (hasUnsellableEffect(slot.size)) {
+      return { ok: false, message: "I can't appraise unsellable fish.", paid: 0 };
+    }
+    const id = slot.itemId;
+    const def = ITEMS[id];
+    if (!def || def.isMineral || def.isQuestItem) {
+      return { ok: false, message: "I only appraise fish.", paid: 0 };
+    }
+
+    const live =
+      [...this.bag, ...this.hotbar].find(
+        (s) =>
+          s.itemId === id &&
+          sameMutation(s.mutation, slot.mutation) &&
+          sameSize(s.size, slot.size) &&
+          s.count > 0
+      ) ?? null;
+    if (!live) return { ok: false, message: "That fish is gone.", paid: 0 };
+
+    const cost = this.getAppraiseCost(live);
+    if (this.coins < cost) {
+      return {
+        ok: false,
+        message: `Need $${cost.toLocaleString("en-US")} — you have $${this.coins.toLocaleString("en-US")}.`,
+        paid: 0,
+      };
+    }
+
+    this.coins -= cost;
+    const keep = !!live.keep;
+
+    // Remove one unit from the old stack
+    live.count -= 1;
+    if (live.count <= 0) {
+      live.itemId = null;
+      live.count = 0;
+      live.mutation = null;
+      live.size = null;
+      live.keep = false;
+    }
+
+    // Place the appraised fish (new mutation/size)
+    const existing = this.findStack(id, mutation, size);
+    if (existing) {
+      existing.count += 1;
+      if (keep) existing.keep = true;
+    } else {
+      const empty = this.bag.find(
+        (s, i) => i < this.getBagCapacity() && s.itemId === null
+      );
+      const target =
+        empty ??
+        (live.itemId === null ? live : null) ??
+        this.hotbar.find((s) => s.itemId === null);
+      if (!target) {
+        // Refund + put fish back without appraisal
+        this.coins += cost;
+        if (live.itemId === null) {
+          live.itemId = id;
+          live.count = 1;
+          live.mutation = slot.mutation ?? null;
+          live.size = slot.size ?? null;
+          live.keep = keep;
+        } else {
+          this.addItem(id, 1, slot.mutation ?? null, slot.size ?? null);
+        }
+        return { ok: false, message: "Bag is full!", paid: 0 };
+      }
+      target.itemId = id;
+      target.count = 1;
+      target.mutation = mutation;
+      target.size = size;
+      target.keep = keep;
+    }
+
+    const mutName = mutation ? MUTATIONS[mutation].name : null;
+    const sizeName =
+      size && size !== "normal" ? FISH_SIZES[size].name : null;
+    const bits: string[] = [];
+    if (mutName) bits.push(mutName);
+    if (sizeName) bits.push(sizeName);
+    const outcome =
+      bits.length > 0
+        ? bits.join(" · ")
+        : "No special traits this time";
+
+    return {
+      ok: true,
+      paid: cost,
+      itemId: id,
+      mutation,
+      size,
+      message: `Appraised ${def.name} (−$${cost.toLocaleString("en-US")}) — ${outcome}!`,
+    };
   }
 
   /** List unlocked fish stacks the player can bargain-sell (one unit each offer). */
@@ -1995,7 +2277,8 @@ export class InventorySystem {
         s.itemId != null &&
         isMerchantSellable(s.itemId) &&
         s.count > 0 &&
-        !s.keep
+        !s.keep &&
+        !hasUnsellableEffect(s.size)
     );
   }
 
@@ -2008,9 +2291,15 @@ export class InventorySystem {
       !slot.itemId ||
       !isMerchantSellable(slot.itemId) ||
       slot.count <= 0 ||
-      slot.keep
+      slot.keep ||
+      hasUnsellableEffect(slot.size)
     ) {
-      return { ok: false, message: "Nothing to sell." };
+      return {
+        ok: false,
+        message: hasUnsellableEffect(slot.size)
+          ? "That fish is unsellable."
+          : "Nothing to sell.",
+      };
     }
     const id = slot.itemId;
     const mut = slot.mutation;

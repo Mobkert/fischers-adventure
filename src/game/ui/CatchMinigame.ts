@@ -181,15 +181,19 @@ export class CatchMinigame {
   private baseProgressSpeed = 0;
   private forgeSwordSpeedAdd = 0;
   private readonly forgeSwordSpeedBonus = 5;
+  /** Zeus Rod — +15 progress speed percentage points each time lightning hits your bar. */
+  private zeusBarHitSpeedAdd = 0;
+  private readonly zeusBarHitSpeedBonus = 15;
   private readonly forgeAxeProgressGain = 0.1;
   private readonly forgeEmberSwordChance = 0.025;
   private forgeWeaponSprites: Phaser.GameObjects.Image[] = [];
   /** Forge Rod — at least one orange ember weapon in the volley guarantees Ashencast. */
   private forgeHadEmberWeapon = false;
-  /** Starweaver Rod: sacrifice progress after 3 fish moves to stun. */
+  /** Starweaver Rod: sacrifice progress after 5 fish moves to stun. */
   private starweaverWeave = false;
   private starweaverFishMoves = 0;
   private starweaverCooldownMoves = 0;
+  private readonly starweaverMovesPerWeave = 5;
   /** Remaining stun lock-on time (separate from generic fishPauseTimer). */
   private starweaverStunLeft = 0;
   private starweaverLock: StarweaverLockOn | null = null;
@@ -491,6 +495,7 @@ export class CatchMinigame {
     this.zeusWarnVisible = false;
     this.electrified = false;
     this.guaranteeThunder = false;
+    this.zeusBarHitSpeedAdd = 0;
     this.zeusZoneRect.setVisible(false).setAlpha(0.28);
     this.zeusWarnIcon.setVisible(false).setAlpha(1).setScale(1);
     for (const s of this.elecSparks) s.setVisible(false);
@@ -991,7 +996,7 @@ export class CatchMinigame {
   private triggerStarweaverWeave(): void {
     this.starweaverFishMoves = 0;
     this.starweaverBusy = true;
-    this.starweaverCooldownMoves = 3;
+    this.starweaverCooldownMoves = this.starweaverMovesPerWeave;
     const sacrifice = Phaser.Math.FloatBetween(0.05, 0.15);
     const taken = Math.min(this.progress, sacrifice);
     this.progress = Math.max(0, this.progress - taken);
@@ -1247,6 +1252,7 @@ export class CatchMinigame {
     return (
       this.baseProgressSpeed +
       this.forgeSwordSpeedAdd +
+      this.zeusBarHitSpeedAdd +
       this.birthdayBalloonSpeedAdd +
       this.birthdayZoneSpeedAdd
     );
@@ -1365,6 +1371,8 @@ export class CatchMinigame {
     }
     if (barHit) {
       this.setElectrified(true);
+      this.zeusBarHitSpeedAdd += this.zeusBarHitSpeedBonus;
+      this.applyProgressSpeedFillRate();
     }
     this.root.scene.time.delayedCall(280, () => {
       if (!this.active) return;
@@ -2523,7 +2531,7 @@ export class CatchMinigame {
         this.starweaverCooldownMoves -= 1;
       } else {
         this.starweaverFishMoves += 1;
-        if (this.starweaverFishMoves >= 3) {
+        if (this.starweaverFishMoves >= this.starweaverMovesPerWeave) {
           this.triggerStarweaverWeave();
         }
       }

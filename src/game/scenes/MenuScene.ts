@@ -129,7 +129,7 @@ export class MenuScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xc4a86a);
 
     const title = this.add
-      .text(0, -panelH / 2 + 28, "Ashencast 1.50", {
+      .text(0, -panelH / 2 + 28, "Ashencast 1.51", {
         fontFamily: "Georgia, serif",
         fontSize: "24px",
         color: "#f0e6d2",
@@ -137,7 +137,7 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const subtitle = this.add
-      .text(0, -panelH / 2 + 56, "What's New · Frostpeak Skins & Codes", {
+      .text(0, -panelH / 2 + 56, "What's New · Bait & Appraiser Update", {
         fontFamily: "Arial",
         fontSize: "13px",
         color: "#9aaa9a",
@@ -160,23 +160,34 @@ export class MenuScene extends Phaser.Scene {
     listRoot.setMask(maskShape.createGeometryMask());
 
     const bodyText =
-      "WHAT'S NEW\n\n" +
-      "• Frostpeak Skin Crate at the Collectors boutique\n" +
-      "  ($20k) — Frigid, Icicle, Frozen Lotus, Halo of\n" +
-      "  Ice, Hyperboreal, Hyperthermic (dupes → $10k)\n" +
-      "• Starweaver Rod forge craft + weave ability\n" +
-      "• Catch bar wall bounce capped (0–3 by impact)\n\n" +
+      "GENERAL\n\n" +
+      "Bait is here — crack Bait Crates, stock the Equipment\n" +
+      "Bag bait tab, and chum the right habitats. On\n" +
+      "Collectors Island, The Appraiser can re-roll a fish's\n" +
+      "mutation and size for a fee. New code SERPENTEELS\n" +
+      "hands out Serpent Lure, Bait Crates, and a Blasted\n" +
+      "Serpent Eel with the Unsellable effect ($0 / can't sell).\n\n" +
+      "CHANGES\n\n" +
+      "• Bait Crates + habitat baits (ocean, pond, reef,\n" +
+      "  cave, hotspring, serpent lure, and more)\n" +
+      "• Equipment Bag bait tab — equip & use chum\n" +
+      "• The Appraiser NPC on Collectors Island\n" +
+      "• Zeus Rod buff — bar lightning hits grant +15\n" +
+      "  progress speed (stacks); electrified catch is\n" +
+      "  60% Thunder / 40% Electric\n" +
+      "• Serpent Eels swim shallower (reachable on short rods)\n" +
+      "• Starter Island no longer sells Bait Crates\n" +
+      "• Unsellable fish effect (worth $0, blocked from merchants)\n\n" +
       "CODES (Code Guy)\n\n" +
-      "• NEWSTUFF — $10,000, 4 Frostpeak Crates, and a\n" +
-      "  Tempest Amulet (one-time)\n" +
-      "• FREESKINCRATES — $5,000 and 3 Skin Crates\n" +
-      "  (one-time)\n" +
+      "• SERPENTEELS — 15 Serpent Lure, 20 Bait Crates,\n" +
+      "  and a Blasted Serpent Eel (Unsellable) (one-time)\n" +
       "• OREAREAWESOME — $2,200 and 10 Ore Clusters\n" +
-      "  (one-time)\n\n" +
-      "FROM 1.26\n\n" +
-      "• Ashencast hotsprings fish & Ore Clusters\n" +
-      "• Ore Peddler / Curio stock persistence\n" +
-      "• Collectors Skin Boutique & crate finishes";
+      "  (one-time)\n" +
+      "• NEWSTUFF & FREESKINCRATES — expired\n\n" +
+      "FROM 1.50\n\n" +
+      "• Frostpeak Skin Crate at the Collectors boutique\n" +
+      "• Starweaver Rod forge craft + weave ability\n" +
+      "• Catch bar wall bounce capped (0–3 by impact)";
 
     const body = this.add
       .text(0, 0, bodyText, {

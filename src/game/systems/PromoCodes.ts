@@ -7,7 +7,8 @@ export type PromoCodeId =
   | "sorry_for_bugs"
   | "free_skin_crates"
   | "ore_area_awesome"
-  | "new_stuff";
+  | "new_stuff"
+  | "serpent_eels";
 
 export type PromoRedeemResult =
   | { ok: true; message: string }
@@ -21,6 +22,7 @@ const CODE_MAP: Record<string, PromoCodeId> = {
   FREESKINCRATES: "free_skin_crates",
   OREAREAWESOME: "ore_area_awesome",
   NEWSTUFF: "new_stuff",
+  SERPENTEELS: "serpent_eels",
 };
 
 /** Codes that can no longer be redeemed. */
@@ -29,6 +31,8 @@ const EXPIRED_PROMO_CODES = new Set<PromoCodeId>([
   "free_coins_10k",
   "free_fish_gift_3",
   "sorry_for_bugs",
+  "free_skin_crates",
+  "new_stuff",
 ]);
 
 export function normalizePromoCodeInput(raw: string): string {
@@ -120,6 +124,39 @@ export function redeemPromoCode(
       return {
         ok: true,
         message: "Code Guy hands you $2,200 and 10 Ore Clusters!",
+      };
+    }
+    case "serpent_eels": {
+      const needCrateSlot = !inventory.hasItem("bait_crate");
+      const hasUnsellableBlastedEel = [...inventory.bag, ...inventory.hotbar].some(
+        (s) =>
+          s.itemId === "serpent_eel" &&
+          s.mutation === "blasted" &&
+          s.size === "unsellable" &&
+          s.count > 0
+      );
+      const slotsNeeded =
+        (needCrateSlot ? 1 : 0) + (hasUnsellableBlastedEel ? 0 : 1);
+      if (inventory.countEmptyBagSlots() < slotsNeeded) {
+        return {
+          ok: false,
+          message: `Need ${slotsNeeded} free bag slot${slotsNeeded > 1 ? "s" : ""} for the reward.`,
+        };
+      }
+      if (!inventory.addItem("bait_crate", 20)) {
+        return { ok: false, message: "Your bag is full!" };
+      }
+      if (!inventory.addBait("bait_serpent_lure", 15)) {
+        return { ok: false, message: "Couldn't add Serpent Lure bait." };
+      }
+      if (!inventory.addItem("serpent_eel", 1, "blasted", "unsellable")) {
+        return { ok: false, message: "Your bag is full!" };
+      }
+      inventory.markPromoRedeemed(codeId);
+      return {
+        ok: true,
+        message:
+          "Code Guy hands you 15 Serpent Lure, 20 Bait Crates, and a Blasted Serpent Eel (Unsellable)!",
       };
     }
     default:

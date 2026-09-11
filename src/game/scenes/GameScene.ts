@@ -5,6 +5,8 @@ import { Bobber } from "../entities/Bobber";
 import { Sailboat } from "../entities/Sailboat";
 import { FishMerchant } from "../entities/FishMerchant";
 import { TalkNpc } from "../entities/TalkNpc";
+import { BaitCrate } from "../entities/BaitCrate";
+import { BaitPlacementMarker } from "../ui/BaitPlacementMarker";
 import { CodeGuyNpc } from "../entities/CodeGuyNpc";
 import {
   FishQuestIslandId,
@@ -57,6 +59,12 @@ import {
   rollAshencastOceanSpecies,
   rollHotspringSpecies,
   ORE_CLUSTER_VENDOR_PRICE,
+  BAIT_CRATE_PRICE,
+  BaitCastZone,
+  getBaitAttractsForHabitat,
+  getBaitSpawnPool,
+  isBaitCastZone,
+  resolveBaitCastZone,
 } from "../data/items";
 import { ROD_SKINS } from "../data/rodSkins";
 import { BoatId } from "../data/boats";
@@ -127,6 +135,12 @@ export class GameScene extends Phaser.Scene {
   ashenMerchant?: FishMerchant;
   ashenForgeNpc?: TalkNpc;
   orePeddler?: TalkNpc;
+  appraiser?: TalkNpc;
+  private baitCrates: BaitCrate[] = [];
+  private baitPlacementId: ItemId | null = null;
+  private baitMarker: BaitPlacementMarker | null = null;
+  /** Chum box sits just below the surface. */
+  private static readonly BAIT_PLACEMENT_TOP_OFFSET = 8;
   private ashenBuildAnvil?: () => void;
   private anvilOceanFish?: Fish;
   private zoneLoader!: WorldZoneLoader;
@@ -279,6 +293,7 @@ export class GameScene extends Phaser.Scene {
     this.ashenMerchant = undefined;
     this.ashenForgeNpc = undefined;
     this.orePeddler = undefined;
+    this.appraiser = undefined;
     this.fishCollector = undefined;
     this.curioTrader = undefined;
     this.jungleMerchant = undefined;
@@ -549,6 +564,9 @@ export class GameScene extends Phaser.Scene {
       tryEnterFrostpeakCave: () => this.tryEnterFrostpeakCave(),
       tryLeaveFrostpeakCave: () => this.tryLeaveFrostpeakCave(),
       tryUseAmulet: (id: ItemId) => this.tryUseAmulet(id),
+      tryUseBait: (id: ItemId) => this.tryUseBait(id),
+      isBaitPlacing: () => this.baitPlacementId != null,
+      cancelBaitPlacement: () => this.cancelBaitPlacement(),
       isNearCaveCrack: () => this.isNearCaveCrack(),
       isInFrostpeakCave: () => this.inFrostpeakCave,
       isNearCoralRodOnBoat: () => this.isNearCoralRodOnBoat(),
@@ -578,12 +596,16 @@ export class GameScene extends Phaser.Scene {
       const ui = this.scene.get("UIScene") as UIScene | undefined;
       if (!ui || !ui.sys.settings.active) return;
       if (ui.isBlockingInput?.()) return;
-      // Mobile Mode: cast only via the CAST button (avoids mis-taps)
       if (ui.isMobileMode?.()) return;
       if (ui.isMobileCapturing?.()) return;
       if (this.fishing.state === "minigame") return;
 
       const worldX = this.cameras.main.getWorldPoint(pointer.x, pointer.y).x;
+      if (this.baitPlacementId) {
+        if (pointer.rightButtonDown() && !pointer.leftButtonDown()) return;
+        this.tryConfirmBaitCast(worldX);
+        return;
+      }
       this.fishing.tryCast(worldX);
     });
   }
@@ -883,6 +905,12 @@ export class GameScene extends Phaser.Scene {
     }
     if (this.player.isOnBoat()) return false;
     if (this.fishing.isBusy()) return false;
+    if (this.baitPlacementId) return false;
+
+    const baitCrate = this.getNearBaitCrate();
+    if (baitCrate) {
+      return this.handleBaitCrateTalk(baitCrate);
+    }
 
     if (
       this.codeGuy?.isNear(this.player.sprite.x, this.player.sprite.y)
@@ -922,6 +950,14 @@ export class GameScene extends Phaser.Scene {
         ui.isOreVendorOpen?.())
     ) {
       return this.handleOrePeddlerTalk();
+    }
+
+    if (
+      this.appraiser &&
+      (this.appraiser.isNear(this.player.sprite.x, this.player.sprite.y) ||
+        ui.isAppraiserOpen?.())
+    ) {
+      return this.handleAppraiserTalk();
     }
 
     if (
@@ -1552,6 +1588,249 @@ export class GameScene extends Phaser.Scene {
     }
     ui.openOreVendor();
     return true;
+  }
+
+  private handleAppraiserTalk(): boolean {
+    if (!this.appraiser) return false;
+    const ui = this.scene.get("UIScene") as UIScene;
+    if (ui.isAppraiserOpen()) {
+      ui.closeAppraiser();
+      return true;
+    }
+    if (!this.appraiser.isNear(this.player.sprite.x, this.player.sprite.y)) {
+      return false;
+    }
+    ui.openAppraiser();
+    return true;
+  }
+
+  private spawnBaitCrate(x: number, islandName: string): void {
+    this.baitCrates.push(new BaitCrate(this, x, this.groundY, islandName));
+  }
+
+  private getNearBaitCrate(): BaitCrate | null {
+    for (const crate of this.baitCrates) {
+      if (crate.isNear(this.player.sprite.x, this.player.sprite.y)) {
+        return crate;
+      }
+    }
+    return null;
+  }
+
+  tryBaitCrateTalk(): boolean {
+    const crate = this.getNearBaitCrate();
+    if (!crate) return false;
+    return this.handleBaitCrateTalk(crate);
+  }
+
+  private handleBaitCrateTalk(crate: BaitCrate): boolean {
+    const ui = this.scene.get("UIScene") as UIScene;
+    if (ui.isBaitVendorOpen()) {
+      ui.closeBaitVendor();
+      return true;
+    }
+    if (!crate.isNear(this.player.sprite.x, this.player.sprite.y)) {
+      return false;
+    }
+    ui.openBaitVendor(crate.islandName);
+    return true;
+  }
+
+  private getBaitCastBounds() {
+    return {
+      westWaterLeft: this.westWaterLeft,
+      ashenLeft: this.ashenLeft,
+      ashenRight: this.ashenRight,
+      collectorLeft: this.collectorLeft,
+      collectorRight: this.collectorRight,
+      ashenSpringALeft: this.ashenSpringALeft,
+      ashenSpringARight: this.ashenSpringARight,
+      ashenSpringBLeft: this.ashenSpringBLeft,
+      ashenSpringBRight: this.ashenSpringBRight,
+      reefLeft: this.reefLeft,
+      reefBlendEnd: this.reefBlendEnd,
+      westWaterRight: this.westWaterRight,
+      islandLeft: this.islandLeft,
+      islandRight: this.islandRight,
+      eastWaterLeft: this.eastWaterLeft,
+      eastWaterRight: this.eastWaterRight,
+      jungleLeft: this.jungleLeft,
+      jungleRight: this.jungleRight,
+      farWaterLeft: this.farWaterLeft,
+      frostLeft: this.frostLeft,
+      frostRight: this.frostRight,
+      farWaterRight: this.farWaterRight,
+      pondLeft: this.pondLeft,
+      pondRight: this.pondRight,
+      caveZones:
+        this.inFrostpeakCave && this.caveWaters.length > 0
+          ? this.caveWaters.map((w) => ({ left: w.left, right: w.right }))
+          : undefined,
+    };
+  }
+
+  tryUseBait(baitId: ItemId): boolean {
+    const ui = this.scene.get("UIScene") as UIScene | undefined;
+    if (this.baitPlacementId) {
+      ui?.showToast("Already placing bait.", "#ffaa66");
+      return false;
+    }
+    if (this.fishing.isBusy()) {
+      ui?.showToast("Finish fishing first.", "#ffaa66");
+      return false;
+    }
+    const check = this.inventory.canStartBaitUse(baitId);
+    if (!check.ok) {
+      ui?.showToast(check.message, "#ffaa66");
+      return false;
+    }
+    this.baitPlacementId = baitId;
+    this.baitMarker = new BaitPlacementMarker(this);
+    ui?.showToast(
+      `Place ${ITEMS[baitId].name} — LMB in water · X/Esc cancel`,
+      "#7ec8ff"
+    );
+    return true;
+  }
+
+  cancelBaitPlacement(): void {
+    if (!this.baitPlacementId) return;
+    this.baitPlacementId = null;
+    this.baitMarker?.destroy();
+    this.baitMarker = null;
+  }
+
+  private getBaitZoneTopY(): number {
+    return this.waterSurfaceY + GameScene.BAIT_PLACEMENT_TOP_OFFSET;
+  }
+
+  private tryConfirmBaitCast(worldX: number): void {
+    const ui = this.scene.get("UIScene") as UIScene | undefined;
+    const baitId = this.baitPlacementId;
+    if (!baitId) return;
+
+    const bounds = this.getBaitCastBounds();
+    const halfW = (this.baitMarker?.boxW ?? 280) / 2;
+    const castZone = resolveBaitCastZone(worldX, halfW, bounds);
+    if (!castZone) {
+      ui?.showToast("Cast bait in fishable water.", "#ff8866");
+      return;
+    }
+
+    if (getBaitAttractsForHabitat(baitId, castZone.habitat).length === 0) {
+      ui?.showToast("This bait doesn't work here.", "#ff8866");
+      return;
+    }
+
+    const spawnPad =
+      castZone.habitat === "pond" || castZone.habitat === "hotspring"
+        ? 16
+        : 24;
+    const spawnLeft = castZone.left + spawnPad;
+    const spawnRight = castZone.right - spawnPad;
+    const spawnPool = getBaitSpawnPool(
+      baitId,
+      castZone.habitat,
+      this.getBaitJunkExcludeInZone(spawnLeft, spawnRight)
+    );
+    if (spawnPool.length === 0) {
+      ui?.showToast("That junk is already floating nearby.", "#ff8866");
+      return;
+    }
+
+    const used = this.inventory.useBait(baitId);
+    if (!used.ok) {
+      ui?.showToast(used.message, "#ff8866");
+      this.cancelBaitPlacement();
+      return;
+    }
+
+    this.spawnBaitFishBurst(baitId, castZone);
+    ui?.showToast(used.message, "#7CFC00");
+    this.persistSave();
+    this.cancelBaitPlacement();
+  }
+
+  private getBaitJunkExcludeInZone(left: number, right: number): ItemId[] {
+    const junkIds: ItemId[] = [
+      "mushroom_cluster",
+      "ore_cluster",
+      "driftwood",
+    ];
+    return junkIds.filter((id) =>
+      this.fishList.some(
+        (f) =>
+          f.speciesId === id && f.sprite.x >= left && f.sprite.x <= right
+      )
+    );
+  }
+
+  private spawnBaitFishBurst(baitId: ItemId, castZone: BaitCastZone): void {
+    const narrow =
+      castZone.habitat === "pond" || castZone.habitat === "hotspring";
+    const patrolPad = narrow ? 16 : 24;
+    const left = castZone.left + patrolPad;
+    const right = castZone.right - patrolPad;
+    if (right - left < 40) return;
+    const zoneTop = this.getBaitZoneTopY();
+    const zoneBottom = zoneTop + (this.baitMarker?.boxH ?? 100);
+    const getLuck = () =>
+      this.weather
+        ? this.weather.getLuck(
+            this.inventory.getFishingStats().luck,
+            this.inventory.getEquippedRodId()
+          )
+        : this.inventory.getFishingStats().luck;
+    const getExcludeSpecies = (self: Fish): ItemId[] =>
+      this.getBaitJunkExcludeInZone(left, right).filter((id) =>
+        this.fishList.some((f) => f !== self && f.speciesId === id)
+      );
+    const speciesPool = getBaitSpawnPool(
+      baitId,
+      castZone.habitat,
+      getExcludeSpecies({} as Fish)
+    );
+    if (speciesPool.length === 0) return;
+    const getIsRainy = () => this.weather?.isRainy() ?? false;
+    const getIsSunny = () => this.weather?.weather === "sunny";
+    const count = Phaser.Math.Between(2, 3);
+
+    for (let i = 0; i < count; i++) {
+      const speciesId = Phaser.Utils.Array.GetRandom(speciesPool);
+      const x = Phaser.Math.Between(left + 20, right - 20);
+      const y = Phaser.Math.Between(zoneTop + 24, zoneBottom - 24);
+      const fish = new Fish(
+        this,
+        x,
+        y,
+        left,
+        right,
+        this.waterSurfaceY,
+        getLuck,
+        castZone.habitat,
+        speciesId,
+        getExcludeSpecies,
+        getIsRainy,
+        { lockSpecies: true },
+        getIsSunny
+      );
+      this.fishList.push(fish);
+    }
+  }
+
+  private updateBaitPlacement(delta: number): void {
+    if (!this.baitPlacementId || !this.baitMarker) return;
+    const pointer = this.input.activePointer;
+    const worldX = this.cameras.main.getWorldPoint(pointer.x, pointer.y).x;
+    const bounds = this.getBaitCastBounds();
+    const halfW = this.baitMarker.boxW / 2;
+    const valid = isBaitCastZone(worldX, halfW, bounds);
+    this.baitMarker.update(
+      worldX,
+      this.getBaitZoneTopY(),
+      valid,
+      delta / 1000
+    );
   }
 
   private openAshencastForge(): void {
@@ -2988,7 +3267,16 @@ export class GameScene extends Phaser.Scene {
       "Curio Trader",
       0xf0e0c8
     );
+    this.appraiser = new TalkNpc(
+      this,
+      this.collectorRight - 180,
+      this.groundY,
+      "The Appraiser",
+      ""
+    );
+    this.appraiser.sprite.setTint(0xd4c878);
     this.spawnFishQuestNpc("collectors");
+    this.spawnBaitCrate(this.collectorLeft + 200, "Collector's Island");
     this.spawnFishInZone(this.reefLeft, this.reefRight, 8, "reef");
     this.spawnCollectorsAshencastOceanFish();
   }
@@ -3035,6 +3323,7 @@ export class GameScene extends Phaser.Scene {
       ""
     );
     this.orePeddler.sprite.setTint(0xd4a070);
+    this.spawnBaitCrate(this.ashenRight - 260, "Ashencast Isle");
     this.spawnFishInZone(this.westWaterLeft, this.ashenLeft, 8, "ocean", true);
     this.spawnCollectorsAshencastOceanFish();
     this.spawnFishInZone(
@@ -3281,6 +3570,7 @@ export class GameScene extends Phaser.Scene {
     this.jungleMerchant.sprite.setTint(0xb8d8a0);
     this.placeWildflowerRodProp();
     this.spawnFishQuestNpc("swamp");
+    this.spawnBaitCrate(this.jungleLeft + 140, "Swamp Island");
     this.spawnSwampFrostpeakOceanFish();
     this.spawnFishInZone(this.pondLeft, this.pondRight, 3, "pond");
   }
@@ -3308,6 +3598,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.frostHermit.sprite.setTint(0xd0e0f0);
     this.spawnFishQuestNpc("frostpeak");
+    this.spawnBaitCrate(this.frostRight - 220, "Frostpeak Isle");
     this.spawnSwampFrostpeakOceanFish();
     this.spawnFishInZone(this.frostRight, this.farWaterRight, 4, "ocean");
   }
@@ -3374,6 +3665,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.fishing.update(delta);
     this.sailboat?.update(delta);
+    this.updateBaitPlacement(delta);
 
     const areaId = this.getAreaId(this.player.sprite.x);
     let musicZone: MusicZone;
@@ -3411,6 +3703,8 @@ export class GameScene extends Phaser.Scene {
 
     if (this.inFrostpeakCave) {
       this.refreshCavePrompt(ui);
+    } else if (this.baitPlacementId) {
+      ui.setPrompt("LMB cast bait · X/Esc cancel");
     } else if (this.player.isOnBoat() && this.sailboat) {
       if (this.fishing.isBusy()) {
         ui.setPrompt("Fishing…");
@@ -3455,6 +3749,12 @@ export class GameScene extends Phaser.Scene {
           ? "F — Talk / Open Forge"
           : "F — Talk to Forge Keeper"
       );
+    } else if (this.getNearBaitCrate()) {
+      ui.setPrompt(
+        ui.isBaitVendorOpen()
+          ? "Type 1–50 · Enter buy · Esc leave"
+          : `F — Buy Bait Crates ($${BAIT_CRATE_PRICE})`
+      );
     } else if (
       this.orePeddler?.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
@@ -3483,6 +3783,14 @@ export class GameScene extends Phaser.Scene {
       this.fishCollector?.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
       ui.setPrompt("F — Bargain with Fish Collector");
+    } else if (
+      this.appraiser?.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      ui.setPrompt(
+        ui.isAppraiserOpen()
+          ? "Pick a fish · Appraise · Esc leave"
+          : "F — Talk to The Appraiser"
+      );
     } else if (
       this.curioTrader?.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
