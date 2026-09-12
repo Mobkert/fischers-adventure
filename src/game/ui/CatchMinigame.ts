@@ -10,11 +10,19 @@ import {
 import { playForgeWeaponHitFx } from "../fx/ForgeRodFx";
 import { playStarweaverWeaveFx, createStarweaverLockOn, StarweaverLockOn } from "../fx/StarweaverFx";
 import { playStarRainDingSfx } from "../audio/StarRainSfx";
+import { playRubberDuckQuackSfx } from "../audio/RubberDuckSfx";
+import { drawRubberDuckAt } from "../art/RodSkinHeldArt";
+import {
+  playStarLineExplosionSfx,
+  playStarLineMeteorSfx,
+} from "../audio/StarLineSfx";
 
 export type CatchMinigameResultMeta = {
   guaranteeThunder?: boolean;
   guaranteeAshencast?: boolean;
   guaranteeConfetti?: boolean;
+  /** Star Line: all 7 stars hit the white bar zone → Lunar (4×). */
+  guaranteeLunar?: boolean;
   /** How many Recoil shotgun kicks fired during this fight. */
   recoilKicks?: number;
   /** Tranquil bubble popped during this fight (75% Tranquil mutation). */
@@ -217,12 +225,17 @@ export class CatchMinigame {
   private starweaverLock: StarweaverLockOn | null = null;
   /** True while bullets are in flight or stun lock is active — blocks move counting. */
   private starweaverBusy = false;
+  /** +153 progress speed while the fish is stun-locked. */
+  private starweaverStunSpeedAdd = 0;
+  private readonly starweaverStunSpeedBonus = 153;
   /** Test Rod: accelerating star rain onto the fish. */
   private starRain = false;
   /** Shared clock — both sides fire together. */
   private starRainTimer = 0;
   private starRainInterval = 0.5;
   private starRainHitCount = 0;
+  /** Defined Surfer — cadence floors at 0.3s; black hole disabled. */
+  private starRainDefined = false;
   /** Continuous black-hole power (hits grow it; leaving the bar drains it). */
   private blackHolePower = 0;
   /** Smoothed value used for scale / dupe chance. */
@@ -253,6 +266,49 @@ export class CatchMinigame {
   }> = [];
   /** Stars only attack while the fish is in the white zone. */
   private starRainInZone = true;
+  /** Star Line Rod: orbiting stars + pink meteor zones. */
+  private starLine = false;
+  private starLinePhase: "orbit" | "gather" | "meteor" | "done" = "orbit";
+  private starLineAngle = 0;
+  private starLinePrevAngle = 0;
+  private readonly starLineOrbitSpeed = 2.9;
+  private readonly starLineGatherSpeed = 3.6;
+  private readonly starLineCount = 7;
+  private readonly starLineSpacing =
+    ((Math.PI * 2) / 7) * 0.22;
+  private readonly starLineOvalRx = 268;
+  private readonly starLineOvalRy = 78;
+  private readonly starLineOvalCy = -8;
+  private readonly starLineZoneW = 96;
+  private starLineZoneX = 0;
+  private starLineSpeedAdd = 0;
+  private starLineZoneRect!: Phaser.GameObjects.Rectangle;
+  private starLineOvalGfx!: Phaser.GameObjects.Graphics;
+  private starLineStars: Phaser.GameObjects.Image[] = [];
+  private starLineDives: Array<{
+    star: Phaser.GameObjects.Image;
+    t: number;
+    duration: number;
+    startX: number;
+    startY: number;
+    ctrl1X: number;
+    ctrl1Y: number;
+    ctrl2X: number;
+    ctrl2Y: number;
+    endX: number;
+    endY: number;
+  }> = [];
+  private starLineMeteorPending = 0;
+  private starLineNextFireIndex = 0;
+  private starLineBusy = false;
+  /** After a miss at the bottom, the next bottom pass always spawns a zone. */
+  private starLineGuaranteeNext = false;
+  /** Ability already fired this catch — no second activation. */
+  private starLineUsed = false;
+  /** White-bar size multiplier from Star Line hits (+3% each). */
+  private starLineBarSizeMult = 1;
+  /** Successful zone hits this catch (7 = Lunar). */
+  private starLineHitCount = 0;
   /** Birthday Rod: party balloons, zone tick, instant confetti catch. */
   private birthdayParty = false;
   private birthdayBalloons: BirthdayBalloon[] = [];
@@ -371,6 +427,11 @@ export class CatchMinigame {
       .rectangle(0, -8, this.zeusZoneW, this.barHeight + 4, 0xffe066, 0.28)
       .setStrokeStyle(2, 0xffcc33, 0.9)
       .setVisible(false);
+    this.starLineZoneRect = scene.add
+      .rectangle(0, -8, this.starLineZoneW, this.barHeight + 4, 0xff66cc, 0.3)
+      .setStrokeStyle(2, 0xff99dd, 0.95)
+      .setVisible(false);
+    this.starLineOvalGfx = scene.add.graphics().setVisible(false);
     this.zeusWarnIcon = scene.add
       .text(0, -8, "⚠", {
         fontFamily: "Arial",
@@ -420,9 +481,11 @@ export class CatchMinigame {
 
     this.root.add([
       this.panel,
+      this.starLineOvalGfx,
       this.title,
       this.greyBar,
       this.zeusZoneRect,
+      this.starLineZoneRect,
       this.whiteBar,
       ...this.elecSparks,
       this.fishGlow,
@@ -499,6 +562,10 @@ export class CatchMinigame {
       starweaverWeave?: boolean;
       /** Test Rod accelerating star rain. */
       starRain?: boolean;
+      /** Defined Surfer — stars only to 0.3s, no black hole. */
+      starRainDefined?: boolean;
+      /** Star Line Rod oval orbit + pink meteor zones. */
+      starLine?: boolean;
       /** Birthday Rod party abilities. */
       birthdayParty?: boolean;
       /** Active rod skin id (crate / gallery) for VFX overrides. */
@@ -575,6 +642,7 @@ export class CatchMinigame {
     this.starweaverWeave = !!options?.starweaverWeave;
     this.resetStarweaverState();
     this.starRain = !!options?.starRain;
+    this.starRainDefined = !!options?.starRainDefined;
     this.clearStarRainFalls();
     this.starRainTimer = Phaser.Math.FloatBetween(1.0, 1.8);
     this.starRainInterval = 0.5;
@@ -583,6 +651,8 @@ export class CatchMinigame {
     this.blackHoleVisual = 0;
     this.starRainSpeedPenalty = 0;
     this.starRainInZone = true;
+    this.starLine = !!options?.starLine;
+    this.resetStarLineState();
     this.forgeFishMoves = 0;
     this.forgeCooldownMoves = 0;
     this.forgePhase = "idle";
@@ -833,6 +903,7 @@ export class CatchMinigame {
       this.fishX <= this.whiteX + halfWhite;
 
     this.updateStarRain(dt, overlapping);
+    this.updateStarLine(dt);
 
     if (this.electrified && overlapping) {
       this.guaranteeThunder = true;
@@ -943,7 +1014,12 @@ export class CatchMinigame {
         this.spawnStarRainFall(1);
       }
       this.starRainTimer = this.starRainInterval;
-      if (this.starRainInterval > 0.1) {
+      if (this.starRainDefined) {
+        // Defined: 0.5 → 0.4 → 0.3 only
+        if (this.starRainInterval > 0.3) {
+          this.starRainInterval = Math.max(0.3, this.starRainInterval - 0.1);
+        }
+      } else if (this.starRainInterval > 0.1) {
         this.starRainInterval = Math.max(0.1, this.starRainInterval - 0.1);
       } else {
         this.starRainInterval = Math.max(0.01, this.starRainInterval - 0.01);
@@ -978,11 +1054,14 @@ export class CatchMinigame {
     const ctrl1Y = peakY + Phaser.Math.Between(-20, 40);
     const ctrl2X = fishX + side * Phaser.Math.Between(-30, 30);
     const ctrl2Y = peakY - Phaser.Math.Between(20, 70);
+    const starKey =
+      this.rodSkinId === "rubber_duck" ? "star_rain_duck" : "star_rain_orb";
+    const starSize = this.rodSkinId === "rubber_duck" ? 26 : 18;
     const star = scene.add
-      .image(startX, startY, "star_rain_orb")
+      .image(startX, startY, starKey)
       .setDepth(230)
       .setScrollFactor(0)
-      .setDisplaySize(18, 18);
+      .setDisplaySize(starSize, starSize);
     this.starRainFalls.push({
       star,
       t: 0,
@@ -996,21 +1075,27 @@ export class CatchMinigame {
   }
 
   private ensureStarRainTexture(scene: Phaser.Scene): void {
-    if (scene.textures.exists("star_rain_orb")) return;
+    const duck = this.rodSkinId === "rubber_duck";
+    const key = duck ? "star_rain_duck" : "star_rain_orb";
+    if (scene.textures.exists(key)) return;
     const g = scene.make.graphics({ x: 0, y: 0 });
     g.setVisible(false);
-    g.fillStyle(0xffe066, 1);
-    g.fillCircle(12, 12, 8);
-    g.fillStyle(0xffffff, 0.95);
-    g.fillCircle(12, 12, 3.5);
-    // Simple 4-point sparkle (cheaper than Phaser Star shapes)
-    g.lineStyle(2.5, 0xfff6c8, 1);
-    g.lineBetween(12, 1, 12, 23);
-    g.lineBetween(1, 12, 23, 12);
-    g.lineStyle(1.5, 0xffffff, 0.85);
-    g.lineBetween(4, 4, 20, 20);
-    g.lineBetween(20, 4, 4, 20);
-    g.generateTexture("star_rain_orb", 24, 24);
+    if (duck) {
+      drawRubberDuckAt(g, 16, 16, 0.85);
+      g.generateTexture(key, 32, 32);
+    } else {
+      g.fillStyle(0xffe066, 1);
+      g.fillCircle(12, 12, 8);
+      g.fillStyle(0xffffff, 0.95);
+      g.fillCircle(12, 12, 3.5);
+      g.lineStyle(2.5, 0xfff6c8, 1);
+      g.lineBetween(12, 1, 12, 23);
+      g.lineBetween(1, 12, 23, 12);
+      g.lineStyle(1.5, 0xffffff, 0.85);
+      g.lineBetween(4, 4, 20, 20);
+      g.lineBetween(20, 4, 4, 20);
+      g.generateTexture(key, 24, 24);
+    }
     g.destroy();
   }
 
@@ -1063,6 +1148,10 @@ export class CatchMinigame {
 
   private playStarRainDing(): void {
     this.starRainHitCount += 1;
+    if (this.rodSkinId === "rubber_duck") {
+      playRubberDuckQuackSfx(this.root.scene, this.starRainHitCount - 1);
+      return;
+    }
     // One ding per two star hits
     if (this.starRainHitCount % 2 === 0) {
       playStarRainDingSfx(this.root.scene, this.starRainHitCount / 2 - 1);
@@ -1077,6 +1166,7 @@ export class CatchMinigame {
   }
 
   private getBlackHoleDuplicateChance(): number {
+    if (this.starRainDefined) return 0;
     if (this.blackHoleVisual <= 0.01) return 0;
     return Math.min(
       this.blackHoleDupeChanceCap,
@@ -1085,6 +1175,7 @@ export class CatchMinigame {
   }
 
   private growBlackHoleFromStarHit(): void {
+    if (this.starRainDefined) return;
     this.blackHolePower += 1;
   }
 
@@ -1504,6 +1595,8 @@ export class CatchMinigame {
     this.clearStarweaverLock();
     this.starweaverStunLeft = stunSec;
     this.starweaverBusy = true;
+    this.starweaverStunSpeedAdd = this.starweaverStunSpeedBonus;
+    this.applyProgressSpeedFillRate();
     const lockAt = {
       x: this.root.x + this.fishIcon.x,
       y: this.root.y + this.fishIcon.y,
@@ -1529,6 +1622,10 @@ export class CatchMinigame {
   private endStarweaverStun(): void {
     this.clearStarweaverLock();
     this.starweaverBusy = false;
+    if (this.starweaverStunSpeedAdd !== 0) {
+      this.starweaverStunSpeedAdd = 0;
+      this.applyProgressSpeedFillRate();
+    }
     // Clear any leftover pause so the fish isn't frozen after the lock fades
     this.fishPauseTimer = 0;
     this.fishDecisionTimer = Math.min(this.fishDecisionTimer, 0.08);
@@ -1539,6 +1636,7 @@ export class CatchMinigame {
     this.starweaverBusy = false;
     this.starweaverFishMoves = 0;
     this.starweaverCooldownMoves = 0;
+    this.starweaverStunSpeedAdd = 0;
   }
 
   private updateStarweaverLock(dt: number): void {
@@ -1726,7 +1824,9 @@ export class CatchMinigame {
       this.zeusBarHitSpeedAdd +
       this.birthdayBalloonSpeedAdd +
       this.birthdayZoneSpeedAdd +
-      this.starRainSpeedPenalty
+      this.starRainSpeedPenalty +
+      this.starLineSpeedAdd +
+      this.starweaverStunSpeedAdd
     );
   }
 
@@ -1860,6 +1960,454 @@ export class CatchMinigame {
     this.zeusWarnVisible = false;
   }
 
+  private resetStarLineState(): void {
+    this.starLinePhase = "orbit";
+    this.starLineAngle = -Math.PI / 2 + 0.01;
+    this.starLinePrevAngle = this.starLineAngle;
+    this.starLineSpeedAdd = 0;
+    this.starLineMeteorPending = 0;
+    this.starLineNextFireIndex = 0;
+    this.starLineBusy = false;
+    this.starLineGuaranteeNext = false;
+    this.starLineUsed = false;
+    this.starLineBarSizeMult = 1;
+    this.starLineHitCount = 0;
+    this.starLineZoneRect.setVisible(false);
+    this.clearStarLineStars();
+    this.starLineOvalGfx.clear().setVisible(false);
+  }
+
+  private clearStarLineUi(): void {
+    this.clearStarLineStars();
+    this.starLineOvalGfx.clear().setVisible(false);
+    this.root.scene.tweens.killTweensOf(this.starLineZoneRect);
+    this.starLineZoneRect.setVisible(false);
+    this.starLineBusy = false;
+    this.starLineMeteorPending = 0;
+    this.starLineNextFireIndex = 0;
+    this.starLinePhase = "orbit";
+    // Restore default panel if we weren't black-hole themed
+    if (!this.starRain) {
+      this.panel.setSize(560, 132).setPosition(0, 0);
+      this.title.setY(-48);
+    }
+  }
+
+  private clearStarLineStars(): void {
+    const scene = this.root.scene;
+    for (const dive of this.starLineDives) {
+      scene.tweens.killTweensOf(dive.star);
+      if (dive.star.scene) dive.star.destroy();
+    }
+    this.starLineDives = [];
+    for (const star of this.starLineStars) {
+      if (!star || !star.scene) continue;
+      scene.tweens.killTweensOf(star);
+      star.destroy();
+    }
+    this.starLineStars = [];
+  }
+
+  private ensureStarLineStarTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists("star_line_star")) return;
+    const S = 32;
+    const g = scene.make.graphics({ x: 0, y: 0 });
+    g.setVisible(false);
+    const cx = S / 2;
+    const cy = S / 2;
+    g.fillStyle(0xffb0e8, 0.35);
+    g.fillCircle(cx, cy, 10);
+    g.fillStyle(0xffe8ff, 1);
+    const spikes = 5;
+    const outer = 9;
+    const inner = 3.6;
+    g.beginPath();
+    for (let i = 0; i < spikes * 2; i++) {
+      const r = i % 2 === 0 ? outer : inner;
+      const a = -Math.PI / 2 + (i * Math.PI) / spikes;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.closePath();
+    g.fillPath();
+    g.fillStyle(0xffffff, 0.95);
+    g.fillCircle(cx, cy, 2.2);
+    g.generateTexture("star_line_star", S, S);
+    g.destroy();
+  }
+
+  private setupStarLineUi(): void {
+    const scene = this.root.scene;
+    this.ensureStarLineStarTexture(scene);
+    this.clearStarLineStars();
+    this.starLineOvalGfx.setVisible(true);
+    this.redrawStarLineOval();
+    for (let i = 0; i < this.starLineCount; i++) {
+      const star = scene.add
+        .image(0, 0, "star_line_star")
+        .setDisplaySize(18, 18)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      this.starLineStars.push(star);
+      this.root.add(star);
+    }
+    this.layoutStarLineOrbit();
+  }
+
+  private redrawStarLineOval(): void {
+    const g = this.starLineOvalGfx;
+    g.clear();
+    g.lineStyle(2.5, 0x4a78c8, 0.55);
+    g.strokeEllipse(0, this.starLineOvalCy, this.starLineOvalRx * 2, this.starLineOvalRy * 2);
+    g.lineStyle(1.2, 0x9bb8ff, 0.35);
+    g.strokeEllipse(0, this.starLineOvalCy, this.starLineOvalRx * 2 - 6, this.starLineOvalRy * 2 - 4);
+    // Soft glow dots at bottom marker
+    g.fillStyle(0xff88cc, 0.25);
+    g.fillCircle(0, this.starLineOvalCy + this.starLineOvalRy, 6);
+  }
+
+  private starLinePosAt(angle: number): { x: number; y: number } {
+    return {
+      x: Math.cos(angle) * this.starLineOvalRx,
+      y: this.starLineOvalCy + Math.sin(angle) * this.starLineOvalRy,
+    };
+  }
+
+  private starLineAngleForIndex(index: number, headAngle: number): number {
+    return headAngle - index * this.starLineSpacing;
+  }
+
+  private layoutStarLineOrbit(fromIndex = 0): void {
+    for (let i = fromIndex; i < this.starLineStars.length; i++) {
+      const star = this.starLineStars[i]!;
+      if (!star.active) continue;
+      const a = this.starLineAngleForIndex(i, this.starLineAngle);
+      const p = this.starLinePosAt(a);
+      star.setPosition(p.x, p.y).setVisible(true).setAlpha(0.95).setScale(1);
+      star.setRotation(a + Math.PI / 2);
+    }
+  }
+
+  private crossedStarLineBottom(prev: number, next: number): boolean {
+    // Bottom of oval in y-down ellipse params is +π/2
+    const bottom = Math.PI / 2;
+    const norm = (a: number) => {
+      let x = a % (Math.PI * 2);
+      if (x < 0) x += Math.PI * 2;
+      return x;
+    };
+    const p = norm(prev);
+    const n = norm(next);
+    if (p < n) return p < bottom && n >= bottom;
+    // Wrapped past 2π
+    return p < bottom || n >= bottom;
+  }
+
+  /** Top of oval is 3π/2 when traveling with increasing angle. */
+  private crossedStarLineTop(prev: number, next: number): boolean {
+    const top = (Math.PI * 3) / 2;
+    const norm = (a: number) => {
+      let x = a % (Math.PI * 2);
+      if (x < 0) x += Math.PI * 2;
+      return x;
+    };
+    const p = norm(prev);
+    const n = norm(next);
+    if (p < n) return p < top && n >= top;
+    return p < top || n >= top;
+  }
+
+  private updateStarLine(dt: number): void {
+    if (!this.starLine || !this.ready) return;
+    this.updateStarLineDives(dt);
+
+    if (this.starLinePhase === "orbit") {
+      this.starLinePrevAngle = this.starLineAngle;
+      this.starLineAngle += this.starLineOrbitSpeed * dt;
+      this.layoutStarLineOrbit();
+      if (
+        !this.starLineUsed &&
+        !this.starLineBusy &&
+        this.crossedStarLineBottom(this.starLinePrevAngle, this.starLineAngle)
+      ) {
+        if (this.starLineGuaranteeNext || Math.random() < 0.2) {
+          this.starLineGuaranteeNext = false;
+          this.beginStarLineMeteor();
+        } else {
+          this.starLineGuaranteeNext = true;
+        }
+      }
+      return;
+    }
+
+    if (this.starLinePhase === "gather") {
+      // Ride the oval faster; each star fires only when it hits top-middle
+      this.starLinePrevAngle = this.starLineAngle;
+      this.starLineAngle += this.starLineGatherSpeed * dt;
+      this.layoutStarLineOrbit(this.starLineNextFireIndex);
+
+      while (this.starLineNextFireIndex < this.starLineStars.length) {
+        const i = this.starLineNextFireIndex;
+        const prevA = this.starLineAngleForIndex(i, this.starLinePrevAngle);
+        const nextA = this.starLineAngleForIndex(i, this.starLineAngle);
+        if (!this.crossedStarLineTop(prevA, nextA)) break;
+        this.fireStarLineDive(i);
+        this.starLineNextFireIndex += 1;
+      }
+
+      if (this.starLineNextFireIndex >= this.starLineStars.length) {
+        this.starLinePhase = "meteor";
+      }
+    }
+  }
+
+  private beginStarLineMeteor(): void {
+    if (this.starLineStars.length === 0) this.setupStarLineUi();
+    const half = this.barWidth / 2 - this.starLineZoneW / 2 - 8;
+    this.starLineZoneX = Phaser.Math.FloatBetween(-half, half);
+    this.starLinePhase = "gather";
+    this.starLineBusy = true;
+    this.starLineUsed = true;
+    this.starLineNextFireIndex = 0;
+    this.starLineMeteorPending = this.starLineStars.length;
+    this.starLineDives = [];
+    this.starLineZoneRect
+      .setVisible(true)
+      .setPosition(this.starLineZoneX, -8)
+      .setAlpha(0.45);
+    this.root.scene.tweens.add({
+      targets: this.starLineZoneRect,
+      alpha: 0.28,
+      duration: 220,
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  /**
+   * At the oval top, stars travel rightward — swing curves keep that momentum
+   * before arcing into the pink zone (especially when the zone is on the left).
+   */
+  private fireStarLineDive(index: number): void {
+    const star = this.starLineStars[index];
+    if (!star || !star.active) return;
+    const scene = this.root.scene;
+    scene.tweens.killTweensOf(star);
+    if (index === 0) {
+      scene.tweens.killTweensOf(this.starLineZoneRect);
+      this.starLineZoneRect.setAlpha(0.4);
+    }
+
+    const startX = star.x;
+    const startY = star.y;
+    const endX = this.starLineZoneX + Phaser.Math.FloatBetween(-6, 6);
+    const endY = -8 + Phaser.Math.FloatBetween(-2, 2);
+    // Momentum at top is +X (continuing along the oval toward the right)
+    const toLeft = endX < startX - 8;
+    const toRight = endX > startX + 8;
+    const swing = toLeft
+      ? Phaser.Math.FloatBetween(200, 280)
+      : toRight
+        ? Phaser.Math.FloatBetween(140, 200)
+        : Phaser.Math.FloatBetween(170, 230);
+    const lift = Phaser.Math.FloatBetween(70, 120);
+    const ctrl1X = startX + swing;
+    const ctrl1Y = startY - lift;
+    const ctrl2X = toLeft
+      ? endX + Phaser.Math.FloatBetween(90, 140)
+      : endX - Phaser.Math.FloatBetween(40, 80);
+    const ctrl2Y = endY - Phaser.Math.FloatBetween(40, 80);
+
+    playStarLineMeteorSfx(scene, { pitch: 480 + index * 40 });
+    this.playStarLineMeteorTrail(
+      startX,
+      startY,
+      ctrl1X,
+      ctrl1Y,
+      ctrl2X,
+      ctrl2Y,
+      endX,
+      endY
+    );
+    this.starLineDives.push({
+      star,
+      t: 0,
+      duration: 0.62 + index * 0.03,
+      startX,
+      startY,
+      ctrl1X,
+      ctrl1Y,
+      ctrl2X,
+      ctrl2Y,
+      endX,
+      endY,
+    });
+  }
+
+  private updateStarLineDives(dt: number): void {
+    if (this.starLineDives.length === 0) return;
+    for (let i = this.starLineDives.length - 1; i >= 0; i--) {
+      const dive = this.starLineDives[i]!;
+      if (!dive.star.active) {
+        this.starLineDives.splice(i, 1);
+        continue;
+      }
+      dive.t += dt;
+      const u = Math.min(1, dive.t / dive.duration);
+      // Ease-in so the swing starts fast with momentum, then lands
+      const s = u * u * (3 - 2 * u);
+      const omt = 1 - s;
+      const omt2 = omt * omt;
+      const omt3 = omt2 * omt;
+      const s2 = s * s;
+      const s3 = s2 * s;
+      const x =
+        omt3 * dive.startX +
+        3 * omt2 * s * dive.ctrl1X +
+        3 * omt * s2 * dive.ctrl2X +
+        s3 * dive.endX;
+      const y =
+        omt3 * dive.startY +
+        3 * omt2 * s * dive.ctrl1Y +
+        3 * omt * s2 * dive.ctrl2Y +
+        s3 * dive.endY;
+      dive.star.setPosition(x, y);
+      dive.star.setScale(1 + s * 0.35);
+      // Face along the curve
+      const dx =
+        3 * omt2 * (dive.ctrl1X - dive.startX) +
+        6 * omt * s * (dive.ctrl2X - dive.ctrl1X) +
+        3 * s2 * (dive.endX - dive.ctrl2X);
+      const dy =
+        3 * omt2 * (dive.ctrl1Y - dive.startY) +
+        6 * omt * s * (dive.ctrl2Y - dive.ctrl1Y) +
+        3 * s2 * (dive.endY - dive.ctrl2Y);
+      dive.star.setRotation(Math.atan2(dy, dx));
+
+      if (u >= 1) {
+        this.starLineDives.splice(i, 1);
+        this.resolveStarLineHit(dive.star);
+      }
+    }
+  }
+
+  private resolveStarLineHit(star: Phaser.GameObjects.Image): void {
+    const scene = this.root.scene;
+    const halfWhite = this.whiteWidth / 2;
+    const barL = this.whiteX - halfWhite;
+    const barR = this.whiteX + halfWhite;
+    const zL = this.starLineZoneX - this.starLineZoneW / 2;
+    const zR = this.starLineZoneX + this.starLineZoneW / 2;
+    const hit = barL < zR && barR > zL;
+
+    playStarLineExplosionSfx(scene);
+    this.playStarLineImpactFx(this.starLineZoneX, -8, hit);
+
+    if (hit) {
+      this.progress = Math.min(1, this.progress + 0.015);
+      this.starLineSpeedAdd += 3;
+      this.applyProgressSpeedFillRate();
+      this.starLineBarSizeMult *= 1.03;
+      this.applyWhiteBarWidth(320);
+      this.starLineHitCount += 1;
+    } else {
+      this.progress = Math.max(0, this.progress - 0.05);
+    }
+    this.syncVisuals();
+
+    scene.tweens.killTweensOf(star);
+    star.destroy();
+    this.starLineMeteorPending = Math.max(0, this.starLineMeteorPending - 1);
+
+    if (this.progress >= 1) {
+      this.finish(true);
+      return;
+    }
+    if (this.progress <= 0) {
+      this.finish(false);
+      return;
+    }
+
+    if (this.starLineMeteorPending <= 0) {
+      scene.tweens.killTweensOf(this.starLineZoneRect);
+      this.starLineZoneRect.setVisible(false);
+      this.starLineBusy = false;
+      this.starLinePhase = "done";
+      // Stars stay gone for the rest of the catch — oval only
+      this.clearStarLineStars();
+    }
+  }
+
+  private playStarLineMeteorTrail(
+    x0: number,
+    y0: number,
+    c1x: number,
+    c1y: number,
+    c2x: number,
+    c2y: number,
+    x1: number,
+    y1: number
+  ): void {
+    const scene = this.root.scene;
+    const g = scene.add.graphics().setBlendMode(Phaser.BlendModes.ADD);
+    this.root.add(g);
+    const steps = 14;
+    for (let i = 0; i < steps; i++) {
+      const s = i / (steps - 1);
+      const omt = 1 - s;
+      const omt2 = omt * omt;
+      const omt3 = omt2 * omt;
+      const s2 = s * s;
+      const s3 = s2 * s;
+      const x = omt3 * x0 + 3 * omt2 * s * c1x + 3 * omt * s2 * c2x + s3 * x1;
+      const y = omt3 * y0 + 3 * omt2 * s * c1y + 3 * omt * s2 * c2y + s3 * y1;
+      const a = 0.55 * (1 - s);
+      g.fillStyle(i % 2 === 0 ? 0xff88cc : 0xc9a0ff, a);
+      g.fillCircle(x, y, 3.5 - s * 2);
+    }
+    scene.tweens.add({
+      targets: g,
+      alpha: 0,
+      duration: 320,
+      ease: "Quad.easeOut",
+      onComplete: () => g.destroy(),
+    });
+  }
+
+  private playStarLineImpactFx(x: number, y: number, hit: boolean): void {
+    const scene = this.root.scene;
+    const color = hit ? 0xff99dd : 0x8866aa;
+    const flash = scene.add
+      .circle(x, y, 8, color, 0.85)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.root.add(flash);
+    scene.tweens.add({
+      targets: flash,
+      scale: 3.2,
+      alpha: 0,
+      duration: 320,
+      ease: "Cubic.easeOut",
+      onComplete: () => flash.destroy(),
+    });
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const spark = scene.add
+        .circle(x, y, 2.2, hit ? 0xffe0f4 : 0xb0a0d0, 0.95)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      this.root.add(spark);
+      scene.tweens.add({
+        targets: spark,
+        x: x + Math.cos(a) * Phaser.Math.FloatBetween(28, 48),
+        y: y + Math.sin(a) * Phaser.Math.FloatBetween(18, 36),
+        alpha: 0,
+        duration: Phaser.Math.Between(240, 420),
+        ease: "Quad.easeOut",
+        onComplete: () => spark.destroy(),
+      });
+    }
+  }
+
   private setElectrified(on: boolean): void {
     this.electrified = on;
     this.laserElectrifyTween?.stop();
@@ -1900,6 +2448,9 @@ export class CatchMinigame {
     } else {
       if (this.starRain) {
         this.applyBlackHoleBarColors();
+      } else if (this.starLine) {
+        this.whiteBar.setFillStyle(0xd8e8ff, 0.95);
+        this.whiteBar.setStrokeStyle(1, 0xa8c8ff);
       } else {
         this.whiteBar.setFillStyle(0xffffff, 0.95);
         this.whiteBar.setStrokeStyle(1, 0xcccccc);
@@ -2232,30 +2783,58 @@ export class CatchMinigame {
     if (this.starRain) {
       this.setupBlackHoleUi();
     }
+    if (this.starLine) {
+      this.setupStarLineUi();
+    }
 
     this.applyRodSkinThemeColors();
   }
 
   /** Progress / panel tints that must win over start() defaults. */
   private applyRodSkinThemeColors(): void {
+    if (this.starLine && !this.bubbleActive) {
+      this.panel
+        .setSize(580, 176)
+        .setPosition(0, -18)
+        .setFillStyle(0x060a18, 0.94)
+        .setStrokeStyle(2, 0x3a5a98, 0.95);
+      this.title
+        .setText("Keep the fish in the star line!")
+        .setColor("#c8dcff")
+        .setY(-88);
+      this.greyBar.setFillStyle(0x121a32);
+      this.greyBar.setStrokeStyle(2, 0x3a5080);
+      this.whiteBar.setFillStyle(0xd8e8ff, 0.95);
+      this.whiteBar.setStrokeStyle(1, 0xa8c8ff);
+      this.progressBg.setFillStyle(0x0a1020);
+      this.progressBg.setStrokeStyle(1, 0x3a5a98);
+      this.progressFill.setFillStyle(0x6a9cff);
+      this.hint.setColor("#a8c0e8");
+      return;
+    }
     if (this.starRain && !this.bubbleActive) {
       // Tall void panel — black hole sits above the catch bar
+      const duck = this.rodSkinId === "rubber_duck";
       this.panel
         .setSize(580, 210)
         .setPosition(0, -28)
         .setFillStyle(0x000000, 0.08)
-        .setStrokeStyle(2, 0x5a3878, 0.95);
+        .setStrokeStyle(2, duck ? 0x3a78a8 : 0x5a3878, 0.95);
       this.title
-        .setText("Keep the fish in the event horizon!")
-        .setColor("#f0e0ff")
+        .setText(
+          duck
+            ? "Keep the fish in the duck pond!"
+            : "Keep the fish in the event horizon!"
+        )
+        .setColor(duck ? "#d0f0ff" : "#f0e0ff")
         .setY(-108);
-      this.greyBar.setFillStyle(0x0a0a12);
-      this.greyBar.setStrokeStyle(2, 0x2a1840);
+      this.greyBar.setFillStyle(duck ? 0x0a1520 : 0x0a0a12);
+      this.greyBar.setStrokeStyle(2, duck ? 0x1a4060 : 0x2a1840);
       this.applyBlackHoleBarColors();
-      this.progressBg.setFillStyle(0x08060e);
-      this.progressBg.setStrokeStyle(1, 0x3a2060);
-      this.progressFill.setFillStyle(0x9b5de5);
-      this.hint.setColor("#c8b0e8");
+      this.progressBg.setFillStyle(duck ? 0x061018 : 0x08060e);
+      this.progressBg.setStrokeStyle(1, duck ? 0x2a6088 : 0x3a2060);
+      this.progressFill.setFillStyle(duck ? 0x4aa8e8 : 0x9b5de5);
+      this.hint.setColor(duck ? "#a8d8f0" : "#c8b0e8");
       return;
     }
     if (this.rodSkinId === "poisoned" && !this.bubbleActive) {
@@ -2558,9 +3137,11 @@ export class CatchMinigame {
     this.blackHoleFxGfx = scene.add
       .graphics()
       .setBlendMode(Phaser.BlendModes.ADD);
+    const duck = this.rodSkinId === "rubber_duck";
+    const coreKey = duck ? "black_hole_duck" : "black_hole_core";
     this.blackHoleCore = scene.add
-      .image(0, -72, "black_hole_core")
-      .setDisplaySize(96, 96)
+      .image(0, -72, coreKey)
+      .setDisplaySize(duck ? 72 : 96, duck ? 64 : 96)
       .setAlpha(0.98);
     this.root.addAt(this.blackHoleGfx, 0);
     const titleIdx = this.root.getIndex(this.title);
@@ -2574,6 +3155,15 @@ export class CatchMinigame {
   }
 
   private ensureBlackHoleCoreTexture(scene: Phaser.Scene): void {
+    if (this.rodSkinId === "rubber_duck") {
+      if (scene.textures.exists("black_hole_duck")) return;
+      const g = scene.make.graphics({ x: 0, y: 0 });
+      g.setVisible(false);
+      drawRubberDuckAt(g, 48, 48, 2.4);
+      g.generateTexture("black_hole_duck", 96, 96);
+      g.destroy();
+      return;
+    }
     if (scene.textures.exists("black_hole_core")) return;
     const S = 128;
     const g = scene.make.graphics({ x: 0, y: 0 });
@@ -2651,6 +3241,7 @@ export class CatchMinigame {
     g.clear();
     fx.clear();
 
+    const duck = this.rodSkinId === "rubber_duck";
     const pw = 580;
     const ph = 210;
     const panelY = -28;
@@ -2661,15 +3252,15 @@ export class CatchMinigame {
     const cy = -72;
 
     // —— Panel void backdrop ——
-    g.fillStyle(0x03010a, 0.97);
+    g.fillStyle(duck ? 0x061018 : 0x03010a, 0.97);
     g.fillRoundedRect(-pw / 2, panelY - ph / 2, pw, ph, 12);
 
     // Nebula wash behind the hole (grows with the hole)
-    g.fillStyle(0x1a0a28, 0.45);
+    g.fillStyle(duck ? 0x0a2848 : 0x1a0a28, 0.45);
     g.fillEllipse(cx - 90 * scale, cy + 6, 160 * scale, 50 * scale);
-    g.fillStyle(0x2a1038, 0.35);
+    g.fillStyle(duck ? 0x124060 : 0x2a1038, 0.35);
     g.fillEllipse(cx + 100 * scale, cy - 4, 140 * scale, 44 * scale);
-    g.fillStyle(0x3a1820, 0.2);
+    g.fillStyle(duck ? 0x1a5070 : 0x3a1820, 0.2);
     g.fillEllipse(cx, cy + 10, 200 * scale, 36 * scale);
 
     // Distant star field
@@ -2685,7 +3276,7 @@ export class CatchMinigame {
       // Keep stars out of the bar band
       if (sy > -28) continue;
       const twinkle = 0.35 + Math.sin(t * 3 + i * 1.7) * 0.35;
-      g.fillStyle(i % 5 === 0 ? 0xffd0a0 : 0xffffff, twinkle);
+      g.fillStyle(i % 5 === 0 ? (duck ? 0xa8e0ff : 0xffd0a0) : 0xffffff, twinkle);
       g.fillCircle(sx, sy, i % 7 === 0 ? 1.6 : 1);
     }
 
@@ -2695,8 +3286,17 @@ export class CatchMinigame {
       const rx = (48 + i * 13) * scale;
       const ry = (13 + i * 3) * scale;
       const alpha = 0.14 + (6 - i) * 0.04;
-      const col =
-        i % 3 === 0 ? 0xff8c42 : i % 3 === 1 ? 0x9b5de5 : 0xffd06a;
+      const col = duck
+        ? i % 3 === 0
+          ? 0x4aa8e8
+          : i % 3 === 1
+            ? 0x8fd4ff
+            : 0xffffff
+        : i % 3 === 0
+          ? 0xff8c42
+          : i % 3 === 1
+            ? 0x9b5de5
+            : 0xffd06a;
       g.lineStyle(Math.max(1.2, 2.6 - i * 0.28), col, alpha);
       g.beginPath();
       const segs = 32;
@@ -2717,7 +3317,17 @@ export class CatchMinigame {
       const spin = -t * (2.2 + i * 0.35) + i;
       const rx = (40 + i * 9) * scale;
       const ry = (10 + i * 2.2) * scale;
-      fx.lineStyle(1.6, i % 2 ? 0xffe0a8 : 0xe0b0ff, 0.24 + (i % 2) * 0.1);
+      fx.lineStyle(
+        1.6,
+        duck
+          ? i % 2
+            ? 0xb8e8ff
+            : 0x6ec8ff
+          : i % 2
+            ? 0xffe0a8
+            : 0xe0b0ff,
+        0.24 + (i % 2) * 0.1
+      );
       fx.beginPath();
       const segs = 22;
       for (let s = 0; s <= segs; s++) {
@@ -2733,29 +3343,52 @@ export class CatchMinigame {
     // Spin the baked core — grows with every star hit
     if (this.blackHoleCore) {
       this.blackHoleCore.setPosition(cx, cy);
-      this.blackHoleCore.setRotation(t * 0.15);
+      this.blackHoleCore.setRotation(duck ? Math.sin(t * 1.2) * 0.12 : t * 0.15);
       const pulse = 0.75 + Math.sin(t * 2.4) * 0.03;
-      this.blackHoleCore.setDisplaySize(
-        96 * scale * pulse,
-        96 * scale * (0.55 / 0.75) * pulse
-      );
+      if (duck) {
+        this.blackHoleCore.setDisplaySize(
+          72 * scale * pulse,
+          64 * scale * pulse
+        );
+      } else {
+        this.blackHoleCore.setDisplaySize(
+          96 * scale * pulse,
+          96 * scale * (0.55 / 0.75) * pulse
+        );
+      }
     }
 
     // Photon ring (bright)
     const pulse = 0.55 + Math.sin(t * 4.2) * 0.45;
-    fx.lineStyle(3.5, 0xffc070, 0.45 + pulse * 0.35);
+    fx.lineStyle(
+      3.5,
+      duck ? 0x8fd4ff : 0xffc070,
+      0.45 + pulse * 0.35
+    );
     fx.strokeEllipse(cx, cy, 78 * scale, 30 * scale);
-    fx.lineStyle(2, 0xfff0c8, 0.35 + pulse * 0.25);
+    fx.lineStyle(
+      2,
+      duck ? 0xe8f8ff : 0xfff0c8,
+      0.35 + pulse * 0.25
+    );
     fx.strokeEllipse(cx, cy, 88 * scale, 34 * scale);
-    fx.lineStyle(2, 0xc9a0ff, 0.3);
+    fx.lineStyle(2, duck ? 0x4aa8e8 : 0xc9a0ff, 0.3);
     fx.strokeEllipse(cx, cy, 98 * scale, 38 * scale);
 
     // Polar jets
     const jetPulse = 0.4 + Math.sin(t * 5) * 0.3;
-    fx.lineStyle(2.5, 0xb48cff, 0.25 + jetPulse * 0.25);
+    fx.lineStyle(
+      2.5,
+      duck ? 0x6ec8ff : 0xb48cff,
+      0.25 + jetPulse * 0.25
+    );
     fx.lineBetween(cx, cy - 18 * scale, cx + Math.sin(t * 2) * 4, cy - 52 * scale);
     fx.lineBetween(cx, cy + 14 * scale, cx - Math.sin(t * 2) * 4, cy + 30 * scale);
-    fx.lineStyle(1.4, 0xffe0c0, 0.2 + jetPulse * 0.2);
+    fx.lineStyle(
+      1.4,
+      duck ? 0xd0f0ff : 0xffe0c0,
+      0.2 + jetPulse * 0.2
+    );
     fx.lineBetween(cx, cy - 18 * scale, cx + Math.sin(t * 2 + 1) * 3, cy - 48 * scale);
 
     // Infalling sparks
@@ -2763,18 +3396,29 @@ export class CatchMinigame {
       const u = s.life / s.maxLife;
       const x = cx + Math.cos(s.a) * s.r * scale;
       const y = cy + Math.sin(s.a) * s.r * 0.38 * scale;
-      fx.fillStyle(s.color, 0.35 + u * 0.55);
+      const col = duck
+        ? s.color === 0xff8c42
+          ? 0x4aa8e8
+          : s.color === 0xc9a0ff
+            ? 0x8fd4ff
+            : 0xffffff
+        : s.color;
+      fx.fillStyle(col, 0.35 + u * 0.55);
       fx.fillCircle(x, y, s.size * u * Math.min(1.4, scale));
     }
 
     // Soft glow under the hole bleeding toward the bar (not covering it)
-    fx.fillStyle(0x6a30a0, 0.1);
+    fx.fillStyle(duck ? 0x3a90c8 : 0x6a30a0, 0.1);
     fx.fillEllipse(cx, cy + 26 * scale, 130 * scale, 16 * scale);
 
     // Frame
-    g.lineStyle(2.5, 0x4a2870, 0.95);
+    g.lineStyle(2.5, duck ? 0x2a6088 : 0x4a2870, 0.95);
     g.strokeRoundedRect(-pw / 2, panelY - ph / 2, pw, ph, 12);
-    g.lineStyle(1.2, 0x9b5de5, 0.35 + Math.sin(t * 2) * 0.1);
+    g.lineStyle(
+      1.2,
+      duck ? 0x6ec8ff : 0x9b5de5,
+      0.35 + Math.sin(t * 2) * 0.1
+    );
     g.strokeRoundedRect(-pw / 2 + 3, panelY - ph / 2 + 3, pw - 6, ph - 6, 10);
   }
 
@@ -3464,7 +4108,9 @@ export class CatchMinigame {
   private applyWhiteBarWidth(animateMs = 0): void {
     const whiteShare = Math.min(
       0.85,
-      (this.baseWhiteShare + this.birthdayControlShare) * this.birthdayBarSizeMult
+      (this.baseWhiteShare + this.birthdayControlShare) *
+        this.birthdayBarSizeMult *
+        this.starLineBarSizeMult
     );
     const target = this.barWidth * whiteShare;
     this.whiteBarWidthTween?.stop();
@@ -3725,6 +4371,8 @@ export class CatchMinigame {
     this.resetStarweaverState();
     // Don't destroy in-flight stars — they keep arcing after the catch ends
     this.starRain = false;
+    this.clearStarLineUi();
+    this.starLine = false;
     this.clearBirthdayBalloons();
     this.birthdayBalloonLayer.setVisible(false);
     this.forgePhase = "idle";
@@ -3732,6 +4380,7 @@ export class CatchMinigame {
     this.zeusPhase = "idle";
     this.clearLaserSpaceUi();
     const blackHoleDuplicateChance = this.getBlackHoleDuplicateChance();
+    const guaranteeLunar = this.starLineHitCount >= this.starLineCount;
     this.clearBlackHoleUi();
     this.fadeWorldDim(false);
     this.root.setVisible(false);
@@ -3740,6 +4389,7 @@ export class CatchMinigame {
       this.guaranteeThunder ||
       this.forgeHadEmberWeapon ||
       this.guaranteeConfetti ||
+      guaranteeLunar ||
       this.recoilKickCount > 0 ||
       this.bubbleCatch ||
       blackHoleDuplicateChance > 0
@@ -3747,6 +4397,7 @@ export class CatchMinigame {
             ...(this.guaranteeThunder ? { guaranteeThunder: true } : {}),
             ...(this.forgeHadEmberWeapon ? { guaranteeAshencast: true } : {}),
             ...(this.guaranteeConfetti ? { guaranteeConfetti: true } : {}),
+            ...(guaranteeLunar ? { guaranteeLunar: true } : {}),
             ...(this.recoilKickCount > 0
               ? { recoilKicks: this.recoilKickCount }
               : {}),
@@ -3761,6 +4412,7 @@ export class CatchMinigame {
     this.guaranteeThunder = false;
     this.forgeHadEmberWeapon = false;
     this.guaranteeConfetti = false;
+    this.starLineHitCount = 0;
     this.recoilKickCount = 0;
     this.bubbleCatch = false;
     this.birthdayInstaPending = false;

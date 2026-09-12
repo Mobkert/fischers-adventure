@@ -1,11 +1,12 @@
 import Phaser from "phaser";
+import { NpcMenuOption, NpcSpeechBubble } from "../ui/NpcSpeechBubble";
 
 /** Simple dockside NPC with one speech bubble (no shop). */
 export class TalkNpc {
   sprite: Phaser.GameObjects.Sprite;
   private scene: Phaser.Scene;
-  private bubbleBg?: Phaser.GameObjects.Graphics;
-  private bubbleText?: Phaser.GameObjects.Text;
+  private nameLabel: Phaser.GameObjects.Text;
+  private bubble?: NpcSpeechBubble;
   talking = false;
 
   readonly x: number;
@@ -29,7 +30,7 @@ export class TalkNpc {
     this.sprite.setOrigin(0.5, 1);
     this.sprite.setTint(0xc8e8ff);
 
-    scene.add
+    this.nameLabel = scene.add
       .text(x, this.y - 60, displayName, {
         fontFamily: "Arial",
         fontSize: "12px",
@@ -47,24 +48,29 @@ export class TalkNpc {
 
   /** Show lore dialogue. Returns true if F was consumed. */
   interact(): boolean {
-    // Already open — F closes it
     if (this.talking) {
       this.decline();
       return true;
     }
-    // Silent NPC (dialogue not ready yet)
     if (!this.lines.trim()) {
       return true;
     }
-    this.talking = true;
-    this.showBubble(this.lines);
+    this.speak(this.lines);
     return true;
   }
 
   /** Speak custom lines (quest NPCs). */
   speak(text: string): void {
     this.talking = true;
-    this.showBubble(text);
+    this.showBubble(text, true);
+  }
+
+  /** Speak with a multi-option menu beside the bubble. */
+  speakWithMenu(text: string, options: NpcMenuOption[]): void {
+    this.talking = true;
+    this.clearBubble();
+    this.bubble = new NpcSpeechBubble(this.scene, this.x, this.y - 118, "simple");
+    this.bubble.showWithOptions(text, "#e8d0ff", options);
   }
 
   decline(): void {
@@ -72,48 +78,32 @@ export class TalkNpc {
     this.talking = false;
   }
 
-  private showBubble(text: string): void {
-    this.clearBubble();
-    const maxW = 340;
-    this.bubbleText = this.scene.add
-      .text(this.x, this.y - 118, text, {
-        fontFamily: "Arial",
-        fontSize: "13px",
-        color: "#ffffff",
-        align: "center",
-        wordWrap: { width: maxW - 24 },
-        lineSpacing: 3,
-      })
-      .setOrigin(0.5, 1)
-      .setDepth(30);
+  /** Remove sprite + name (e.g. unloadable pocket zones). */
+  destroy(): void {
+    this.decline();
+    this.sprite.destroy();
+    this.nameLabel.destroy();
+  }
 
-    const b = this.bubbleText.getBounds();
-    const padX = 14;
-    const padY = 10;
-    this.bubbleBg = this.scene.add.graphics().setDepth(29);
-    this.bubbleBg.fillStyle(0x000000, 0.78);
-    this.bubbleBg.fillRoundedRect(
-      b.x - padX,
-      b.y - padY,
-      b.width + padX * 2,
-      b.height + padY * 2,
-      8
-    );
-    // Tail
-    this.bubbleBg.fillTriangle(
-      this.x - 8,
-      b.bottom + padY - 2,
-      this.x + 8,
-      b.bottom + padY - 2,
-      this.x,
-      b.bottom + padY + 12
+  private showBubble(text: string, withChoices: boolean): void {
+    this.clearBubble();
+    this.bubble = new NpcSpeechBubble(this.scene, this.x, this.y - 118, "simple");
+    this.bubble.show(
+      text,
+      "#ffffff",
+      withChoices
+        ? {
+            onYes: () => this.decline(),
+            onNo: () => this.decline(),
+            yesLabel: "Yes",
+            noLabel: "No",
+          }
+        : undefined
     );
   }
 
   private clearBubble(): void {
-    this.bubbleBg?.destroy();
-    this.bubbleText?.destroy();
-    this.bubbleBg = undefined;
-    this.bubbleText = undefined;
+    this.bubble?.destroy();
+    this.bubble = undefined;
   }
 }

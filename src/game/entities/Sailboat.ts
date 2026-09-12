@@ -40,6 +40,7 @@ export class Sailboat {
     color: number;
   }> = [];
   private galacticSpawn = 0;
+  private duckCosmetic = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -93,6 +94,16 @@ export class Sailboat {
 
   get boatId(): BoatId {
     return this.def.id;
+  }
+
+  /** Rubber Duck Surfer skin — yellow duck board + blue trail. */
+  setDuckCosmetic(on: boolean): void {
+    if (this.def.id !== "stellar_surfer") return;
+    this.duckCosmetic = on;
+    const key = on ? "stellar_surfer_duck" : this.def.hullKey;
+    if (this.scene.textures.exists(key)) {
+      this.hull.setTexture(key);
+    }
   }
 
   getSeatWorld(): { x: number; y: number } {
@@ -231,18 +242,29 @@ export class Sailboat {
     if (!this.def.galacticTrail || !this.galacticGfx) return;
     const dt = Math.min(delta / 1000, 0.05);
     const moving = Math.abs(this.vel) > 40;
-    const palette = [
-      0xffe066,
-      0xff9f43,
-      0xff6bcb,
-      0xc9a0ff,
-      0x8a5cff,
-      0x7ec8ff,
-      0x44ffcc,
-      0xffffff,
-      0xff4d6d,
-      0x5eead4,
-    ];
+    const palette = this.duckCosmetic
+      ? [
+          0xffe066,
+          0xffd84a,
+          0x4aa8e8,
+          0x8fd4ff,
+          0xffffff,
+          0xffa84a,
+          0x6ec8ff,
+          0xfff6c8,
+        ]
+      : [
+          0xffe066,
+          0xff9f43,
+          0xff6bcb,
+          0xc9a0ff,
+          0x8a5cff,
+          0x7ec8ff,
+          0x44ffcc,
+          0xffffff,
+          0xff4d6d,
+          0x5eead4,
+        ];
     // Trail sits under the stern of the board
     const dir = this.facingLeft ? 1 : -1;
     const sternX = this.hull.x + dir * (this.def.halfWidth * 0.62);
@@ -276,14 +298,25 @@ export class Sailboat {
       const sx = this.hull.x + dir * (this.def.halfWidth * 0.25);
       const sy = sternY + 2;
       const len = 90 + Math.min(50, Math.abs(this.vel) * 0.1);
-      g.lineStyle(14, 0x4a20a0, 0.22);
-      g.lineBetween(sx, sy, sx + dir * len, sy + 4);
-      g.lineStyle(8, 0x8a5cff, 0.32);
-      g.lineBetween(sx, sy + 1, sx + dir * (len * 0.92), sy + 5);
-      g.lineStyle(4, 0xff6bcb, 0.28);
-      g.lineBetween(sx, sy, sx + dir * (len * 0.8), sy + 3);
-      g.lineStyle(2.5, 0xffe066, 0.4);
-      g.lineBetween(sx, sy - 1, sx + dir * (len * 0.7), sy + 2);
+      if (this.duckCosmetic) {
+        g.lineStyle(14, 0x1a6090, 0.22);
+        g.lineBetween(sx, sy, sx + dir * len, sy + 4);
+        g.lineStyle(8, 0x4aa8e8, 0.32);
+        g.lineBetween(sx, sy + 1, sx + dir * (len * 0.92), sy + 5);
+        g.lineStyle(4, 0x8fd4ff, 0.28);
+        g.lineBetween(sx, sy, sx + dir * (len * 0.8), sy + 3);
+        g.lineStyle(2.5, 0xffe066, 0.4);
+        g.lineBetween(sx, sy - 1, sx + dir * (len * 0.7), sy + 2);
+      } else {
+        g.lineStyle(14, 0x4a20a0, 0.22);
+        g.lineBetween(sx, sy, sx + dir * len, sy + 4);
+        g.lineStyle(8, 0x8a5cff, 0.32);
+        g.lineBetween(sx, sy + 1, sx + dir * (len * 0.92), sy + 5);
+        g.lineStyle(4, 0xff6bcb, 0.28);
+        g.lineBetween(sx, sy, sx + dir * (len * 0.8), sy + 3);
+        g.lineStyle(2.5, 0xffe066, 0.4);
+        g.lineBetween(sx, sy - 1, sx + dir * (len * 0.7), sy + 2);
+      }
     }
 
     for (let i = this.galacticSparks.length - 1; i >= 0; i--) {

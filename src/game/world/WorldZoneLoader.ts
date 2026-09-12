@@ -38,4 +38,9 @@ export class WorldZoneLoader {
     zone.onLoad();
     this.loaded.add(id);
   }
+
+  /** Mark a zone unloaded so forceLoad can rebuild it later. */
+  unload(id: string): void {
+    this.loaded.delete(id);
+  }
 }

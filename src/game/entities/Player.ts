@@ -277,7 +277,7 @@ export class Player {
       sizeH = 26;
       sizeW = Math.round(sizeH * (tw / th));
       yOff = 1;
-    } else if (id === "hat_tophat") {
+    } else if (id === "hat_tophat" || id === "hat_resonated") {
       originY = 0.95;
       sizeW = 28;
       sizeH = 28;
@@ -452,6 +452,14 @@ export class Player {
       return this.fishingRodStyle === "stellar_surfer";
     }
     return this.carriedRodStyle === "stellar_surfer";
+  }
+
+  /** Star Line Rod held floating-rock / dark-matter VFX. */
+  isStarLineRodInHand(): boolean {
+    if (this.isFishingAnim()) {
+      return this.fishingRodStyle === "star_line";
+    }
+    return this.carriedRodStyle === "star_line";
   }
 
   /**

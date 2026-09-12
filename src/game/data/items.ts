@@ -14,8 +14,10 @@ export type ItemId =
   | "starweaver_rod"
   | "birthday_rod"
   | "test_rod"
+  | "star_line_rod"
   | "equipment_bag"
   | "bestiary"
+  | "tide_compass"
   | "bobber_starter"
   | "bobber_double"
   | "bobber_reinforced"
@@ -89,6 +91,7 @@ export type ItemId =
   | "hat_shell"
   | "hat_yellowfin"
   | "hat_gem"
+  | "hat_resonated"
   | "skin_crate"
   | "frostpeak_crate"
   | "bait_crate"
@@ -140,7 +143,8 @@ export type FishMutationId =
   | "electric"
   | "tranquil"
   | "starstruck"
-  | "event_horizon";
+  | "event_horizon"
+  | "gate";
 
 export type FishBodyTone = "black" | "orange" | "red";
 
@@ -378,6 +382,15 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     glowColor: 0xc9a0ff,
     toastColor: "#c9a0ff",
     label: "Event Horizon! ",
+  },
+  gate: {
+    id: "gate",
+    name: "Gate",
+    sellMult: 3.5,
+    tint: 0xb8a0e8,
+    glowColor: 0x7a5cff,
+    toastColor: "#a888ff",
+    label: "Gate! ",
   },
 };
 
@@ -629,6 +642,8 @@ export interface ItemDef {
   isRod?: boolean;
   isEquipmentBag?: boolean;
   isBestiary?: boolean;
+  /** Tide Compass — hotbar warp map. */
+  isTideCompass?: boolean;
   isBobber?: boolean;
   isBackpack?: boolean;
   isAmulet?: boolean;
@@ -649,10 +664,15 @@ export interface ItemDef {
   /** Natural body color for tone-based rod mutations. */
   bodyTones?: FishBodyTone[];
   /**
-   * On catch, roll world mutations at normal rates if the fish has none
+   * On catch, roll world mutations if the fish has none
    * (excludes amber / bloom / thunder — same pool as swimming fish).
    */
   grantsWorldMutations?: boolean;
+  /**
+   * Multiplies world-mutation chance on catch (stacks with Mutation Bobber).
+   * Coral Rod uses 2; with Mutation Bobber equipped that becomes 4.
+   */
+  worldMutationChanceMult?: number;
   /** Catch-minigame special ability (Crystal Rod burst, etc.). */
   rodMinigamePower?:
     | "crystal_burst"
@@ -663,7 +683,8 @@ export interface ItemDef {
     | "forge_strike"
     | "starweaver_weave"
     | "birthday_party"
-    | "star_rain";
+    | "star_rain"
+    | "star_line";
   /**
    * Limited / seasonal rod — blue badge in bag (and forge when craftable).
    * Tooltip shows when it was / is obtainable.
@@ -943,12 +964,13 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "coral_rod",
     name: "Coral Rod",
     description:
-      "A rare reef relic. World mutations on catch at normal rates (no Amber/Bloom). It only accepts the right gift.",
+      "A rare reef relic. Doubles world mutation chances on catch (no Amber/Bloom) — stacks with Mutation Bobber to 4×. It only accepts the right gift.",
     stackable: false,
     textureKey: "rod_coral",
     isRod: true,
     buyPrice: 43000,
     grantsWorldMutations: true,
+    worldMutationChanceMult: 2,
     rodStats: {
       luck: 60,
       resilience: 15,
@@ -1060,7 +1082,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "portal_rod",
     name: "Portal Rod",
     description:
-      "A purple-black rod with a void portal at its tip. While your line is out, the rarest fish within 400px warps straight to your bobber.",
+      "A purple-black rod with a void portal at its tip. While your line is out, the rarest fish within 400px warps straight to your bobber. Mastery: catch 15 Legendaries with it and Tide Compass 10 times while equipped — then 30% Gate duplicate (3.5×), +25 Luck/Resilience/Progress Speed, and 4m line depth.",
     stackable: false,
     textureKey: "rod_portal",
     isRod: true,
@@ -1127,32 +1149,15 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "starweaver_rod",
     name: "Starweaver Rod",
     description:
-      "A slender indigo rod tipped with a woven star. After the fish moves 5 times, it sacrifices 5–15% catch progress to stun the fish (5% → 1s, 15% → 3s). Starlight 5%.",
+      "A slender indigo rod tipped with a woven star. After the fish moves 5 times, it sacrifices 5–15% catch progress to stun the fish (5% → 1s, 15% → 3s). While stunned: +153% progress speed. Starlight 15%.",
     stackable: false,
     textureKey: "rod_starweaver",
     isRod: true,
     rodMinigamePower: "starweaver_weave",
-    rodMutation: { mutation: "starlight", chance: 0.05 },
+    rodMutation: { mutation: "starlight", chance: 0.15 },
     limitedEdition: {
-      obtainableWindow: "Ashencast Forge",
-      currentlyObtainable: true,
-    },
-    craftCost: {
-      coins: 70000,
-      ingredients: [
-        { itemId: "taaffite", count: 2 },
-        { itemId: "rhodochrosite", count: 1 },
-        { itemId: "driftwood", count: 2, mutation: "tranquil" },
-        {
-          itemId: "sockeye_salmon",
-          iconKey: "craft_starlight_fish",
-          count: 1,
-          anyFish: true,
-          minRarity: "uncommon",
-          mutation: "starlight",
-        },
-        { itemId: "ruby", count: 7 },
-      ],
+      obtainableWindow: "Ashencast Forge (retired)",
+      currentlyObtainable: false,
     },
     rodStats: {
       luck: 60,
@@ -1188,7 +1193,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "test_rod",
     name: "Stellar Surfer",
     description:
-      "A high-detail galactic surfboard rod. Stars rain in the catch bar and grow a black hole (+3% dupe chance per hit, max 55%). Duplicates are always Starstruck (0.9×), replacing other mutations. 35% Event Horizon (7×) on catch. At a port, press Q to ride it — faster than a Jet Ski, with a galactic trail. Fish while riding; you can't switch rods until you dock.",
+      "A galactic surfboard rod earned from the Astral Warden. DEFINED form: half stats (Control full), stars slow only to 0.3s, no Event Horizon, no boat. Ascended/UNDEFINED: full star-rain to 0.01, black hole dupes, 35% Event Horizon, and Q at a port to ride the Stellar Surfer boat.",
     stackable: false,
     textureKey: "rod_test",
     isRod: true,
@@ -1200,6 +1205,23 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       control: 25,
       progressSpeed: 0,
       lineDepth: 5,
+    },
+  },
+  star_line_rod: {
+    id: "star_line_rod",
+    name: "Star Line Rod",
+    description:
+      "Broken dark-matter shards bound by a living star line. Night catch UI with an oval of 7 stars — when they pass the bottom, 20% chance to mark a pink bar zone (if it misses, the next pass is guaranteed). Stars keep riding the oval to the top, then dive in. Once per catch; stars do not return. Hit the zone: +1.5% progress, +3% progress speed, and +3% white-bar size per star. Miss: −5% progress per star. Gather all 7 hits: Lunar (4×).",
+    stackable: false,
+    textureKey: "rod_star_line",
+    isRod: true,
+    rodMinigamePower: "star_line",
+    rodStats: {
+      luck: 45,
+      resilience: 35,
+      control: 10,
+      progressSpeed: 0,
+      lineDepth: 4,
     },
   },
   gem_red: {
@@ -1316,6 +1338,15 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     textureKey: "hat_gem",
     isHat: true,
   },
+  hat_resonated: {
+    id: "hat_resonated",
+    name: "Resonated Hat",
+    description:
+      "A cosmic top hat tuned to the full moon. Equip it to resonate into the Stellar Sky — hover the moon, or warp with the Tide Compass.",
+    stackable: false,
+    textureKey: "hat_resonated",
+    isHat: true,
+  },
   bestiary: {
     id: "bestiary",
     name: "Bestiary",
@@ -1323,6 +1354,15 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     stackable: false,
     textureKey: "bestiary_book",
     isBestiary: true,
+  },
+  tide_compass: {
+    id: "tide_compass",
+    name: "Tide Compass",
+    description:
+      "A brass compass that charts the tides. Most warps cost $20,000 after a full area bestiary (Frostpeak: 5+ ocean fish). The Stellar Sky unlocks after you find it — $50,000 to return.",
+    stackable: false,
+    textureKey: "tide_compass",
+    isTideCompass: true,
   },
   bobber_starter: {
     id: "bobber_starter",
@@ -1364,7 +1404,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: "bobber_mutation",
     name: "Mutation Bobber",
     description:
-      "Yellow-green bobber. Doubles world mutation chances on catch (not Amber/Bloom). Craft: $25k + Earthly or Sprout Yellowfin.",
+      "Yellow-green bobber. Doubles world mutation chances on catch (not Amber/Bloom). Stacks with Coral Rod to 4×. Craft: $25k + Earthly or Sprout Yellowfin.",
     stackable: false,
     textureKey: "bobber_yellow",
     isBobber: true,
@@ -2907,6 +2947,111 @@ export const BESTIARY_AREAS: BestiaryArea[] = [
   },
 ];
 
+/** Tide Compass warp destinations. */
+export type TideCompassDestId =
+  | "starter"
+  | "swamp"
+  | "collectors"
+  | "reef"
+  | "ashencast"
+  | "frostpeak"
+  | "stellar_sky";
+
+export type TideCompassDestination = {
+  id: TideCompassDestId;
+  name: string;
+  subtitle: string;
+  /** Used for bestiary gates; ignored when requireDiscovered is set. */
+  bestiaryHabitat: FishHabitat;
+  /** Zone loader key when leaving the cave / traveling overworld. */
+  zoneLoad:
+    | "swamp"
+    | "collectors"
+    | "reef"
+    | "ashencast"
+    | "frostpeak"
+    | "stellar_sky"
+    | null;
+  /** Frostpeak only — partial bestiary; others need the full habitat tab. */
+  requireFullBestiary: boolean;
+  /** Unlock by discovering the secret location (Stellar Sky). */
+  requireDiscovered?: boolean;
+  /** Override default Tide Compass travel cost. */
+  travelCost?: number;
+};
+
+export const TIDE_COMPASS_DESTINATIONS: TideCompassDestination[] = [
+  {
+    id: "starter",
+    name: "Starter Island",
+    subtitle: "Home docks & village waters",
+    bestiaryHabitat: "ocean",
+    zoneLoad: null,
+    requireFullBestiary: true,
+  },
+  {
+    id: "swamp",
+    name: "Swamp Island",
+    subtitle: "Jungle shore & murky pond",
+    bestiaryHabitat: "pond",
+    zoneLoad: "swamp",
+    requireFullBestiary: true,
+  },
+  {
+    id: "collectors",
+    name: "Collector's Island",
+    subtitle: "Town of traders & reef edge",
+    bestiaryHabitat: "reef",
+    zoneLoad: "collectors",
+    requireFullBestiary: true,
+  },
+  {
+    id: "reef",
+    name: "Coral Reef",
+    subtitle: "Shallow western reef waters",
+    bestiaryHabitat: "reef",
+    zoneLoad: "reef",
+    requireFullBestiary: true,
+  },
+  {
+    id: "ashencast",
+    name: "Ashencast Isle",
+    subtitle: "Volcanic harbour & hotsprings",
+    bestiaryHabitat: "hotspring",
+    zoneLoad: "ashencast",
+    requireFullBestiary: true,
+  },
+  {
+    id: "frostpeak",
+    name: "Frostpeak Isle",
+    subtitle: "Icy mountain shore",
+    bestiaryHabitat: "ocean",
+    zoneLoad: "frostpeak",
+    requireFullBestiary: false,
+  },
+  {
+    id: "stellar_sky",
+    name: "Stellar Sky",
+    subtitle: "A pocket of the galactic night",
+    bestiaryHabitat: "ocean",
+    zoneLoad: "stellar_sky",
+    requireFullBestiary: false,
+    requireDiscovered: true,
+    travelCost: 50_000,
+  },
+];
+
+/** Partial unlock threshold for Frostpeak Isle only. */
+export const TIDE_COMPASS_BESTIARY_MIN = 5;
+
+/** Default coin cost per Tide Compass warp. */
+export const TIDE_COMPASS_TRAVEL_COST = 20_000;
+
+export function tideCompassTravelCost(destId: TideCompassDestId): number {
+  const dest = TIDE_COMPASS_DESTINATIONS.find((d) => d.id === destId);
+  return dest?.travelCost ?? TIDE_COMPASS_TRAVEL_COST;
+}
+
 export const ROD_ITEM_IDS: ItemId[] = (
   Object.keys(ITEMS) as ItemId[]
 ).filter((id) => ITEMS[id].isRod);
@@ -3298,6 +3443,7 @@ const ROD_ONLY_MUTATIONS = new Set<FishMutationId>([
   "electric",
   "starstruck",
   "event_horizon",
+  "gate",
 ]);
 
 /** Full moon catch odds (mutually exclusive; lunar checked first). */
@@ -3424,8 +3570,8 @@ export const CORAL_ROD_OFFER_AMOUNT = 43000;
 /**
  * Final catch mutation.
  * Already-mutated fish keep their mutation (never overwritten by rod / re-roll).
- * Mutation bobber can roll world mutations at 2× on unmutated fish.
- * Coral Rod rolls world mutations at normal rates (no Amber/Bloom).
+ * Mutation bobber / Coral Rod multiply world-mutation chances on unmutated fish
+ * (2× each, stack to 4×). Coral also enables the world-mutation roll alone.
  * Rod mutations only apply if the fish still has none.
  * @param speciesMutMult species modifier (e.g. 0.5 = half chance for dolphins)
  */
@@ -3439,13 +3585,11 @@ export function resolveCatchMutation(
   chanceOverrides?: Partial<Record<FishMutationId, number>>
 ): FishMutationId | null {
   if (worldMutation) return worldMutation;
-  if (mutationChanceMult > 1) {
-    const boosted = rollWorldMutation(mutationChanceMult * speciesMutMult);
+  const grantsWorld = !!ITEMS[rodId]?.grantsWorldMutations;
+  if (mutationChanceMult > 1 || grantsWorld) {
+    const mult = Math.max(1, mutationChanceMult);
+    const boosted = rollWorldMutation(mult * speciesMutMult);
     if (boosted) return boosted;
-  }
-  if (ITEMS[rodId]?.grantsWorldMutations) {
-    const fromRod = rollWorldMutation(speciesMutMult);
-    if (fromRod) return fromRod;
   }
   return rollRodMutation(
     rodId,
@@ -3544,7 +3688,12 @@ export function formatRodStats(stats: RodStats): string {
 export function formatRodExtras(def: ItemDef): string {
   const lines: string[] = [];
   if (def.grantsWorldMutations) {
-    lines.push("World mutations on catch (normal rates)");
+    const mult = def.worldMutationChanceMult ?? 1;
+    lines.push(
+      mult > 1
+        ? `World mutations ×${mult} on catch (stacks with Mutation Bobber)`
+        : "World mutations on catch (normal rates)"
+    );
   }
   if (def.id === "augment_rod") {
     lines.push("7.5% chance to upgrade a stat on catch");

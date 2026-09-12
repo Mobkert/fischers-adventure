@@ -5,6 +5,7 @@ import { drawForgeRod } from "../art/ForgeRodArt";
 import { drawStarweaverRod } from "../art/StarweaverRodArt";
 import { drawBirthdayRod } from "../art/BirthdayRodArt";
 import { drawStellarSurferRod } from "../art/StellarSurferArt";
+import { drawStarLineRod } from "../art/StarLineRodArt";
 import {
   drawGoldenLuckyRod,
   drawUniversalPortalRod,
@@ -18,6 +19,7 @@ import {
   drawHaloOfIceRod,
   drawHyperborealRod,
   drawHyperthermicRod,
+  drawRubberDuckRod,
 } from "../art/RodSkinHeldArt";
 
 /** Logical playable area — displayed size stays ~64px via setDisplaySize on the sprite. */
@@ -76,6 +78,7 @@ export type RodDrawStyle =
   | "starweaver"
   | "birthday"
   | "stellar_surfer"
+  | "star_line"
   /** Same poses/tips as other rods, but no baked rod art (Gallery overlay only). */
   | "hidden"
   | "golden_lucky"
@@ -89,7 +92,8 @@ export type RodDrawStyle =
   | "icicle"
   | "halo_of_ice"
   | "hyperboreal"
-  | "hyperthermic";
+  | "hyperthermic"
+  | "rubber_duck";
 
 /** Every rod that gets carry + cast player frames and anims — keep in sync with new rods. */
 export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
@@ -109,6 +113,7 @@ export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
   "starweaver",
   "birthday",
   "stellar_surfer",
+  "star_line",
   "hidden",
   "golden_lucky",
   "universal_portal",
@@ -122,6 +127,7 @@ export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
   "halo_of_ice",
   "hyperboreal",
   "hyperthermic",
+  "rubber_duck",
 ];
 
 export function rodAnimStyleReady(scene: Phaser.Scene, style: RodDrawStyle): boolean {
@@ -154,6 +160,7 @@ export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "starweaver_rod") return "starweaver";
   if (itemId === "birthday_rod") return "birthday";
   if (itemId === "test_rod") return "stellar_surfer";
+  if (itemId === "star_line_rod") return "star_line";
   return "starter";
 }
 
@@ -187,6 +194,8 @@ export function rodStyleForSkin(
       return "hyperboreal";
     case "hyperthermic":
       return "hyperthermic";
+    case "rubber_duck":
+      return "rubber_duck";
     case "gallery":
       return "hidden";
     default:
@@ -852,6 +861,11 @@ function drawHeldRod(
     return;
   }
 
+  if (style === "star_line") {
+    drawStarLineRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+
   if (style === "frigid") {
     drawFrigidRod(g, handX, handY, tipX, tipY);
     return;
@@ -874,6 +888,11 @@ function drawHeldRod(
   }
   if (style === "hyperthermic") {
     drawHyperthermicRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+
+  if (style === "rubber_duck") {
+    drawRubberDuckRod(g, handX, handY, tipX, tipY);
     return;
   }
 

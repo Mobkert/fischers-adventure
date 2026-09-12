@@ -77,10 +77,11 @@ export class Hotbar {
     this.container.setVisible(visible);
   }
 
-  /** Screen Y for catch toasts — just above the hotbar. */
+  /** Screen Y for catch toasts — above the hotbar and interaction prompt. */
   getCatchToastY(): number {
     const slotHalf = 28 * this.container.scaleY;
-    return this.container.y - slotHalf - 42 * Math.max(1, this.container.scaleY);
+    // Keep clear of "B — Boat menu" / launch prompts at height - 100
+    return this.container.y - slotHalf - 78 * Math.max(1, this.container.scaleY);
   }
 
   refresh(): void {
@@ -96,7 +97,7 @@ export class Hotbar {
           ? this.inventory.getRodTextureKey(slotData.itemId)
           : def.textureKey;
         this.icons[i].setTexture(tex).setVisible(true);
-        if (def.isEquipmentBag || def.isBestiary) {
+        if (def.isEquipmentBag || def.isBestiary || def.isTideCompass) {
           this.icons[i].setDisplaySize(34, 34);
         } else if (def.isRod) {
           // Gallery skin stays wide; crate skins match normal rod icons

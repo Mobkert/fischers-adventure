@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { FishMutationId } from "../data/items";
 
-/** Draw starstruck / event-horizon ornaments centered on a fish icon. */
+/** Draw starstruck / event-horizon / gate ornaments centered on a fish icon. */
 export function drawFishMutationOrnament(
   g: Phaser.GameObjects.Graphics,
   mutation: FishMutationId | null | undefined,
@@ -11,7 +11,13 @@ export function drawFishMutationOrnament(
   flipX = false
 ): void {
   g.clear();
-  if (mutation !== "starstruck" && mutation !== "event_horizon") return;
+  if (
+    mutation !== "starstruck" &&
+    mutation !== "event_horizon" &&
+    mutation !== "gate"
+  ) {
+    return;
+  }
 
   const flip = flipX ? -1 : 1;
   const bw = Math.max(12, displayW);
@@ -33,6 +39,30 @@ export function drawFishMutationOrnament(
       g.lineStyle(1.2, col, 0.55 + twinkle * 0.4);
       g.lineBetween(x - s * 2.2, y, x + s * 2.2, y);
       g.lineBetween(x, y - s * 2.2, x, y + s * 2.2);
+    }
+    return;
+  }
+
+  if (mutation === "gate") {
+    // Same orbit layout as Starstruck, but little void portals instead of stars
+    const rim = [0x9b7cff, 0xc9a0ff, 0x6a4cff, 0xe0d0ff, 0x7a5cff];
+    for (let i = 0; i < 7; i++) {
+      const a = t * (1.6 + i * 0.17) + i * 0.9;
+      const orbit = 0.35 + (i % 3) * 0.12;
+      const x = Math.cos(a) * bw * orbit * flip;
+      const y = Math.sin(a * 1.3) * bh * (0.55 + (i % 2) * 0.25);
+      const pulse = 0.45 + Math.sin(t * 4.5 + i) * 0.3;
+      const col = rim[i % rim.length]!;
+      const rx = 2.2 + (i % 3) * 0.7;
+      const ry = rx * 1.35;
+      g.fillStyle(0x0a0618, 0.85);
+      g.fillEllipse(x, y, rx * 2, ry * 2);
+      g.lineStyle(1.4, col, 0.55 + pulse * 0.4);
+      g.strokeEllipse(x, y, rx * 2, ry * 2);
+      g.lineStyle(1, 0xffffff, 0.25 + pulse * 0.35);
+      g.strokeEllipse(x, y, rx * 1.15, ry * 1.15);
+      g.fillStyle(col, 0.35 + pulse * 0.25);
+      g.fillCircle(x, y - ry * 0.15, 0.7);
     }
     return;
   }

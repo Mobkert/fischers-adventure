@@ -15,7 +15,8 @@ export type RodSkinId =
   | "icicle"
   | "halo_of_ice"
   | "hyperboreal"
-  | "hyperthermic";
+  | "hyperthermic"
+  | "rubber_duck";
 
 export type SkinCrateKind = "collectors" | "frostpeak";
 
@@ -235,6 +236,19 @@ export const ROD_SKINS: Record<RodSkinId, RodSkinDef> = {
     layout: { ...ROD_ICON_LAYOUT },
     overlay: false,
     drawStyle: "hyperthermic",
+  },
+  rubber_duck: {
+    id: "rubber_duck",
+    rodId: "test_rod",
+    label: "Rubber Duck",
+    description:
+      "Yellow duck surfboard — duck stars, duck void, and a quacking companion.",
+    textureKey: "skin_rubber_duck",
+    crateWeight: 0,
+    cratePool: null,
+    layout: { ...ROD_ICON_LAYOUT },
+    overlay: false,
+    drawStyle: "rubber_duck",
   },
 };
 

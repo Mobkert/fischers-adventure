@@ -12,6 +12,7 @@ import {
   drawHaloOfIceRod,
   drawHyperborealRod,
   drawHyperthermicRod,
+  drawRubberDuckRod,
   drawSkinRodIcon,
 } from "./RodSkinHeldArt";
 
@@ -49,6 +50,7 @@ export function generateRodSkinTextures(scene: Phaser.Scene): void {
   bake("skin_halo_of_ice", drawHaloOfIceRod);
   bake("skin_hyperboreal", drawHyperborealRod);
   bake("skin_hyperthermic", drawHyperthermicRod);
+  bake("skin_rubber_duck", drawRubberDuckRod);
 
   // Pufferfirm — use the real pufferfish image stretched (not procedural)
   if (scene.textures.exists("pufferfish")) {

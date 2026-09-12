@@ -37,6 +37,8 @@ import { ForgeRodTipVfx } from "../fx/ForgeRodFx";
 import { LaserRodHeldVfx } from "../fx/LaserRodFx";
 import { FrostRodHeldVfx } from "../fx/FrostRodHeldVfx";
 import { StellarSurferHeldVfx } from "../fx/StellarSurferHeldVfx";
+import { StarLineHeldVfx } from "../fx/StarLineHeldVfx";
+import { SurferMasteryBlackHole } from "../fx/SurferMasteryBlackHole";
 import { WorldZoneLoader } from "../world/WorldZoneLoader";
 import {
   placeFrostpeakCave,
@@ -48,6 +50,11 @@ import {
   type CavePort,
   type CaveLand,
 } from "../world/FrostpeakCaveWorld";
+import {
+  placeStellarSky,
+  STELLAR_LOCAL_W,
+  STELLAR_SPAWN_LOCAL_X,
+} from "../world/StellarSkyWorld";
 import { NightAmbient } from "../world/NightAmbient";
 import { AmbientMusic, musicZoneForX, areaNameForZone, MusicZone } from "../audio/AmbientMusic";
 import { BargainerNpc } from "../entities/BargainerNpc";
@@ -57,6 +64,7 @@ import {
   ItemId,
   ITEMS,
   FishHabitat,
+  FishMutationId,
   rollAshencastOceanSpecies,
   rollHotspringSpecies,
   ORE_CLUSTER_VENDOR_PRICE,
@@ -64,8 +72,11 @@ import {
   BaitCastZone,
   getBaitAttractsForHabitat,
   getBaitSpawnPool,
+  getBaitWaterZones,
   isBaitCastZone,
   resolveBaitCastZone,
+  rollFishSpecies,
+  rollFishSize,
 } from "../data/items";
 import { ROD_SKINS } from "../data/rodSkins";
 import { BoatId } from "../data/boats";
@@ -83,6 +94,17 @@ import {
 import { UIScene } from "./UIScene";
 import type { BargainSession } from "../ui/BargainPanel";
 import { rodDisplayName } from "../systems/FrostpeakQuest";
+import {
+  ASTRAL_WARDEN_LINES,
+  ASTRAL_STARLINE_COST,
+  astralSurferObjectiveList,
+  formatQuestIngredientChecklist,
+} from "../systems/AstralWardenQuest";
+import {
+  RESONATED_HAT_LINES,
+  RESONATED_HAT_NPC_NAME,
+  resonatedHatChecklist,
+} from "../systems/ResonatedHatQuest";
 
 export class GameScene extends Phaser.Scene {
   player!: Player;
@@ -123,6 +145,21 @@ export class GameScene extends Phaser.Scene {
   private frostCaveBoards?: Phaser.GameObjects.Container;
   /** True while teleported into the mountain cave region. */
   private inFrostpeakCave = false;
+  /** True while inside the secret Stellar Sky pocket. */
+  private inStellarSky = false;
+  private stellarLoaded = false;
+  private stellarPortalX = 0;
+  private stellarLandLeft = 0;
+  private stellarLandRight = 0;
+  private stellarBeing?: TalkNpc;
+  /** Swamp — Resonated Hat quest NPC (between rope & east port). */
+  private cosmicHaberdasher?: TalkNpc;
+  private stellarAura?: Phaser.GameObjects.Arc;
+  private stellarDestroy?: () => void;
+  private stellarReturnX = 0;
+  private moonHoverMs = 0;
+  private moonHoverHint?: Phaser.GameObjects.Text;
+  private stellarEnterBusy = false;
   private caveLands: CaveLand[] = [];
   private caveWaters: CaveWater[] = [];
   private cavePorts: CavePort[] = [];
@@ -130,6 +167,11 @@ export class GameScene extends Phaser.Scene {
   /** World X of the Frostpeak cave mouth (near hermit). */
   get frostCaveX(): number {
     return (this.frostLeft + this.frostRight) / 2 + 50;
+  }
+  /** Stellar Sky pocket — far beyond the cave void. */
+  readonly stellarOriginX = 26000;
+  get stellarEndX(): number {
+    return this.stellarOriginX + STELLAR_LOCAL_W;
   }
   fishCollector?: BargainerNpc;
   curioTrader?: BargainerNpc;
@@ -155,6 +197,10 @@ export class GameScene extends Phaser.Scene {
   private laserRodVfx: LaserRodHeldVfx | null = null;
   private frostRodVfx: FrostRodHeldVfx | null = null;
   private stellarSurferVfx: StellarSurferHeldVfx | null = null;
+  private starLineVfx: StarLineHeldVfx | null = null;
+  private surferMasteryBlackHole: SurferMasteryBlackHole | null = null;
+  private surferMasteryGrantMs = 0;
+  private surferMasteryGrantPending = false;
   private music!: AmbientMusic;
   private tutorialDone = false;
   private autosaveTimer?: Phaser.Time.TimerEvent;
@@ -279,6 +325,15 @@ export class GameScene extends Phaser.Scene {
     this.spawnedFishCorridors = new Set();
     // Frostpeak cave — stale flags/arrays made re-entry skip rebuilding ground
     this.inFrostpeakCave = false;
+    this.inStellarSky = false;
+    this.stellarLoaded = false;
+    this.stellarBeing = undefined;
+    this.stellarAura = undefined;
+    this.stellarDestroy = undefined;
+    this.moonHoverMs = 0;
+    this.stellarEnterBusy = false;
+    this.moonHoverHint?.destroy();
+    this.moonHoverHint = undefined;
     this.lastCaveAreaId = "";
     this.caveLands = [];
     this.caveWaters = [];
@@ -299,6 +354,7 @@ export class GameScene extends Phaser.Scene {
     this.fishCollector = undefined;
     this.curioTrader = undefined;
     this.jungleMerchant = undefined;
+    this.cosmicHaberdasher = undefined;
     this.fishQuestNpcs = {};
     this.forgeRodVfx = null;
     this.laserRodVfx = null;
@@ -326,7 +382,6 @@ export class GameScene extends Phaser.Scene {
         applyDevInventoryBootstrap(this.inventory);
       }
     }
-
     this.tutorialDone = save.tutorialDone;
 
     const worldLeft = this.westWaterLeft;
@@ -467,6 +522,15 @@ export class GameScene extends Phaser.Scene {
       },
       getIsSunny
     );
+    // One-shot: force dolphin abundance (requested in chat)
+    if (
+      import.meta.env.DEV &&
+      typeof localStorage !== "undefined" &&
+      !localStorage.getItem("fischers_force_dolphin_abundance_v1")
+    ) {
+      this.dolphinAbundance.forceStart();
+      localStorage.setItem("fischers_force_dolphin_abundance_v1", "1");
+    }
     this.coralRodSpawn = new CoralRodSpawn(
       this,
       this.reefLeft,
@@ -573,6 +637,7 @@ export class GameScene extends Phaser.Scene {
       cancelBaitPlacement: () => this.cancelBaitPlacement(),
       isNearCaveCrack: () => this.isNearCaveCrack(),
       isInFrostpeakCave: () => this.inFrostpeakCave,
+      isInStellarSky: () => this.inStellarSky,
       isNearCoralRodOnBoat: () => this.isNearCoralRodOnBoat(),
       tryOpenCoralRodOffer: () => this.tryOpenCoralRodOffer(),
       offerCoralRodGift: (amount: number) => this.offerCoralRodGift(amount),
@@ -588,6 +653,9 @@ export class GameScene extends Phaser.Scene {
       },
       quitToMenu: () => this.quitToMenu(),
       persistSave: () => this.persistSave(),
+      teleportTideCompass: (id: import("../data/items").TideCompassDestId) =>
+        this.teleportTideCompass(id),
+      getTideCompassHere: () => this.getTideCompassHere(),
     });
 
     this.autosaveTimer = this.time.addEvent({
@@ -603,6 +671,7 @@ export class GameScene extends Phaser.Scene {
       if (ui.isMobileMode?.()) return;
       if (ui.isMobileCapturing?.()) return;
       if (this.fishing.state === "minigame") return;
+      if (this.inStellarSky) return;
 
       const worldX = this.cameras.main.getWorldPoint(pointer.x, pointer.y).x;
       if (this.baitPlacementId) {
@@ -619,6 +688,7 @@ export class GameScene extends Phaser.Scene {
     const ui = this.scene.get("UIScene") as UIScene | undefined;
     if (ui?.isBlockingInput?.()) return;
     if (this.fishing.state === "minigame") return;
+    if (this.inStellarSky) return;
     const facing = this.player.getFacing();
     const aimX =
       this.player.sprite.x + (facing === "left" ? -180 : 180);
@@ -891,6 +961,13 @@ export class GameScene extends Phaser.Scene {
   tryDeployStellarSurfer(): boolean {
     const ui = this.scene.get("UIScene") as UIScene;
     if (this.inventory.getEquippedRodId() !== "test_rod") return false;
+    if (!this.inventory.canDeployStellarSurferBoat()) {
+      ui.showToast(
+        "Your Surfer is still DEFINED — ascend it with the Astral Warden first.",
+        "#c9a0ff"
+      );
+      return true;
+    }
     if (!this.isPlayerOnPort()) {
       ui.showToast("Stand on a port to ride the Stellar Surfer.", "#ffaa66");
       return true;
@@ -906,6 +983,9 @@ export class GameScene extends Phaser.Scene {
     }
     this.spawnBoat("stellar_surfer");
     if (!this.sailboat) return true;
+    this.sailboat.setDuckCosmetic(
+      this.inventory.isRubberDuckSurferSkinActive()
+    );
     this.sailboat.board(this.player);
     ui.showToast(
       "Stellar Surfer deployed! A/D to ride · LMB cast · F near port to dock",
@@ -953,6 +1033,27 @@ export class GameScene extends Phaser.Scene {
       this.codeGuy?.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
       return this.handleCodeGuyTalk();
+    }
+
+    if (this.tryLeaveStellarSky()) return true;
+
+    if (
+      this.stellarBeing &&
+      (this.stellarBeing.talking ||
+        this.stellarBeing.isNear(this.player.sprite.x, this.player.sprite.y))
+    ) {
+      return this.handleAstralWardenTalk();
+    }
+
+    if (
+      this.cosmicHaberdasher &&
+      (this.cosmicHaberdasher.talking ||
+        this.cosmicHaberdasher.isNear(
+          this.player.sprite.x,
+          this.player.sprite.y
+        ))
+    ) {
+      return this.handleCosmicHaberdasherTalk();
     }
 
     if (
@@ -1088,6 +1189,11 @@ export class GameScene extends Phaser.Scene {
       this.fishQuestNpcs[id]?.decline();
     }
     this.declineBargainers();
+    this.stellarBeing?.decline();
+    this.cosmicHaberdasher?.decline();
+    this.ashenForgeNpc?.decline();
+    this.orePeddler?.decline();
+    this.appraiser?.decline();
   }
 
   private allFishMerchants(): FishMerchant[] {
@@ -1891,6 +1997,149 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
+  /** Astral Warden — Star Line + Stellar Surfer quests. */
+  private handleAstralWardenTalk(): boolean {
+    if (!this.stellarBeing) return false;
+    if (this.stellarBeing.talking) {
+      this.stellarBeing.decline();
+      return true;
+    }
+
+    const greet =
+      ASTRAL_WARDEN_LINES.greet[
+        Math.floor(Math.random() * ASTRAL_WARDEN_LINES.greet.length)
+      ];
+
+    this.stellarBeing.speakWithMenu(
+      `${greet}\n\nWhat blank do you seek among the lunar tides?`,
+      [
+        {
+          label: "Star Line",
+          hotkey: "1",
+          fill: 0x2a2048,
+          stroke: 0xc9a0ff,
+          onClick: () => this.handleAstralStarlineOption(),
+        },
+        {
+          label: "Surfer",
+          hotkey: "2",
+          fill: 0x1a3050,
+          stroke: 0x7ec8e8,
+          onClick: () => this.handleAstralSurferOption(),
+        },
+        {
+          label: "No",
+          hotkey: "X",
+          fill: 0x3a2a2a,
+          stroke: 0xffaa66,
+          onClick: () => {
+            this.stellarBeing?.speak(ASTRAL_WARDEN_LINES.farewell);
+          },
+        },
+      ]
+    );
+    return true;
+  }
+
+  private handleAstralStarlineOption(): void {
+    if (!this.stellarBeing) return;
+    const ui = this.scene.get("UIScene") as UIScene;
+    const result = this.inventory.tryTurnInAstralStarline();
+    if (result.message === "already") {
+      this.stellarBeing.speak(ASTRAL_WARDEN_LINES.alreadyHasStarline);
+    } else if (result.ok) {
+      this.stellarBeing.speak(ASTRAL_WARDEN_LINES.starlineDone);
+      ui.showToast("Star Line Rod forged from starlight!", "#c9a0ff");
+      this.persistSave();
+      ui.refreshQuestTracker?.();
+    } else {
+      const list = formatQuestIngredientChecklist(
+        this.inventory,
+        ASTRAL_STARLINE_COST
+      );
+      this.stellarBeing.speak(
+        `${ASTRAL_WARDEN_LINES.starlineStart}\n\nYour tribute:\n${list}`
+      );
+    }
+  }
+
+  private handleAstralSurferOption(): void {
+    if (!this.stellarBeing) return;
+    const ui = this.scene.get("UIScene") as UIScene;
+    const inv = this.inventory;
+
+    if (!inv.ownsRod("star_line_rod") && !inv.astralStarlineDone) {
+      this.stellarBeing.speak(ASTRAL_WARDEN_LINES.needStarlineFirst);
+      return;
+    }
+
+    if (inv.astralSurferQuestStage === 0) {
+      inv.startAstralSurferQuest();
+      this.stellarBeing.speak(ASTRAL_WARDEN_LINES.surferStart);
+      ui.showToast("Astral quest: Catch any Starlight fish", "#c9a0ff");
+      this.persistSave();
+      ui.refreshQuestTracker?.();
+      return;
+    }
+
+    if (inv.astralSurferQuestStage >= 8) {
+      this.stellarBeing.speak(ASTRAL_WARDEN_LINES.surferComplete);
+      return;
+    }
+
+    const adv = inv.tryAdvanceAstralSurferFromTalk();
+    if (adv.messageKey === "wait") {
+      this.stellarBeing.speak(this.astralSurferWaitSpeech());
+      return;
+    }
+
+    const key = adv.messageKey as keyof typeof ASTRAL_WARDEN_LINES;
+    const raw = ASTRAL_WARDEN_LINES[key];
+    const text =
+      typeof raw === "function"
+        ? raw(inv.astralSurferCatchCount)
+        : typeof raw === "string"
+          ? raw
+          : this.astralSurferWaitSpeech();
+    this.stellarBeing.speak(text);
+
+    if (adv.grantedDefined) {
+      ui.showToast("DEFINED Stellar Surfer granted!", "#c9a0ff");
+    }
+    if (adv.ascended) {
+      ui.showToast("UNDEFINED Stellar Surfer — boat unlocked!", "#7CFC00");
+    }
+    this.persistSave();
+    ui.refreshQuestTracker?.();
+  }
+
+  private astralSurferWaitSpeech(): string {
+    const inv = this.inventory;
+    const stage = inv.astralSurferQuestStage;
+    const list = astralSurferObjectiveList(
+      inv,
+      stage as 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+    );
+    switch (stage) {
+      case 1:
+        return `${ASTRAL_WARDEN_LINES.surferStage1Wait}\n\n${list}`;
+      case 2:
+        return `${ASTRAL_WARDEN_LINES.surferStage2Wait}\n\n${list}`;
+      case 3:
+        return `${ASTRAL_WARDEN_LINES.surferStage3Need}\n\n${list}`;
+      case 4:
+        return `${ASTRAL_WARDEN_LINES.surferStage4Need}\n\n${list}`;
+      case 5:
+        return `${ASTRAL_WARDEN_LINES.surferStage5Wait(inv.astralSurferCatchCount)}\n\n${list}`;
+      case 6:
+        return `${ASTRAL_WARDEN_LINES.surferStage6Wait}\n\n${list}`;
+      case 7:
+        return `${ASTRAL_WARDEN_LINES.surferStage7Need}\n\n${list}`;
+      default:
+        return ASTRAL_WARDEN_LINES.farewell;
+    }
+  }
+
   /** Frostpeak Hermit 3-stage cave quest. */
   private handleHermitTalk(): boolean {
     if (!this.frostHermit) return false;
@@ -1980,10 +2229,11 @@ export class GameScene extends Phaser.Scene {
 
   /** Called after a successful catch — Frostpeak quest 2 + hat unlocks. */
   onCatchCompleteForQuests(
-    caughtList?: { speciesId: ItemId }[]
+    caughtList?: { speciesId: ItemId; mutation?: FishMutationId | null }[]
   ): void {
     const ui = this.scene.get("UIScene") as UIScene | undefined;
     const list = caughtList ?? this.fishing.lastCaughtFish;
+    const rodId = this.inventory.getEquippedRodId();
 
     for (const caught of list) {
       if (
@@ -1993,13 +2243,22 @@ export class GameScene extends Phaser.Scene {
         ui?.showToast("Unlocked Yellowfin Hat!", "#f0c830");
         this.persistSave();
       }
+
+      const astral = this.inventory.recordAstralCatch({
+        speciesId: caught.speciesId,
+        mutation: caught.mutation ?? null,
+        rodId,
+      });
+      if (astral.toast) {
+        ui?.showToast(astral.toast, "#c9a0ff");
+        this.persistSave();
+      }
     }
 
     this.refreshAnvilOceanFloater();
     ui?.refreshQuestTracker?.();
 
     if (this.inventory.frostpeakQuestStage !== 2) return;
-    const rodId = this.inventory.getEquippedRodId();
     let any = false;
     for (const caught of list) {
       const rarity = ITEMS[caught.speciesId]?.rarity;
@@ -2043,7 +2302,9 @@ export class GameScene extends Phaser.Scene {
     const px = this.player.sprite.x;
     const py = this.player.sprite.y;
     if (this.fishCollector?.isNear(px, py)) {
-      this.fishCollector.showBubble("Got fish? Name your price.");
+      this.fishCollector.showBubble("Got fish? Name your price.", () => {
+        ui.closeBargain();
+      });
       ui.openBargain("fish_buy", this.fishCollector.name);
       return true;
     }
@@ -2052,7 +2313,10 @@ export class GameScene extends Phaser.Scene {
       this.curioTrader.showBubble(
         empty
           ? "Stall's empty for now — check back later."
-          : "Rarities and curios. Name your offer."
+          : "Rarities and curios. Name your offer.",
+        () => {
+          ui.closeBargain();
+        }
       );
       ui.openBargain("curio_sell", this.curioTrader.name);
       return true;
@@ -2866,6 +3130,415 @@ export class GameScene extends Phaser.Scene {
     ui?.showAreaBanner("Frostpeak Isle");
   }
 
+  /** Tide Compass warp destination for the player's current island, or null at sea. */
+  getTideCompassHere(): import("../data/items").TideCompassDestId | null {
+    if (this.inStellarSky) return "stellar_sky";
+    if (this.inFrostpeakCave) return "frostpeak";
+    const areaId = this.getAreaId(this.player.sprite.x);
+    switch (areaId) {
+      case "island":
+        return "starter";
+      case "jungle":
+        return "swamp";
+      case "collectors":
+        return "collectors";
+      case "reef":
+        return "reef";
+      case "ashencast":
+        return "ashencast";
+      case "frostpeak":
+        return "frostpeak";
+      default:
+        return null;
+    }
+  }
+
+  /** Tide Compass warp — caller handles the black fade. */
+  teleportTideCompass(destId: import("../data/items").TideCompassDestId): void {
+    if (this.fishing.isBusy()) return;
+    if (this.getTideCompassHere() === destId) return;
+
+    if (destId === "stellar_sky") {
+      if (!this.inventory.canResonateToStellarSky()) {
+        const ui = this.scene.get("UIScene") as UIScene;
+        ui.showToast(
+          "Equip the Resonated Hat to warp to the Stellar Sky.",
+          "#c9a0ff"
+        );
+        return;
+      }
+      this.enterStellarSky({ fromMoon: false, playFade: false });
+      return;
+    }
+
+    if (this.player.isOnBoat() && this.sailboat) {
+      const exitX = this.player.sprite.x;
+      if (this.sailboat.occupied) {
+        this.sailboat.disembark(this.player, exitX, this.groundY);
+      }
+      this.sailboat.destroy();
+      this.sailboat = null;
+    }
+
+    // Leave stellar / cave if warping to overworld
+    if (this.inStellarSky) {
+      this.inStellarSky = false;
+      this.unloadStellarSkyZone();
+      this.weather?.setRainBlocked(false);
+      this.setOverworldCameraBounds();
+    }
+
+    if (this.inFrostpeakCave) {
+      if (this.sailboat) {
+        if (this.sailboat.occupied) {
+          this.sailboat.disembark(
+            this.player,
+            this.caveOriginX + CAVE_SPAWN_LOCAL_X,
+            this.groundY
+          );
+        }
+        this.sailboat.destroy();
+        this.sailboat = null;
+      }
+      this.inFrostpeakCave = false;
+      this.lastCaveAreaId = "";
+      for (const m of this.caveMerchants) m.close();
+      this.weather?.setRainBlocked(false);
+      this.setOverworldCameraBounds();
+    }
+
+    const mid = (a: number, b: number) => (a + b) / 2;
+    let x = mid(this.islandLeft, this.islandRight);
+    let zone: "swamp" | "collectors" | "reef" | "ashencast" | "frostpeak" | null =
+      null;
+    let banner = "Starter Island";
+
+    switch (destId) {
+      case "starter":
+        x = mid(this.islandLeft, this.islandRight);
+        banner = "Starter Island";
+        break;
+      case "swamp":
+        x = mid(this.jungleLeft, this.jungleRight);
+        zone = "swamp";
+        banner = "Swamp Island";
+        break;
+      case "collectors":
+        x = mid(this.collectorLeft, this.collectorRight);
+        zone = "collectors";
+        banner = "Collector's Island";
+        break;
+      case "reef":
+        x = mid(this.reefLeft, this.reefRight);
+        zone = "reef";
+        banner = "Coral Reef";
+        break;
+      case "ashencast":
+        x = mid(this.ashenLeft, this.ashenRight);
+        zone = "ashencast";
+        banner = "Ashencast Isle";
+        break;
+      case "frostpeak":
+        x = mid(this.frostLeft, this.frostRight);
+        zone = "frostpeak";
+        banner = "Frostpeak Isle";
+        break;
+    }
+
+    if (zone) this.zoneLoader.forceLoad(zone);
+    this.player.sprite.setVelocity(0, 0);
+    this.player.sprite.setPosition(x, this.groundY - 40);
+    this.cameras.main.centerOn(this.player.sprite.x, this.player.sprite.y);
+    const ui = this.scene.get("UIScene") as UIScene | undefined;
+    ui?.showAreaBanner(banner);
+  }
+
+  isNearStellarPortal(): boolean {
+    if (!this.inStellarSky) return false;
+    return Math.abs(this.player.sprite.x - this.stellarPortalX) < 70;
+  }
+
+  tryLeaveStellarSky(): boolean {
+    if (!this.isNearStellarPortal()) return false;
+    if (this.fishing.isBusy()) return false;
+    this.leaveStellarSky();
+    return true;
+  }
+
+  /** Enter Stellar Sky (moon hover or Tide Compass). */
+  enterStellarSky(opts: { fromMoon: boolean; playFade: boolean }): void {
+    if (this.stellarEnterBusy && opts.playFade) return;
+    const run = () => this.finishEnterStellarSky(opts.fromMoon);
+    if (opts.playFade) {
+      this.stellarEnterBusy = true;
+      this.playStellarFade(run, () => {
+        this.stellarEnterBusy = false;
+      });
+    } else {
+      run();
+    }
+  }
+
+  private finishEnterStellarSky(fromMoon: boolean): void {
+    const ui = this.scene.get("UIScene") as UIScene | undefined;
+    if (!this.inStellarSky && !this.inFrostpeakCave) {
+      this.stellarReturnX = this.player.sprite.x;
+    } else if (this.inFrostpeakCave) {
+      this.stellarReturnX = this.frostCaveX;
+    }
+
+    if (this.player.isOnBoat() && this.sailboat) {
+      const exitX = this.player.sprite.x;
+      if (this.sailboat.occupied) {
+        this.sailboat.disembark(this.player, exitX, this.groundY);
+      }
+      this.sailboat.destroy();
+      this.sailboat = null;
+    }
+
+    if (this.inFrostpeakCave) {
+      this.inFrostpeakCave = false;
+      this.lastCaveAreaId = "";
+      for (const m of this.caveMerchants) m.close();
+      this.setOverworldCameraBounds();
+    }
+
+    this.zoneLoader.forceLoad("stellar_sky");
+    this.inStellarSky = true;
+    this.moonHoverMs = 0;
+    this.clearMoonHoverHint();
+    this.player.sprite.setVelocity(0, 0);
+    // Place on the platform after ground exists; slight settle above tiles
+    const spawnX = this.stellarOriginX + STELLAR_SPAWN_LOCAL_X;
+    this.player.sprite.setPosition(spawnX, this.groundY - 40);
+    this.setStellarCameraBounds();
+    this.cameras.main.centerOn(spawnX, this.groundY - 40);
+    // Re-assert after bounds change so collideWorldBounds doesn't shove you into void
+    this.player.sprite.setPosition(spawnX, this.groundY - 40);
+    this.player.sprite.setVelocity(0, 0);
+    this.weather?.setRainBlocked(true);
+    ui?.setOceanMarkers(null);
+    ui?.setPrompt(null);
+
+    const first = !this.inventory.stellarSkyDiscovered;
+    if (first) {
+      this.inventory.stellarSkyDiscovered = true;
+      this.persistSave();
+      ui?.showToast(
+        fromMoon
+          ? "The full moon tore open the Stellar Sky…"
+          : "You discovered the Stellar Sky!",
+        "#c9a0ff"
+      );
+    } else {
+      ui?.showToast("Welcome back to the Stellar Sky.", "#c9a0ff");
+    }
+    ui?.showAreaBanner("Stellar Sky");
+  }
+
+  private leaveStellarSky(): void {
+    const ui = this.scene.get("UIScene") as UIScene | undefined;
+    this.inStellarSky = false;
+    this.stellarBeing?.decline();
+    this.unloadStellarSkyZone();
+    this.weather?.setRainBlocked(false);
+    const x = Phaser.Math.Clamp(
+      this.stellarReturnX || (this.islandLeft + this.islandRight) / 2,
+      this.westWaterLeft + 40,
+      this.farWaterRight
+    );
+    const spawn = this.resolveSafeSpawn(x, this.groundY - 40);
+    this.player.sprite.setVelocity(0, 0);
+    this.player.sprite.setPosition(spawn.x, spawn.y);
+    this.setOverworldCameraBounds();
+    this.cameras.main.centerOn(
+      this.player.sprite.x,
+      this.player.sprite.y
+    );
+    ui?.setPrompt(null);
+    ui?.showToast("Back under familiar skies.", "#c8e0f8");
+    ui?.showAreaBanner(this.getAreaName(this.getAreaId(spawn.x)));
+  }
+
+  private playStellarFade(onMid: () => void, onDone?: () => void): void {
+    const ui = this.scene.get("UIScene") as UIScene | undefined;
+    const host = ui ?? this;
+    const w = host.scale.width;
+    const h = host.scale.height;
+    const veil = host.add
+      .rectangle(w / 2, h / 2, w + 40, h + 40, 0x000000, 1)
+      .setAlpha(0)
+      .setScrollFactor(0)
+      .setDepth(500);
+    host.tweens.add({
+      targets: veil,
+      alpha: 1,
+      duration: 480,
+      ease: "Quad.easeIn",
+      onComplete: () => {
+        onMid();
+        host.time.delayedCall(120, () => {
+          host.tweens.add({
+            targets: veil,
+            alpha: 0,
+            duration: 560,
+            ease: "Quad.easeOut",
+            onComplete: () => {
+              veil.destroy();
+              onDone?.();
+            },
+          });
+        });
+      },
+    });
+  }
+
+  private updateMoonHover(delta: number): void {
+    if (
+      this.inStellarSky ||
+      this.inFrostpeakCave ||
+      this.stellarEnterBusy ||
+      this.fishing.isBusy()
+    ) {
+      this.moonHoverMs = 0;
+      this.clearMoonHoverHint();
+      return;
+    }
+    const ui = this.scene.get("UIScene") as UIScene | undefined;
+    if (ui?.isBlockingInput?.()) {
+      this.moonHoverMs = 0;
+      this.clearMoonHoverHint();
+      return;
+    }
+    if (this.weather?.weather !== "fullmoon") {
+      this.moonHoverMs = 0;
+      this.clearMoonHoverHint();
+      return;
+    }
+    if (!this.inventory.canResonateToStellarSky()) {
+      const moon = this.skyVisual?.moon;
+      if (moon?.visible) {
+        const cam = this.cameras.main;
+        const screenX = (moon.x - cam.scrollX * moon.scrollFactorX) * cam.zoom;
+        const screenY = (moon.y - cam.scrollY * moon.scrollFactorY) * cam.zoom;
+        const ptr = this.input.activePointer;
+        const radius = 48 * moon.scale * cam.zoom;
+        const dist = Phaser.Math.Distance.Between(
+          ptr.x,
+          ptr.y,
+          screenX,
+          screenY
+        );
+        if (dist <= radius) {
+          this.showMoonNeedHatHint();
+        } else {
+          this.clearMoonHoverHint();
+        }
+      } else {
+        this.clearMoonHoverHint();
+      }
+      this.moonHoverMs = 0;
+      return;
+    }
+    const moon = this.skyVisual?.moon;
+    if (!moon?.visible) {
+      this.moonHoverMs = 0;
+      this.clearMoonHoverHint();
+      return;
+    }
+
+    const cam = this.cameras.main;
+    const screenX = (moon.x - cam.scrollX * moon.scrollFactorX) * cam.zoom;
+    const screenY = (moon.y - cam.scrollY * moon.scrollFactorY) * cam.zoom;
+    const ptr = this.input.activePointer;
+    const radius = 48 * moon.scale * cam.zoom;
+    const dist = Phaser.Math.Distance.Between(ptr.x, ptr.y, screenX, screenY);
+    if (dist > radius) {
+      this.moonHoverMs = 0;
+      this.clearMoonHoverHint();
+      return;
+    }
+
+    this.moonHoverMs += delta;
+    const need = 7000;
+    const t = Math.min(1, this.moonHoverMs / need);
+    this.showMoonHoverHint(t);
+    if (this.moonHoverMs >= need) {
+      this.moonHoverMs = 0;
+      this.clearMoonHoverHint();
+      this.enterStellarSky({ fromMoon: true, playFade: true });
+    }
+  }
+
+  private showMoonHoverHint(t: number): void {
+    const ui = this.scene.get("UIScene") as UIScene | undefined;
+    const host = ui ?? this;
+    if (!this.moonHoverHint) {
+      this.moonHoverHint = host.add
+        .text(host.scale.width / 2, 56, "", {
+          fontFamily: "Georgia, serif",
+          fontSize: "18px",
+          color: "#e8d0ff",
+          stroke: "#120828",
+          strokeThickness: 5,
+        })
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(420);
+    }
+    const secs = Math.max(0, Math.ceil(7 * (1 - t)));
+    this.moonHoverHint.setText(
+      t < 1
+        ? `The moon pulls you in… ${secs}`
+        : "The moon pulls you in…"
+    );
+    this.moonHoverHint.setAlpha(0.55 + t * 0.45);
+  }
+
+  private showMoonNeedHatHint(): void {
+    const ui = this.scene.get("UIScene") as UIScene | undefined;
+    const host = ui ?? this;
+    if (!this.moonHoverHint) {
+      this.moonHoverHint = host.add
+        .text(host.scale.width / 2, 56, "", {
+          fontFamily: "Georgia, serif",
+          fontSize: "16px",
+          color: "#e8d0ff",
+          stroke: "#120828",
+          strokeThickness: 5,
+        })
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(420);
+    }
+    this.moonHoverHint.setText(
+      "Equip the Resonated Hat to resonate with the moon"
+    );
+    this.moonHoverHint.setAlpha(0.9);
+  }
+
+  private clearMoonHoverHint(): void {
+    this.moonHoverHint?.destroy();
+    this.moonHoverHint = undefined;
+  }
+
+  private setStellarCameraBounds(): void {
+    const cameraHeight = this.waterSurfaceY + this.deepWaterPx + 40;
+    this.cameras.main.setBounds(
+      this.stellarOriginX,
+      0,
+      STELLAR_LOCAL_W,
+      cameraHeight
+    );
+    // Keep physics inside the pocket so you can't fall off-world
+    this.physics.world.setBounds(
+      this.stellarOriginX,
+      0,
+      STELLAR_LOCAL_W,
+      720
+    );
+  }
+
   /** Keep the view inside the mountain — no sky past the end walls. */
   private setCaveCameraBounds(): void {
     const cameraHeight = this.waterSurfaceY + this.deepWaterPx + 40;
@@ -2875,13 +3548,25 @@ export class GameScene extends Phaser.Scene {
       CAVE_LOCAL_W,
       cameraHeight
     );
+    this.physics.world.setBounds(this.caveOriginX, 0, CAVE_LOCAL_W, 720);
   }
 
   private setOverworldCameraBounds(): void {
     const worldLeft = this.westWaterLeft;
-    const worldWidth = this.caveEndX - worldLeft + 80;
     const cameraHeight = this.waterSurfaceY + this.deepWaterPx + 40;
-    this.cameras.main.setBounds(worldLeft, 0, worldWidth, cameraHeight);
+    this.cameras.main.setBounds(
+      worldLeft,
+      0,
+      this.caveEndX - worldLeft + 80,
+      cameraHeight
+    );
+    // Keep physics at cave tip while overworld — stellar expands bounds only while inside
+    this.physics.world.setBounds(
+      worldLeft,
+      0,
+      this.caveEndX - worldLeft + 80,
+      720
+    );
   }
 
   private spawnCaveBoatAtFirstPort(): void {
@@ -3285,6 +3970,73 @@ export class GameScene extends Phaser.Scene {
       loadRadius: 0,
       onLoad: () => this.loadFrostpeakCaveZone(),
     });
+    this.zoneLoader.register({
+      id: "stellar_sky",
+      centerX: this.stellarOriginX + STELLAR_LOCAL_W / 2,
+      loadRadius: 0,
+      onLoad: () => this.loadStellarSkyZone(),
+    });
+  }
+
+  private loadStellarSkyZone(): void {
+    if (this.stellarLoaded) return;
+    this.stellarLoaded = true;
+    const placed = placeStellarSky(
+      this,
+      this.stellarOriginX,
+      this.groundY,
+      this.ground
+    );
+    this.stellarPortalX = placed.portalX;
+    this.stellarLandLeft = placed.landLeft;
+    this.stellarLandRight = placed.landRight;
+    this.stellarDestroy = placed.destroy;
+    this.stellarBeing = new TalkNpc(
+      this,
+      placed.npcX,
+      this.groundY,
+      "Astral Warden",
+      ""
+    );
+    this.stellarBeing.sprite.setTexture("galactic_being");
+    this.stellarBeing.sprite.clearTint();
+    this.stellarBeing.sprite.setDisplaySize(72, 108);
+    this.stellarAura = this.add.circle(
+      placed.npcX,
+      this.groundY - 48,
+      42,
+      0x6a3cff,
+      0.22
+    );
+    this.stellarAura.setDepth(10);
+    this.tweens.add({
+      targets: this.stellarAura,
+      alpha: { from: 0.12, to: 0.32 },
+      scale: { from: 0.9, to: 1.15 },
+      duration: 1600,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+  }
+
+  /** Drop Stellar Sky visuals + colliders so overworld stays light. */
+  private unloadStellarSkyZone(): void {
+    if (!this.stellarLoaded && !this.stellarDestroy) return;
+    if (this.stellarAura) {
+      this.tweens.killTweensOf(this.stellarAura);
+      this.stellarAura.destroy();
+      this.stellarAura = undefined;
+    }
+    this.stellarBeing?.destroy();
+    this.stellarBeing = undefined;
+    this.stellarDestroy?.();
+    this.stellarDestroy = undefined;
+    this.stellarLoaded = false;
+    this.stellarPortalX = 0;
+    this.stellarLandLeft = 0;
+    this.stellarLandRight = 0;
+    this.zoneLoader?.unload("stellar_sky");
   }
 
   private loadCollectorsZone(): void {
@@ -3618,9 +4370,79 @@ export class GameScene extends Phaser.Scene {
     this.jungleMerchant.sprite.setTint(0xb8d8a0);
     this.placeWildflowerRodProp();
     this.spawnFishQuestNpc("swamp");
+    this.spawnCosmicHaberdasher();
     this.spawnBaitCrate(this.jungleLeft + 140, "Swamp Island");
     this.spawnSwampFrostpeakOceanFish();
     this.spawnFishInZone(this.pondLeft, this.pondRight, 3, "pond");
+  }
+
+  /** Between cave rope (~5210) and east swamp port (~5760). */
+  private spawnCosmicHaberdasher(): void {
+    if (this.cosmicHaberdasher) return;
+    const x = Math.round((this.caveCrackX + this.jungleRight - 40) / 2);
+    this.cosmicHaberdasher = new TalkNpc(
+      this,
+      x,
+      this.groundY,
+      RESONATED_HAT_NPC_NAME,
+      ""
+    );
+    this.cosmicHaberdasher.sprite.clearTint();
+    this.cosmicHaberdasher.sprite.setTexture("npc_green_shirt");
+  }
+
+  private handleCosmicHaberdasherTalk(): boolean {
+    if (!this.cosmicHaberdasher) return false;
+    if (this.cosmicHaberdasher.talking) {
+      this.cosmicHaberdasher.decline();
+      return true;
+    }
+
+    const ui = this.scene.get("UIScene") as UIScene;
+    const inv = this.inventory;
+
+    if (inv.resonatedHatDone || inv.ownsHat("hat_resonated")) {
+      inv.resonatedHatDone = true;
+      this.cosmicHaberdasher.speak(RESONATED_HAT_LINES.already);
+      return true;
+    }
+
+    if (!inv.resonatedHatQuestStarted) {
+      inv.resonatedHatQuestStarted = true;
+      const early = inv.tryTurnInResonatedHat();
+      if (early.ok) {
+        this.cosmicHaberdasher.speak(RESONATED_HAT_LINES.done);
+        ui.showToast("Resonated Hat crafted!", "#c9a0ff");
+        this.syncPlayerHat();
+        this.persistSave();
+        ui.refreshQuestTracker?.();
+        return true;
+      }
+      const list = resonatedHatChecklist(inv);
+      this.cosmicHaberdasher.speak(
+        `${RESONATED_HAT_LINES.greet}\n\nBring me:\n${list}`
+      );
+      ui.showToast("Quest: Resonated Hat", "#c9a0ff");
+      this.persistSave();
+      ui.refreshQuestTracker?.();
+      return true;
+    }
+
+    const result = inv.tryTurnInResonatedHat();
+    if (result.ok) {
+      this.cosmicHaberdasher.speak(RESONATED_HAT_LINES.done);
+      ui.showToast("Resonated Hat crafted!", "#c9a0ff");
+      this.syncPlayerHat();
+      this.persistSave();
+      ui.refreshQuestTracker?.();
+      return true;
+    }
+
+    const list = resonatedHatChecklist(inv);
+    this.cosmicHaberdasher.speak(
+      `${RESONATED_HAT_LINES.needMore}\n\n${list}`
+    );
+    return true;
   }
 
   private loadFrostpeakZone(): void {
@@ -3682,6 +4504,7 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     this.dayNight?.update(delta);
     this.weather?.update(delta);
+    this.applyStellarAtmosphereOverride();
     this.updateAshenSkyHeat();
     if (this.dayNight && this.nightAmbient) {
       this.nightAmbient.update(this.dayNight.getNightFactor());
@@ -3700,7 +4523,10 @@ export class GameScene extends Phaser.Scene {
     this.syncLaserRodVfx();
     this.syncFrostRodVfx();
     this.syncStellarSurferVfx();
-    if (!this.inFrostpeakCave) {
+    this.syncStarLineVfx();
+    this.updateSurferMastery(delta);
+    this.updateMoonHover(delta);
+    if (!this.inFrostpeakCave && !this.inStellarSky) {
       if (
         Math.abs(this.player.sprite.x - (this.jungleLeft + this.jungleRight) / 2) <
         2400
@@ -3718,7 +4544,9 @@ export class GameScene extends Phaser.Scene {
 
     const areaId = this.getAreaId(this.player.sprite.x);
     let musicZone: MusicZone;
-    if (this.inFrostpeakCave) {
+    if (this.inStellarSky) {
+      musicZone = "stellar_sky";
+    } else if (this.inFrostpeakCave) {
       musicZone = "frostpeak_cave";
     } else if (areaId === "reef") {
       musicZone = "reef";
@@ -3734,12 +4562,19 @@ export class GameScene extends Phaser.Scene {
     this.music.setZone(musicZone);
 
     const ui = this.scene.get("UIScene") as UIScene;
-    if (!this.inFrostpeakCave && areaId !== this.lastAreaZone) {
+    if (
+      !this.inFrostpeakCave &&
+      !this.inStellarSky &&
+      areaId !== this.lastAreaZone
+    ) {
       this.lastAreaZone = areaId;
       ui.showAreaBanner(this.getAreaName(areaId));
     }
 
-    if (areaId === "ocean" || areaId === "reef") {
+    if (
+      !this.inStellarSky &&
+      (areaId === "ocean" || areaId === "reef")
+    ) {
       ui.setOceanMarkers(this.getOceanMarkers(this.player.sprite.x));
     } else {
       ui.setOceanMarkers(null);
@@ -3750,7 +4585,19 @@ export class GameScene extends Phaser.Scene {
       this.refreshCaveAreaBanner(ui);
     }
 
-    if (this.inFrostpeakCave) {
+    if (this.inStellarSky) {
+      if (this.isNearStellarPortal()) {
+        ui.setPrompt("F — Leave Stellar Sky");
+      } else if (this.stellarBeing?.talking) {
+        ui.setPrompt("F / X — Close");
+      } else if (
+        this.stellarBeing?.isNear(this.player.sprite.x, this.player.sprite.y)
+      ) {
+        ui.setPrompt("F — Approach the Astral Warden");
+      } else {
+        ui.setPrompt("A/D walk · Tide Compass to leave");
+      }
+    } else if (this.inFrostpeakCave) {
       this.refreshCavePrompt(ui);
     } else if (this.baitPlacementId) {
       ui.setPrompt("LMB cast bait · X/Esc cancel");
@@ -3794,6 +4641,13 @@ export class GameScene extends Phaser.Scene {
       this.reefGuide.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
       ui.setPrompt("F — Talk to Dock Guide");
+    } else if (
+      this.cosmicHaberdasher?.isNear(
+        this.player.sprite.x,
+        this.player.sprite.y
+      )
+    ) {
+      ui.setPrompt(`F — Talk to ${RESONATED_HAT_NPC_NAME}`);
     } else if (
       this.frostHermit?.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
@@ -3938,11 +4792,40 @@ export class GameScene extends Phaser.Scene {
     ) {
       this.reefGuide.decline();
     }
+    if (
+      this.stellarBeing?.talking &&
+      !this.stellarBeing.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      this.stellarBeing.decline();
+    }
+    if (
+      this.cosmicHaberdasher?.talking &&
+      !this.cosmicHaberdasher.isNear(
+        this.player.sprite.x,
+        this.player.sprite.y
+      )
+    ) {
+      this.cosmicHaberdasher.decline();
+    }
   }
 
-  /** Fade volcanic red sky in as you approach / stand on Ashencast. */
+  /** Hide overworld sky while in Stellar Sky; restore it on leave. */
+  private applyStellarAtmosphereOverride(): void {
+    if (!this.skyVisual) return;
+    if (this.inStellarSky) {
+      this.skyVisual.sky.setVisible(false);
+      this.skyVisual.sun.setVisible(false);
+      this.skyVisual.moon.setVisible(false);
+      return;
+    }
+    // WeatherSystem manages sun/moon each frame; only the sky was left stuck off
+    if (!this.skyVisual.sky.visible) {
+      this.skyVisual.sky.setVisible(true);
+    }
+  }
+
   private updateAshenSkyHeat(): void {
-    if (!this.weather || this.inFrostpeakCave) {
+    if (!this.weather || this.inFrostpeakCave || this.inStellarSky) {
       this.weather?.setAshenSkyHeat(0);
       return;
     }
@@ -4155,6 +5038,26 @@ export class GameScene extends Phaser.Scene {
   private clampPlayerToLand(): void {
     const x = this.player.sprite.x;
 
+    if (this.inStellarSky) {
+      const minX = this.stellarLandLeft + 16;
+      const maxX = this.stellarLandRight - 16;
+      if (x < minX) {
+        this.player.sprite.x = minX;
+        this.player.sprite.setVelocityX(0);
+      } else if (x > maxX) {
+        this.player.sprite.x = maxX;
+        this.player.sprite.setVelocityX(0);
+      }
+      if (this.player.sprite.y > this.groundY + 80) {
+        this.player.sprite.setPosition(
+          Phaser.Math.Clamp(this.player.sprite.x, minX, maxX),
+          this.groundY - 40
+        );
+        this.player.sprite.setVelocity(0, 0);
+      }
+      return;
+    }
+
     if (this.inFrostpeakCave) {
       const zones = caveWalkZones(this.caveOriginX);
       // Hard stop at cave mouth / tip so the body can't hang into the void
@@ -4321,7 +5224,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Sync ember halo to the forge furnace on the rod shaft. */
   private syncForgeRodVfx(): void {
-    const show = !this.inFrostpeakCave && this.player.isForgeRodInHand();
+    const show = !this.inFrostpeakCave && !this.inStellarSky && this.player.isForgeRodInHand();
     if (!show) {
       this.forgeRodVfx?.setActive(false);
       return;
@@ -4337,7 +5240,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Pink/purple energy wrap for Laser Zeus skin while held. */
   private syncLaserRodVfx(): void {
-    const show = !this.inFrostpeakCave && this.player.isLaserRodInHand();
+    const show = !this.inFrostpeakCave && !this.inStellarSky && this.player.isLaserRodInHand();
     if (!show) {
       this.laserRodVfx?.setActive(false);
       return;
@@ -4354,7 +5257,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Frostpeak skin held VFX (Hyperthermic / Hyperboreal / Halo / Lotus). */
   private syncFrostRodVfx(): void {
-    const theme = !this.inFrostpeakCave
+    const theme = !this.inFrostpeakCave && !this.inStellarSky
       ? this.player.getFrostHeldTheme()
       : null;
     if (!theme) {
@@ -4376,6 +5279,7 @@ export class GameScene extends Phaser.Scene {
   private syncStellarSurferVfx(): void {
     const show =
       !this.inFrostpeakCave &&
+      !this.inStellarSky &&
       !this.isRidingStellarSurfer() &&
       this.player.isStellarSurferInHand();
     if (!show) {
@@ -4390,6 +5294,120 @@ export class GameScene extends Phaser.Scene {
     const tip = this.player.getRodTip();
     this.stellarSurferVfx.setDepth(this.player.sprite.depth + 2);
     this.stellarSurferVfx.update(hand.x, hand.y, tip.x, tip.y, this.time.now);
+  }
+
+  /** Floating rocks + dark-matter bridges on the held Star Line Rod. */
+  private syncStarLineVfx(): void {
+    const show = !this.inFrostpeakCave && !this.inStellarSky && this.player.isStarLineRodInHand();
+    if (!show) {
+      this.starLineVfx?.setActive(false);
+      return;
+    }
+    if (!this.starLineVfx) {
+      this.starLineVfx = new StarLineHeldVfx(this);
+    }
+    this.starLineVfx.setActive(true);
+    const hand = this.player.getRodHandWorld();
+    const tip = this.player.getRodTip();
+    this.starLineVfx.setDepth(this.player.sprite.depth + 2);
+    this.starLineVfx.update(hand.x, hand.y, tip.x, tip.y, this.time.now);
+  }
+
+  /** Surfer mastery: ride time, follower black hole, periodic area fish. */
+  private updateSurferMastery(delta: number): void {
+    if (this.isRidingStellarSurfer()) {
+      this.inventory.recordSurferMasteryRideMs(delta);
+      this.sailboat?.setDuckCosmetic(
+        this.inventory.isRubberDuckSurferSkinActive()
+      );
+    }
+
+    const surferEquipped =
+      this.inventory.getEquippedRodId() === "test_rod" &&
+      this.inventory.isStellarSurferMasteryUnlocked();
+    if (!surferEquipped) {
+      this.surferMasteryBlackHole?.setActive(false);
+      this.surferMasteryGrantMs = 0;
+      this.surferMasteryGrantPending = false;
+      return;
+    }
+
+    if (!this.surferMasteryBlackHole) {
+      this.surferMasteryBlackHole = new SurferMasteryBlackHole(this);
+    }
+    this.surferMasteryBlackHole.setActive(true);
+    this.surferMasteryBlackHole.setDuckMode(
+      this.inventory.isRubberDuckSurferSkinActive()
+    );
+    this.surferMasteryBlackHole.setDepth(this.player.sprite.depth - 1);
+    this.surferMasteryBlackHole.update(
+      this.player.sprite.x,
+      this.player.sprite.y,
+      this.player.getFacing() === "left",
+      delta
+    );
+
+    this.surferMasteryGrantMs += delta;
+    if (
+      this.surferMasteryGrantMs >= InventorySystem.SURFER_MASTERY_GRANT_MS &&
+      !this.surferMasteryGrantPending
+    ) {
+      this.surferMasteryGrantMs = 0;
+      this.surferMasteryGrantPending = true;
+      const totalMs = this.surferMasteryBlackHole.playGrantBurst();
+      // Fish pops at the explode beat (~38% into the burst)
+      this.time.delayedCall(totalMs * 0.4, () => {
+        this.surferMasteryGrantPending = false;
+        this.trySurferMasteryFishGrant();
+      });
+    }
+  }
+
+  private getHabitatNearPlayer(): FishHabitat {
+    if (this.inFrostpeakCave) return "cave";
+    const x = this.player.sprite.x;
+    const zones = getBaitWaterZones(this.getBaitCastBounds());
+    for (const z of zones) {
+      if (x >= z.left && x <= z.right) return z.habitat;
+    }
+    let best: FishHabitat = "ocean";
+    let bestDist = Infinity;
+    for (const z of zones) {
+      const mid = (z.left + z.right) / 2;
+      const d = Math.abs(x - mid);
+      if (d < bestDist) {
+        bestDist = d;
+        best = z.habitat;
+      }
+    }
+    return best;
+  }
+
+  private trySurferMasteryFishGrant(): void {
+    if (!this.inventory.isStellarSurferMasteryUnlocked()) return;
+    if (this.inventory.getEquippedRodId() !== "test_rod") return;
+    const habitat = this.getHabitatNearPlayer();
+    const luck = this.inventory.getFishingStats().luck;
+    const speciesId = rollFishSpecies(luck, habitat, [
+      "dolphin",
+      "cave_whale",
+    ]);
+    if (speciesId === "dolphin" || speciesId === "cave_whale") return;
+    if (ITEMS[speciesId]?.abundanceOnly) return;
+    const wasNewBySpecies = new Map<ItemId, boolean>([
+      [speciesId, !this.inventory.isBestiaryFound(speciesId)],
+    ]);
+    const mutation: FishMutationId =
+      Math.random() < 0.8 ? "starstruck" : "event_horizon";
+    const size = rollFishSize();
+    const added = this.inventory.addItem(speciesId, 1, mutation, size);
+    if (!added) return;
+    const ui = this.scene.get("UIScene") as UIScene | undefined;
+    ui?.presentCatchToasts(
+      [{ speciesId, mutation, size }],
+      wasNewBySpecies
+    );
+    this.persistSave();
   }
 
   /** Hotbar rod + optional active skin (baked styles; Gallery overlay only). */
@@ -4422,13 +5440,17 @@ export class GameScene extends Phaser.Scene {
   persistSave(): void {
     if (!this.inventory || !this.player) return;
     this.syncCurioStockToInventory();
-    // Don't save the player stuck inside the mountain
-    const saveX = this.inFrostpeakCave
-      ? this.frostCaveX
-      : this.player.sprite.x;
-    const saveY = this.inFrostpeakCave
-      ? this.groundY - 40
-      : this.player.sprite.y;
+    // Don't save the player stuck inside the mountain / stellar pocket
+    const saveX =
+      this.inFrostpeakCave || this.inStellarSky
+        ? this.inStellarSky
+          ? this.stellarReturnX || (this.islandLeft + this.islandRight) / 2
+          : this.frostCaveX
+        : this.player.sprite.x;
+    const saveY =
+      this.inFrostpeakCave || this.inStellarSky
+        ? this.groundY - 40
+        : this.player.sprite.y;
     saveActiveSave(
       this.inventory.toSave({
         playerX: saveX,

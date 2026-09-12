@@ -9,6 +9,7 @@ import { drawForgeRodIcon } from "../art/ForgeRodArt";
 import { drawStarweaverRodIcon } from "../art/StarweaverRodArt";
 import { drawBirthdayRodIcon } from "../art/BirthdayRodArt";
 import { drawStellarSurferIcon } from "../art/StellarSurferArt";
+import { drawStarLineRodIcon } from "../art/StarLineRodArt";
 import { generateCraftStarlightFishIcon } from "../art/CraftIngredientArt";
 import {
   generateHouseTextures,
@@ -17,7 +18,7 @@ import {
 import { generateAshencastTreeTextures, generateAshencastHouseTextures } from "../world/AshencastIsland";
 import { generatePlayerArt } from "../entities/PlayerArt";
 import { generateBoatArt } from "../entities/BoatArt";
-import { generateMerchantTexture, generateCodeGuyTexture } from "../entities/FishMerchant";
+import { generateMerchantTexture, generateCodeGuyTexture, generateGreenShirtNpcTexture } from "../entities/FishMerchant";
 import { generateHatTextures } from "./hatTextures";
 import { generateRodSkinTextures } from "../art/RodSkinArt";
 import { generateBaitTextures } from "../art/BaitArt";
@@ -412,6 +413,10 @@ export function generateRodTextures(scene: Phaser.Scene): void {
   drawStellarSurferIcon(g);
   g.generateTexture("rod_test", S, S);
 
+  g.clear();
+  drawStarLineRodIcon(g);
+  g.generateTexture("rod_star_line", S, S);
+
   g.destroy();
 }
 
@@ -668,6 +673,7 @@ export function ensureRodIconTextures(scene: Phaser.Scene): void {
     "rod_portal",
     "rod_recoil",
     "rod_test",
+    "rod_star_line",
   ];
   for (const key of required) {
     if (!scene.textures.exists(key)) {
@@ -686,6 +692,7 @@ function makeTextures(scene: Phaser.Scene): void {
   generateBoatArt(scene);
   generateMerchantTexture(scene);
   generateCodeGuyTexture(scene);
+  generateGreenShirtNpcTexture(scene);
 
   // Bobber fallback only — real art is loaded in preload (do not overwrite keys)
   g.clear();
@@ -840,6 +847,33 @@ function makeTextures(scene: Phaser.Scene): void {
   g.fillStyle(0xb8860b);
   g.fillCircle(16, 17, 3);
   g.generateTexture("bestiary_book", 32, 32);
+
+  // Tide Compass
+  g.clear();
+  g.fillStyle(0x000000, 0.2);
+  g.fillEllipse(16, 28, 22, 6);
+  g.fillStyle(0x3a2a18);
+  g.fillCircle(16, 16, 12);
+  g.fillStyle(0xc4a86a);
+  g.fillCircle(16, 16, 11);
+  g.fillStyle(0x1a2838);
+  g.fillCircle(16, 16, 8.5);
+  g.fillStyle(0x2a4a68);
+  g.fillCircle(16, 16, 7);
+  g.lineStyle(1.5, 0xe8d8b0);
+  g.strokeCircle(16, 16, 11);
+  g.lineStyle(1, 0x7ec8e8, 0.9);
+  g.lineBetween(16, 16, 16, 9);
+  g.lineStyle(1, 0xff8866, 0.95);
+  g.lineBetween(16, 16, 22, 18);
+  g.fillStyle(0xffe066);
+  g.fillCircle(16, 16, 1.8);
+  g.fillStyle(0xf0e6d2);
+  g.fillCircle(16, 7, 1.2);
+  g.fillCircle(25, 16, 1.2);
+  g.fillCircle(16, 25, 1.2);
+  g.fillCircle(7, 16, 1.2);
+  g.generateTexture("tide_compass", 32, 32);
 
   // Backpack shop icon (not worn on the player)
   g.clear();

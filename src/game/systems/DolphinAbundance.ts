@@ -57,6 +57,16 @@ export class DolphinAbundance {
     return this.active;
   }
 
+  /** Force-start abundance (dev / quest testing). */
+  forceStart(): void {
+    if (this.active) {
+      this.activeRemaining = DURATION_MS;
+      if (this.dolphins.length === 0) this.spawnDolphins();
+      return;
+    }
+    this.startAbundance();
+  }
+
   /** Remove a dolphin from the abundance tracking when caught. */
   notifyFishRemoved(fish: Fish): void {
     this.dolphins = this.dolphins.filter((d) => d !== fish);

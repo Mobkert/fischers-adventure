@@ -4,6 +4,51 @@ import Phaser from "phaser";
 export const SKIN_ICON_HAND = { x: 14, y: 50 };
 export const SKIN_ICON_TIP = { x: 50, y: 14 };
 
+/** Draw a rubber duck centered at (cx, cy). scale ~1 = ~28px tall. */
+export function drawRubberDuckAt(
+  g: Phaser.GameObjects.Graphics,
+  cx: number,
+  cy: number,
+  scale = 1
+): void {
+  const s = scale;
+  // Soft shadow
+  g.fillStyle(0x000000, 0.18);
+  g.fillEllipse(cx, cy + 10 * s, 18 * s, 5 * s);
+  // Body
+  g.fillStyle(0xf5c518, 1);
+  g.fillEllipse(cx, cy + 2 * s, 16 * s, 12 * s);
+  g.fillStyle(0xffe066, 1);
+  g.fillEllipse(cx - 1 * s, cy, 12 * s, 9 * s);
+  // Wing
+  g.fillStyle(0xe8b010, 1);
+  g.fillEllipse(cx + 2 * s, cy + 3 * s, 7 * s, 5 * s);
+  g.fillStyle(0xfff0a0, 0.85);
+  g.fillEllipse(cx + 1 * s, cy + 2 * s, 4 * s, 2.5 * s);
+  // Head
+  g.fillStyle(0xf5c518, 1);
+  g.fillCircle(cx - 6 * s, cy - 8 * s, 7.5 * s);
+  g.fillStyle(0xffe066, 1);
+  g.fillCircle(cx - 7 * s, cy - 9 * s, 5.5 * s);
+  // Beak
+  g.fillStyle(0xff8c2a, 1);
+  g.fillTriangle(
+    cx - 13 * s,
+    cy - 8 * s,
+    cx - 20 * s,
+    cy - 6.5 * s,
+    cx - 13 * s,
+    cy - 5 * s
+  );
+  g.fillStyle(0xffa84a, 1);
+  g.fillEllipse(cx - 15.5 * s, cy - 6.2 * s, 5 * s, 2.2 * s);
+  // Eye
+  g.fillStyle(0x1a1a1a, 1);
+  g.fillCircle(cx - 8 * s, cy - 10 * s, 1.6 * s);
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(cx - 8.5 * s, cy - 10.5 * s, 0.7 * s);
+}
+
 function lerp(
   handX: number,
   handY: number,
@@ -272,6 +317,114 @@ export function drawPufferfirmRod(
   g.fillCircle(tipX - dx * 0.12, tipY - dy * 0.12, 1.8);
   g.fillStyle(0x2c2c2c);
   g.fillRect(handX - 3, handY - 2, 8, 8);
+}
+
+/** Stellar Surfer mastery — yellow surfboard blank with a duck face on the tip. */
+export function drawRubberDuckRod(
+  g: Phaser.GameObjects.Graphics,
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number
+): void {
+  const dx = tipX - handX;
+  const dy = tipY - handY;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const px = -uy;
+  const py = ux;
+
+  const edge = (t: number, w: number) => ({
+    x: handX + dx * t + px * w,
+    y: handY + dy * t + py * w,
+  });
+
+  // Soft water glow under the deck
+  g.fillStyle(0x4aa8e8, 0.28);
+  for (let i = 0; i < 4; i++) {
+    const p = edge(0.18 + i * 0.2, 0);
+    g.fillCircle(p.x, p.y, 4.5 + (i % 2));
+  }
+
+  // Yellow board silhouette
+  g.lineStyle(12, 0xc48808, 1);
+  g.lineBetween(handX, handY, tipX, tipY);
+  g.lineStyle(9, 0xf0b410, 1);
+  g.lineBetween(handX, handY, tipX, tipY);
+  g.lineStyle(6.5, 0xffd84a, 1);
+  g.lineBetween(handX, handY, tipX, tipY);
+  g.lineStyle(3.5, 0xffe878, 0.95);
+  g.lineBetween(
+    handX + px * 0.6,
+    handY + py * 0.6,
+    tipX + px * 0.6,
+    tipY + py * 0.6
+  );
+
+  // Rail highlights
+  g.lineStyle(1.4, 0xfff6c8, 0.85);
+  g.lineBetween(handX + px * 3.4, handY + py * 3.4, tipX + px * 2.6, tipY + py * 2.6);
+  g.lineBetween(handX - px * 3.4, handY - py * 3.4, tipX - px * 2.6, tipY - py * 2.6);
+
+  // Blue water stripe down the deck
+  g.lineStyle(2.2, 0x4aa8e8, 0.75);
+  g.lineBetween(handX - px * 1.1, handY - py * 1.1, tipX - px * 1.1, tipY - py * 1.1);
+  g.lineStyle(1.2, 0xffffff, 0.55);
+  g.lineBetween(handX + px * 1.6, handY + py * 1.6, tipX + px * 1.6, tipY + py * 1.6);
+
+  // Tail fin
+  const tail = edge(0.02, 0);
+  g.fillStyle(0xd49810, 1);
+  g.fillTriangle(
+    tail.x - ux * 2,
+    tail.y - uy * 2,
+    tail.x + px * 5 + ux * 3,
+    tail.y + py * 5 + uy * 3,
+    tail.x - px * 5 + ux * 3,
+    tail.y - py * 5 + uy * 3
+  );
+
+  // —— Duck face on the tip / nose ——
+  const hx = tipX - ux * 5;
+  const hy = tipY - uy * 5;
+  g.fillStyle(0xf5c518, 1);
+  g.fillCircle(hx, hy, 6.5);
+  g.fillStyle(0xffe066, 1);
+  g.fillCircle(hx - ux * 0.8 - px * 0.4, hy - uy * 0.8 - py * 0.4, 4.8);
+
+  // Beak pointing toward tip
+  g.fillStyle(0xff8c2a, 1);
+  g.fillTriangle(
+    tipX - ux * 1.5 - px * 3.2,
+    tipY - uy * 1.5 - py * 3.2,
+    tipX + ux * 3.5,
+    tipY + uy * 3.5,
+    tipX - ux * 1.5 + px * 3.2,
+    tipY - uy * 1.5 + py * 3.2
+  );
+  g.fillStyle(0xffa84a, 1);
+  g.fillEllipse(tipX + ux * 0.5, tipY + uy * 0.5, 4, 2.4);
+
+  // Eye
+  g.fillStyle(0x1a1a1a, 1);
+  g.fillCircle(hx + px * 2.4 - ux * 1.2, hy + py * 2.4 - uy * 1.2, 1.7);
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(hx + px * 2.8 - ux * 1.6, hy + py * 2.8 - uy * 1.6, 0.7);
+
+  // Cheek blush
+  g.fillStyle(0xff8866, 0.45);
+  g.fillEllipse(hx + px * 3.5 + ux * 0.5, hy + py * 3.5 + uy * 0.5, 2.2, 1.4);
+
+  // Grip cork
+  g.fillStyle(0xc4a574);
+  g.fillRect(handX - 3, handY - 2, 8, 8);
+  g.fillStyle(0x4aa8e8);
+  g.fillRect(handX - 3, handY + 5, 8, 3);
+  g.fillStyle(0xffe066);
+  g.fillCircle(handX + 1, handY + 6, 3.2);
+  g.fillStyle(0xffffff);
+  g.fillCircle(handX + 1, handY + 6, 1.2);
 }
 
 /** Poisoned Crystal — toxic blank, drip crystals, vine wraps. */

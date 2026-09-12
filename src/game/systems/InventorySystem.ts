@@ -17,6 +17,8 @@ import {
   sizeSellMult,
   hasUnsellableEffect,
   BESTIARY_CLAIM_REWARD,
+  BESTIARY_AREAS,
+  FishHabitat,
   BASE_ATTRACT_RADIUS,
   backpackSlotCount,
   backpackTier,
@@ -44,6 +46,15 @@ import {
 import { SaveData, cloneSave, defaultSave } from "../save/SaveBank";
 import type { WeatherId } from "./WeatherSystem";
 import { BoatId, BOATS, BOAT_IDS } from "../data/boats";
+import {
+  ASTRAL_STARLINE_COST,
+  ASTRAL_SURFER_CATCH_GOAL,
+  ASTRAL_SURFER_STAGE3_COST,
+  ASTRAL_SURFER_STAGE4_COST,
+  ASTRAL_SURFER_STAGE7_COST,
+  isStarlightCatch,
+} from "./AstralWardenQuest";
+import { RESONATED_HAT_COST } from "./ResonatedHatQuest";
 import {
   FROSTPEAK_EPIC_RODS,
   FROSTPEAK_MYTHICAL_MIN_VALUE,
@@ -143,6 +154,16 @@ export class InventorySystem {
   ownedHats: ItemId[] = [...STARTER_HAT_IDS];
   equippedHatId: ItemId | null = null;
   nautilusQuestDone = false;
+  astralStarlineDone = false;
+  astralSurferQuestStage = 0;
+  astralSurferStarlightCaught = false;
+  astralSurferDolphinStarline = false;
+  astralSurferCatchCount = 0;
+  astralSurferDolphinSurfer = false;
+  stellarSurferAscended = false;
+  stellarSkyDiscovered = false;
+  resonatedHatQuestStarted = false;
+  resonatedHatDone = false;
   activeFishQuest: ActiveFishQuest | null = null;
   ashencastQuestStage: AshencastQuestStage = 0;
   oreVendorStock = ORE_CLUSTER_VENDOR_STOCK_MAX;
@@ -151,11 +172,16 @@ export class InventorySystem {
   curioStockSave: import("./CurioTraderStock").CurioStockSave | null = null;
   redeemedPromoCodes: PromoCodeId[] = [];
   /**
-   * Recoil mastery progress (archived — set RECOIL_MASTERY_ENABLED to re-ship).
-   * Kept in saves so progress isn't wiped when the feature returns.
+   * Recoil mastery progress (set RECOIL_MASTERY_ENABLED to ship).
+   * recoilMasteryAshSold stores Blasted fish sold count.
    */
   recoilMasteryCatches = 0;
   recoilMasteryAshSold = 0;
+  portalMasteryLegendaries = 0;
+  portalMasteryTideUses = 0;
+  surferMasteryRideMs = 0;
+  surferMasteryDupes = 0;
+  surferMasteryEventHorizon = 0;
   backpackId: ItemId = "backpack_starter";
 
   selectedHotbarIndex = 0;
@@ -184,6 +210,13 @@ export class InventorySystem {
       };
       this.hotbar[2] = {
         itemId: "bestiary",
+        count: 1,
+        mutation: null,
+        size: null,
+        keep: false,
+      };
+      this.hotbar[3] = {
+        itemId: "tide_compass",
         count: 1,
         mutation: null,
         size: null,
@@ -239,6 +272,20 @@ export class InventorySystem {
     this.ownedHats = [...save.ownedHats];
     this.equippedHatId = save.equippedHatId;
     this.nautilusQuestDone = save.nautilusQuestDone;
+    this.astralStarlineDone = save.astralStarlineDone;
+    this.astralSurferQuestStage = save.astralSurferQuestStage;
+    this.astralSurferStarlightCaught = save.astralSurferStarlightCaught;
+    this.astralSurferDolphinStarline = save.astralSurferDolphinStarline;
+    this.astralSurferCatchCount = save.astralSurferCatchCount;
+    this.astralSurferDolphinSurfer = save.astralSurferDolphinSurfer;
+    this.stellarSurferAscended = save.stellarSurferAscended;
+    this.stellarSkyDiscovered = save.stellarSkyDiscovered;
+    this.resonatedHatQuestStarted = save.resonatedHatQuestStarted;
+    this.resonatedHatDone = save.resonatedHatDone;
+    if (this.ownsHat("hat_resonated")) {
+      this.resonatedHatDone = true;
+      this.resonatedHatQuestStarted = true;
+    }
     this.activeFishQuest = save.activeFishQuest
       ? { ...save.activeFishQuest }
       : null;
@@ -254,6 +301,11 @@ export class InventorySystem {
     this.redeemedPromoCodes = [...save.redeemedPromoCodes];
     this.recoilMasteryCatches = save.recoilMasteryCatches;
     this.recoilMasteryAshSold = save.recoilMasteryAshSold;
+    this.portalMasteryLegendaries = save.portalMasteryLegendaries ?? 0;
+    this.portalMasteryTideUses = save.portalMasteryTideUses ?? 0;
+    this.surferMasteryRideMs = save.surferMasteryRideMs ?? 0;
+    this.surferMasteryDupes = save.surferMasteryDupes ?? 0;
+    this.surferMasteryEventHorizon = save.surferMasteryEventHorizon ?? 0;
     this.backpackId = save.backpackId;
     this.selectedHotbarIndex = save.selectedHotbarIndex;
     this.hotbar = save.hotbar.map((s) => ({ ...s }));
@@ -270,7 +322,7 @@ export class InventorySystem {
     this.bestiaryFound = [...save.bestiaryFound];
     this.bestiaryClaimed = [...save.bestiaryClaimed];
     this.augmentUpgrades = { ...save.augmentUpgrades };
-    // Keep bag / equipment bag / bestiary consistent
+    // Keep bag / equipment bag / bestiary / tide compass consistent
     this.hotbar[1] = {
       itemId: "equipment_bag",
       count: 1,
@@ -280,6 +332,13 @@ export class InventorySystem {
     };
     this.hotbar[2] = {
       itemId: "bestiary",
+      count: 1,
+      mutation: null,
+      size: null,
+      keep: false,
+    };
+    this.hotbar[3] = {
+      itemId: "tide_compass",
       count: 1,
       mutation: null,
       size: null,
@@ -298,6 +357,52 @@ export class InventorySystem {
       size: null,
       keep: false,
     };
+    this.stripUnearnedAstralRods();
+    this.ensureSurferMasteryRewards();
+  }
+
+  /**
+   * Remove free Stellar Surfer / Star Line until earned via Astral Warden.
+   */
+  private stripUnearnedAstralRods(): void {
+    const keepSurfer =
+      this.stellarSurferAscended || this.astralSurferQuestStage >= 3;
+    if (!keepSurfer && this.ownsRod("test_rod")) {
+      this.ownedRods = this.ownedRods.filter((id) => id !== "test_rod");
+      if (this.equippedRodId === "test_rod") {
+        this.equippedRodId = "starter_rod";
+        this.hotbar[0] = {
+          itemId: "starter_rod",
+          count: 1,
+          mutation: null,
+          size: null,
+          keep: false,
+        };
+      }
+    }
+    if (!this.stellarSurferAscended) {
+      this.ownedBoats = this.ownedBoats.filter((id) => id !== "stellar_surfer");
+    }
+    if (!this.astralStarlineDone && this.ownsRod("star_line_rod")) {
+      // Keep Star Line if Surfer quest already past stage 1 (needed it)
+      if (this.astralSurferQuestStage < 1) {
+        this.ownedRods = this.ownedRods.filter((id) => id !== "star_line_rod");
+        if (this.equippedRodId === "star_line_rod") {
+          this.equippedRodId = this.ownsRod("test_rod")
+            ? "test_rod"
+            : "starter_rod";
+          this.hotbar[0] = {
+            itemId: this.equippedRodId,
+            count: 1,
+            mutation: null,
+            size: null,
+            keep: false,
+          };
+        }
+      } else {
+        this.astralStarlineDone = true;
+      }
+    }
   }
 
   toSave(extra: {
@@ -347,6 +452,16 @@ export class InventorySystem {
       ownedHats: [...this.ownedHats],
       equippedHatId: this.equippedHatId,
       nautilusQuestDone: this.nautilusQuestDone,
+      astralStarlineDone: this.astralStarlineDone,
+      astralSurferQuestStage: this.astralSurferQuestStage,
+      astralSurferStarlightCaught: this.astralSurferStarlightCaught,
+      astralSurferDolphinStarline: this.astralSurferDolphinStarline,
+      astralSurferCatchCount: this.astralSurferCatchCount,
+      astralSurferDolphinSurfer: this.astralSurferDolphinSurfer,
+      stellarSurferAscended: this.stellarSurferAscended,
+      stellarSkyDiscovered: this.stellarSkyDiscovered,
+      resonatedHatQuestStarted: this.resonatedHatQuestStarted,
+      resonatedHatDone: this.resonatedHatDone,
       activeFishQuest: this.activeFishQuest
         ? { ...this.activeFishQuest }
         : null,
@@ -362,6 +477,11 @@ export class InventorySystem {
       redeemedPromoCodes: [...this.redeemedPromoCodes],
       recoilMasteryCatches: this.recoilMasteryCatches,
       recoilMasteryAshSold: this.recoilMasteryAshSold,
+      portalMasteryLegendaries: this.portalMasteryLegendaries,
+      portalMasteryTideUses: this.portalMasteryTideUses,
+      surferMasteryRideMs: this.surferMasteryRideMs,
+      surferMasteryDupes: this.surferMasteryDupes,
+      surferMasteryEventHorizon: this.surferMasteryEventHorizon,
       updatedAt: Date.now(),
     });
   }
@@ -376,15 +496,16 @@ export class InventorySystem {
    * Recoil Rod mastery (rapid 3rd-kick burst).
    * Archived for now — flip to true when shipping the feature.
    */
-  static readonly RECOIL_MASTERY_ENABLED = false;
+  static readonly RECOIL_MASTERY_ENABLED = true;
   static readonly RECOIL_MASTERY_CATCH_GOAL = 50;
-  static readonly RECOIL_MASTERY_ASH_SELL_GOAL = 30;
+  static readonly RECOIL_MASTERY_BLASTED_SELL_GOAL = 30;
 
   isRecoilBurstMasteryUnlocked(): boolean {
     if (!InventorySystem.RECOIL_MASTERY_ENABLED) return false;
     return (
       this.recoilMasteryCatches >= InventorySystem.RECOIL_MASTERY_CATCH_GOAL &&
-      this.recoilMasteryAshSold >= InventorySystem.RECOIL_MASTERY_ASH_SELL_GOAL
+      this.recoilMasteryAshSold >=
+        InventorySystem.RECOIL_MASTERY_BLASTED_SELL_GOAL
     );
   }
 
@@ -393,9 +514,106 @@ export class InventorySystem {
     this.recoilMasteryCatches += count;
   }
 
-  recordAshFishSold(count = 1): void {
+  /** Count Blasted fish sold toward Recoil mastery (stored in recoilMasteryAshSold). */
+  recordBlastedFishSold(count = 1): void {
     if (!InventorySystem.RECOIL_MASTERY_ENABLED || count <= 0) return;
     this.recoilMasteryAshSold += count;
+  }
+
+  static readonly PORTAL_MASTERY_ENABLED = true;
+  static readonly PORTAL_MASTERY_LEGENDARY_GOAL = 15;
+  static readonly PORTAL_MASTERY_TIDE_GOAL = 10;
+  static readonly PORTAL_MASTERY_GATE_DUPE_CHANCE = 0.3;
+
+  isPortalMasteryUnlocked(): boolean {
+    if (!InventorySystem.PORTAL_MASTERY_ENABLED) return false;
+    return (
+      this.portalMasteryLegendaries >=
+        InventorySystem.PORTAL_MASTERY_LEGENDARY_GOAL &&
+      this.portalMasteryTideUses >= InventorySystem.PORTAL_MASTERY_TIDE_GOAL
+    );
+  }
+
+  recordPortalMasteryLegendary(count = 1): void {
+    if (!InventorySystem.PORTAL_MASTERY_ENABLED || count <= 0) return;
+    this.portalMasteryLegendaries += count;
+  }
+
+  recordPortalMasteryTideUse(count = 1): void {
+    if (!InventorySystem.PORTAL_MASTERY_ENABLED || count <= 0) return;
+    if (this.getEquippedRodId() !== "portal_rod") return;
+    this.portalMasteryTideUses += count;
+  }
+
+  static readonly SURFER_MASTERY_ENABLED = true;
+  static readonly SURFER_MASTERY_RIDE_MS = 5 * 60 * 1000;
+  static readonly SURFER_MASTERY_DUPE_GOAL = 50;
+  static readonly SURFER_MASTERY_EVENT_HORIZON_GOAL = 33;
+  static readonly SURFER_MASTERY_GRANT_MS = 30_000;
+
+  /** Ascended Surfer only — DEFINED form cannot progress or claim mastery. */
+  canProgressStellarSurferMastery(): boolean {
+    return (
+      InventorySystem.SURFER_MASTERY_ENABLED &&
+      this.ownsRod("test_rod") &&
+      this.stellarSurferAscended &&
+      !this.isStellarSurferDefined()
+    );
+  }
+
+  isStellarSurferMasteryUnlocked(): boolean {
+    if (!this.canProgressStellarSurferMastery()) return false;
+    return (
+      this.surferMasteryRideMs >= InventorySystem.SURFER_MASTERY_RIDE_MS &&
+      this.surferMasteryDupes >= InventorySystem.SURFER_MASTERY_DUPE_GOAL &&
+      this.surferMasteryEventHorizon >=
+        InventorySystem.SURFER_MASTERY_EVENT_HORIZON_GOAL
+    );
+  }
+
+  /** Grant Rubber Duck skin when Surfer mastery is complete. */
+  ensureSurferMasteryRewards(): void {
+    if (!this.isStellarSurferMasteryUnlocked()) return;
+    if (!this.ownsRodSkin("rubber_duck")) {
+      this.ownedRodSkins.push("rubber_duck");
+      if (
+        !this.activeRodSkins["test_rod"] ||
+        this.activeRodSkins["test_rod"] === "default"
+      ) {
+        this.activeRodSkins["test_rod"] = "rubber_duck";
+      }
+    }
+  }
+
+  isRubberDuckSurferSkinActive(): boolean {
+    return (
+      this.getEquippedRodId() === "test_rod" &&
+      this.getActiveRodSkinId("test_rod") === "rubber_duck"
+    );
+  }
+
+  recordSurferMasteryRideMs(ms: number): void {
+    if (!this.canProgressStellarSurferMastery() || ms <= 0) return;
+    if (this.surferMasteryRideMs >= InventorySystem.SURFER_MASTERY_RIDE_MS) {
+      return;
+    }
+    this.surferMasteryRideMs = Math.min(
+      InventorySystem.SURFER_MASTERY_RIDE_MS,
+      this.surferMasteryRideMs + Math.floor(ms)
+    );
+    this.ensureSurferMasteryRewards();
+  }
+
+  recordSurferMasteryDupe(count = 1): void {
+    if (!this.canProgressStellarSurferMastery() || count <= 0) return;
+    this.surferMasteryDupes += count;
+    this.ensureSurferMasteryRewards();
+  }
+
+  recordSurferMasteryEventHorizon(count = 1): void {
+    if (!this.canProgressStellarSurferMastery() || count <= 0) return;
+    this.surferMasteryEventHorizon += count;
+    this.ensureSurferMasteryRewards();
   }
 
   getSelectedItem(): ItemId | null {
@@ -445,6 +663,24 @@ export class InventorySystem {
     if (this.equippedRodId === "augment_rod") {
       rod = applyAugmentUpgrades(rod, this.augmentUpgrades);
     }
+    if (this.equippedRodId === "test_rod" && this.isStellarSurferDefined()) {
+      rod = {
+        luck: Math.floor(rod.luck / 2),
+        resilience: Math.floor(rod.resilience / 2),
+        control: rod.control,
+        progressSpeed: Math.floor(rod.progressSpeed / 2),
+        lineDepth: Math.max(1, Math.floor(rod.lineDepth / 2)),
+      };
+    }
+    if (this.equippedRodId === "portal_rod" && this.isPortalMasteryUnlocked()) {
+      rod = {
+        luck: rod.luck + 25,
+        resilience: rod.resilience + 25,
+        control: rod.control,
+        progressSpeed: rod.progressSpeed + 25,
+        lineDepth: 4,
+      };
+    }
     const bob = ITEMS[this.equippedBobberId]?.bobberStats ?? {};
     const lineDepth =
       bob.lineDepthOverride != null
@@ -464,6 +700,24 @@ export class InventorySystem {
     const base = ITEMS[rodId]?.rodStats ?? { ...ZERO_ROD_STATS };
     if (rodId === "augment_rod") {
       return applyAugmentUpgrades(base, this.augmentUpgrades);
+    }
+    if (rodId === "test_rod" && this.isStellarSurferDefined()) {
+      return {
+        luck: Math.floor(base.luck / 2),
+        resilience: Math.floor(base.resilience / 2),
+        control: base.control,
+        progressSpeed: Math.floor(base.progressSpeed / 2),
+        lineDepth: Math.max(1, Math.floor(base.lineDepth / 2)),
+      };
+    }
+    if (rodId === "portal_rod" && this.isPortalMasteryUnlocked()) {
+      return {
+        luck: base.luck + 25,
+        resilience: base.resilience + 25,
+        control: base.control,
+        progressSpeed: base.progressSpeed + 25,
+        lineDepth: 4,
+      };
     }
     return { ...base };
   }
@@ -523,7 +777,7 @@ export class InventorySystem {
       return { ok: true, message: `Bought ${def.name} for $${cost}!` };
     }
     if (entry.kind === "rod") {
-      if (!def.isRod || entry.itemId === "tranquil_rod" || entry.itemId === "recoil_rod" || entry.itemId === "portal_rod" || entry.itemId === "forge_rod" || entry.itemId === "starweaver_rod" || entry.itemId === "birthday_rod") {
+      if (!def.isRod || entry.itemId === "tranquil_rod" || entry.itemId === "recoil_rod" || entry.itemId === "portal_rod" || entry.itemId === "forge_rod" || entry.itemId === "starweaver_rod" || entry.itemId === "birthday_rod" || entry.itemId === "star_line_rod") {
         return { ok: false, message: "That isn't a rod." };
       }
       if (this.ownsRod(entry.itemId)) {
@@ -591,9 +845,11 @@ export class InventorySystem {
   }
 
   getMutationChanceMult(): number {
-    return (
-      ITEMS[this.equippedBobberId]?.bobberStats?.mutationChanceMult ?? 1
-    );
+    const bobberMult =
+      ITEMS[this.equippedBobberId]?.bobberStats?.mutationChanceMult ?? 1;
+    const rodMult =
+      ITEMS[this.equippedRodId]?.worldMutationChanceMult ?? 1;
+    return bobberMult * rodMult;
   }
 
   ownsRod(rodId: ItemId): boolean {
@@ -631,7 +887,7 @@ export class InventorySystem {
   /** Buy a shop rod if affordable and not already owned. */
   buyRod(rodId: ItemId): { ok: boolean; message: string } {
     const def = ITEMS[rodId];
-    if (!def?.isRod || def.buyPrice == null || rodId === "tranquil_rod" || rodId === "recoil_rod" || rodId === "portal_rod" || rodId === "forge_rod" || rodId === "starweaver_rod" || rodId === "birthday_rod") {
+    if (!def?.isRod || def.buyPrice == null || rodId === "tranquil_rod" || rodId === "recoil_rod" || rodId === "portal_rod" || rodId === "forge_rod" || rodId === "starweaver_rod" || rodId === "birthday_rod" || rodId === "star_line_rod") {
       return { ok: false, message: "That isn't for sale." };
     }
     if (this.ownsRod(rodId)) {
@@ -1081,6 +1337,9 @@ export class InventorySystem {
     const def = ITEMS[rodId];
     if (!def?.isRod || !def.craftCost) {
       return { ok: false, message: "That can't be forged." };
+    }
+    if (def.limitedEdition && !def.limitedEdition.currentlyObtainable) {
+      return { ok: false, message: `${def.name} is no longer obtainable.` };
     }
     if (this.ownsRod(rodId)) {
       return { ok: false, message: `You already own the ${def.name}.` };
@@ -1788,6 +2047,17 @@ export class InventorySystem {
     return this.bestiaryFound.length;
   }
 
+  /** How many species discovered in a bestiary habitat tab. */
+  bestiaryFoundInHabitat(habitat: FishHabitat): number {
+    const area = BESTIARY_AREAS.find((a) => a.id === habitat);
+    if (!area) return 0;
+    let n = 0;
+    for (const id of area.fishIds) {
+      if (this.bestiaryFound.includes(id)) n += 1;
+    }
+    return n;
+  }
+
   /** Vault Keeper requires this many bestiary entries to start. */
   static readonly VAULT_QUEST_BESTIARY_MIN = 5;
 
@@ -1838,6 +2108,35 @@ export class InventorySystem {
     return true;
   }
 
+  /** Equipped Resonated Hat — required to enter Stellar Sky. */
+  canResonateToStellarSky(): boolean {
+    return this.equippedHatId === "hat_resonated" && this.ownsHat("hat_resonated");
+  }
+
+  tryTurnInResonatedHat(): {
+    ok: boolean;
+    message: "already" | "need_more" | "done";
+  } {
+    if (this.resonatedHatDone || this.ownsHat("hat_resonated")) {
+      this.resonatedHatDone = true;
+      this.resonatedHatQuestStarted = true;
+      return { ok: false, message: "already" };
+    }
+    for (const ing of RESONATED_HAT_COST) {
+      if (this.countIngredientMatching(ing) < ing.count) {
+        return { ok: false, message: "need_more" };
+      }
+    }
+    for (const ing of RESONATED_HAT_COST) {
+      this.removeIngredientMatching(ing);
+    }
+    this.unlockHat("hat_resonated");
+    this.equipHat("hat_resonated");
+    this.resonatedHatDone = true;
+    this.resonatedHatQuestStarted = true;
+    return { ok: true, message: "done" };
+  }
+
   /**
    * Turn in one nautilus to the Entrance shell seeker for the Shell Hat.
    */
@@ -1875,6 +2174,186 @@ export class InventorySystem {
         : "Thanks for bringing my nautilus home!",
       unlocked,
     };
+  }
+
+  /** DEFINED Stellar Surfer (quest stage 3–6) — nerfed until ascended. */
+  isStellarSurferDefined(): boolean {
+    return (
+      this.ownsRod("test_rod") &&
+      !this.stellarSurferAscended &&
+      this.astralSurferQuestStage >= 3 &&
+      this.astralSurferQuestStage < 8
+    );
+  }
+
+  isStellarSurferAscended(): boolean {
+    return this.stellarSurferAscended;
+  }
+
+  canDeployStellarSurferBoat(): boolean {
+    return this.ownsRod("test_rod") && this.stellarSurferAscended;
+  }
+
+  tryTurnInAstralStarline(): { ok: boolean; message: string } {
+    if (this.astralStarlineDone || this.ownsRod("star_line_rod")) {
+      this.astralStarlineDone = true;
+      return { ok: false, message: "already" };
+    }
+    for (const ing of ASTRAL_STARLINE_COST) {
+      if (this.countIngredientMatching(ing) < ing.count) {
+        return { ok: false, message: "need_more" };
+      }
+    }
+    for (const ing of ASTRAL_STARLINE_COST) {
+      this.removeIngredientMatching(ing);
+    }
+    this.addItem("star_line_rod");
+    this.astralStarlineDone = true;
+    return { ok: true, message: "done" };
+  }
+
+  startAstralSurferQuest(): boolean {
+    if (this.astralSurferQuestStage > 0) return false;
+    if (!this.ownsRod("star_line_rod")) return false;
+    this.astralSurferQuestStage = 1;
+    this.astralSurferStarlightCaught = false;
+    this.astralSurferDolphinStarline = false;
+    this.astralSurferCatchCount = 0;
+    this.astralSurferDolphinSurfer = false;
+    return true;
+  }
+
+  recordAstralCatch(opts: {
+    speciesId: ItemId;
+    mutation: FishMutationId | null;
+    rodId: ItemId;
+  }): { toast?: string; advanced?: boolean } {
+    const stage = this.astralSurferQuestStage;
+    if (stage < 1 || stage >= 8) return {};
+
+    if (stage === 1 && isStarlightCatch(opts.mutation)) {
+      if (!this.astralSurferStarlightCaught) {
+        this.astralSurferStarlightCaught = true;
+        return { toast: "Astral Warden: Starlight catch recorded!", advanced: true };
+      }
+    }
+    if (
+      stage === 2 &&
+      opts.speciesId === "dolphin" &&
+      opts.rodId === "star_line_rod"
+    ) {
+      if (!this.astralSurferDolphinStarline) {
+        this.astralSurferDolphinStarline = true;
+        return {
+          toast: "Astral Warden: Dolphin on Star Line!",
+          advanced: true,
+        };
+      }
+    }
+    if (
+      (stage === 5 || (stage > 5 && stage < 8)) &&
+      opts.rodId === "test_rod" &&
+      this.astralSurferCatchCount < ASTRAL_SURFER_CATCH_GOAL
+    ) {
+      // Only count toward goal while on stage 5
+      if (stage === 5) {
+        this.astralSurferCatchCount += 1;
+        if (this.astralSurferCatchCount >= ASTRAL_SURFER_CATCH_GOAL) {
+          return {
+            toast: `Astral Warden: ${ASTRAL_SURFER_CATCH_GOAL} Surfer catches!`,
+            advanced: true,
+          };
+        }
+        if (this.astralSurferCatchCount % 11 === 0) {
+          return {
+            toast: `Surfer catches ${this.astralSurferCatchCount}/${ASTRAL_SURFER_CATCH_GOAL}`,
+          };
+        }
+      }
+    }
+    if (
+      stage === 6 &&
+      opts.speciesId === "dolphin" &&
+      opts.rodId === "test_rod"
+    ) {
+      if (!this.astralSurferDolphinSurfer) {
+        this.astralSurferDolphinSurfer = true;
+        return {
+          toast: "Astral Warden: Dolphin on Stellar Surfer!",
+          advanced: true,
+        };
+      }
+    }
+    return {};
+  }
+
+  tryAdvanceAstralSurferFromTalk(): {
+    ok: boolean;
+    grantedDefined?: boolean;
+    ascended?: boolean;
+    messageKey: string;
+  } {
+    const stage = this.astralSurferQuestStage;
+    if (stage === 1 && this.astralSurferStarlightCaught) {
+      this.astralSurferQuestStage = 2;
+      return { ok: true, messageKey: "surferStage1Done" };
+    }
+    if (stage === 2 && this.astralSurferDolphinStarline) {
+      this.astralSurferQuestStage = 3;
+      return { ok: true, messageKey: "surferStage2Done" };
+    }
+    if (stage === 3) {
+      for (const ing of ASTRAL_SURFER_STAGE3_COST) {
+        if (this.countIngredientMatching(ing) < ing.count) {
+          return { ok: false, messageKey: "surferStage3Need" };
+        }
+      }
+      for (const ing of ASTRAL_SURFER_STAGE3_COST) {
+        this.removeIngredientMatching(ing);
+      }
+      if (!this.ownsRod("test_rod")) this.addItem("test_rod");
+      this.astralSurferQuestStage = 4;
+      return { ok: true, grantedDefined: true, messageKey: "surferStage3Done" };
+    }
+    if (stage === 4) {
+      for (const ing of ASTRAL_SURFER_STAGE4_COST) {
+        if (this.countIngredientMatching(ing) < ing.count) {
+          return { ok: false, messageKey: "surferStage4Need" };
+        }
+      }
+      for (const ing of ASTRAL_SURFER_STAGE4_COST) {
+        this.removeIngredientMatching(ing);
+      }
+      this.astralSurferQuestStage = 5;
+      this.astralSurferCatchCount = 0;
+      return { ok: true, messageKey: "surferStage4Done" };
+    }
+    if (stage === 5 && this.astralSurferCatchCount >= ASTRAL_SURFER_CATCH_GOAL) {
+      this.astralSurferQuestStage = 6;
+      return { ok: true, messageKey: "surferStage5Done" };
+    }
+    if (stage === 6 && this.astralSurferDolphinSurfer) {
+      this.astralSurferQuestStage = 7;
+      return { ok: true, messageKey: "surferStage6Done" };
+    }
+    if (stage === 7) {
+      for (const ing of ASTRAL_SURFER_STAGE7_COST) {
+        if (this.countIngredientMatching(ing) < ing.count) {
+          return { ok: false, messageKey: "surferStage7Need" };
+        }
+      }
+      for (const ing of ASTRAL_SURFER_STAGE7_COST) {
+        this.removeIngredientMatching(ing);
+      }
+      if (!this.ownsRod("test_rod")) this.addItem("test_rod");
+      this.stellarSurferAscended = true;
+      this.astralSurferQuestStage = 8;
+      if (!this.ownedBoats.includes("stellar_surfer")) {
+        this.ownedBoats.push("stellar_surfer");
+      }
+      return { ok: true, ascended: true, messageKey: "surferStage7Done" };
+    }
+    return { ok: false, messageKey: "wait" };
   }
 
   grantAmulet(amuletId: ItemId): boolean {
@@ -2105,7 +2584,7 @@ export class InventorySystem {
       }
       const price = ITEMS[slot.itemId].sellPrice ?? 0;
       const mult = mutationSellMult(slot.mutation) * sizeSellMult(slot.size);
-      if (slot.mutation === "ash") ashSold += slot.count;
+      if (slot.mutation === "blasted") ashSold += slot.count;
       sold += slot.count;
       earned += slot.count * price * mult;
       slot.itemId = null;
@@ -2115,7 +2594,7 @@ export class InventorySystem {
       slot.keep = false;
     }
     this.coins += earned;
-    this.recordAshFishSold(ashSold);
+    this.recordBlastedFishSold(ashSold);
     return { sold, earned };
   }
 
@@ -2318,7 +2797,7 @@ export class InventorySystem {
           s.count > 0
       ) ?? null;
     if (!live) return { ok: false, message: "That fish is gone." };
-    if (mut === "ash") this.recordAshFishSold(1);
+    if (mut === "blasted") this.recordBlastedFishSold(1);
     live.count -= 1;
     if (live.count <= 0) {
       live.itemId = null;

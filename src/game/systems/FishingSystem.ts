@@ -696,6 +696,16 @@ export class FishingSystem {
       this.weather?.getRodMutationChanceBonus?.(rodId) ?? 0;
     const mutMult = this.inventory.getMutationChanceMult();
 
+    // DEFINED Stellar Surfer — no Event Horizon / rod mutations
+    if (rodId === "test_rod" && this.inventory.isStellarSurferDefined()) {
+      if (fish.mutation) return fish.mutation;
+      if (mutMult > 1) {
+        const boosted = rollWorldMutation(mutMult * dolphinMult);
+        if (boosted) return boosted;
+      }
+      return null;
+    }
+
     // 4+ Recoil blasts: always Ash or Blasted on ANY fish (ignores color tags).
     // 25% Ash / 75% Blasted — mutually exclusive so you always get one.
     if (
@@ -726,6 +736,7 @@ export class FishingSystem {
       guaranteeThunder?: boolean;
       guaranteeAshencast?: boolean;
       guaranteeConfetti?: boolean;
+      guaranteeLunar?: boolean;
       recoilKicks?: number;
       bubbleCatch?: boolean;
       blackHoleDuplicateChance?: number;
@@ -762,7 +773,9 @@ export class FishingSystem {
                 ? ("ashencast" as const)
                 : meta?.guaranteeConfetti
                   ? ("confetti" as const)
-                  : this.resolveMutationFor(fish, meta);
+                  : meta?.guaranteeLunar
+                    ? ("lunar" as const)
+                    : this.resolveMutationFor(fish, meta);
         const size = fish.size;
         const added = this.inventory.addItem(
           fish.speciesId,
@@ -800,10 +813,42 @@ export class FishingSystem {
                 size,
                 duplicate: true,
               });
+              this.inventory.recordSurferMasteryDupe(1);
             }
           }
-          if (this.inventory.getEquippedRodId() === "recoil_rod") {
+          // Portal mastery: 30% Gate duplicate
+          if (
+            this.inventory.getEquippedRodId() === "portal_rod" &&
+            this.inventory.isPortalMasteryUnlocked() &&
+            Math.random() < InventorySystem.PORTAL_MASTERY_GATE_DUPE_CHANCE
+          ) {
+            const gateDuped = this.inventory.addItem(
+              fish.speciesId,
+              1,
+              "gate",
+              size
+            );
+            if (gateDuped) {
+              this.lastCaughtFish.push({
+                speciesId: fish.speciesId,
+                mutation: "gate",
+                size,
+                duplicate: true,
+              });
+            }
+          }
+          const rodId = this.inventory.getEquippedRodId();
+          if (rodId === "recoil_rod") {
             this.inventory.recordRecoilMasteryCatch(1);
+          }
+          if (
+            rodId === "portal_rod" &&
+            ITEMS[fish.speciesId]?.rarity === "legendary"
+          ) {
+            this.inventory.recordPortalMasteryLegendary(1);
+          }
+          if (mutation === "event_horizon") {
+            this.inventory.recordSurferMasteryEventHorizon(1);
           }
         }
         this.scene.time.delayedCall(2500, () => {

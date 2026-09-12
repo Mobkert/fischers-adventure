@@ -9,7 +9,8 @@ export type PromoCodeId =
   | "ore_area_awesome"
   | "new_stuff"
   | "serpent_eels"
-  | "free_stellar_surfer";
+  | "free_stellar_surfer"
+  | "w_update";
 
 export type PromoRedeemResult =
   | { ok: true; message: string }
@@ -24,6 +25,7 @@ const CODE_MAP: Record<string, PromoCodeId> = {
   OREAREAWESOME: "ore_area_awesome",
   NEWSTUFF: "new_stuff",
   SERPENTEELS: "serpent_eels",
+  W_UPDATE: "w_update",
   // Secret — not listed in update log / Code Guy hints
   ")(freestellarsurfer!!!)(": "free_stellar_surfer",
 };
@@ -163,21 +165,50 @@ export function redeemPromoCode(
       };
     }
     case "free_stellar_surfer": {
-      if (inventory.ownsRod("test_rod")) {
+      if (inventory.ownsRod("test_rod") && inventory.isStellarSurferAscended()) {
         inventory.markPromoRedeemed(codeId);
         return {
           ok: true,
           message: "You already ride the stars — code marked used.",
         };
       }
-      if (!inventory.addItem("test_rod")) {
+      if (!inventory.ownsRod("test_rod") && !inventory.addItem("test_rod")) {
         return { ok: false, message: "Couldn't grant the Stellar Surfer." };
+      }
+      inventory.stellarSurferAscended = true;
+      inventory.astralSurferQuestStage = 8;
+      inventory.astralStarlineDone = true;
+      if (!inventory.ownsBoat("stellar_surfer")) {
+        inventory.ownedBoats.push("stellar_surfer");
       }
       inventory.equipRod("test_rod");
       inventory.markPromoRedeemed(codeId);
       return {
         ok: true,
-        message: "Code Guy slips you the Stellar Surfer. Keep it quiet.",
+        message: "Code Guy slips you the ascended Stellar Surfer. Keep it quiet.",
+      };
+    }
+    case "w_update": {
+      if (
+        !inventory.hasItem("austinite") &&
+        inventory.countEmptyBagSlots() < 1
+      ) {
+        return {
+          ok: false,
+          message: "Need 1 free bag slot for Austinite.",
+        };
+      }
+      if (!inventory.addItem("austinite", 1)) {
+        return { ok: false, message: "Your bag is full!" };
+      }
+      inventory.coins += 10000;
+      inventory.grantAmulet("amulet_moonlight");
+      inventory.grantAmulet("amulet_celestial");
+      inventory.markPromoRedeemed(codeId);
+      return {
+        ok: true,
+        message:
+          "Code Guy hands you $10,000, a Moonlight Amulet, a Celestial Amulet, and 1 Austinite!",
       };
     }
     default:

@@ -244,5 +244,50 @@ export function generateHatTextures(scene: Phaser.Scene): void {
   g.fillCircle(28, 24, 2.5);
   g.generateTexture("hat_gem", S, S);
 
+  // ── Resonated / cosmic top hat ────────────────────────────
+  g.clear();
+  g.fillStyle(0x2a1060, 0.28);
+  g.fillEllipse(32, 58, 48, 9);
+  g.fillStyle(0x0a0618);
+  g.fillEllipse(32, 46, 52, 14);
+  g.fillStyle(0x1a1040);
+  g.fillEllipse(32, 44, 50, 12);
+  g.fillStyle(0x3a2880);
+  g.fillEllipse(32, 43, 40, 8);
+  // crown — deep violet
+  g.fillStyle(0x140828);
+  g.fillRoundedRect(18, 8, 28, 36, 2);
+  g.fillStyle(0x080414);
+  g.fillRect(18, 8, 7, 36);
+  g.fillStyle(0x3a2480);
+  g.fillRect(40, 10, 4, 32);
+  g.fillStyle(0x0c0618);
+  g.fillRoundedRect(17, 5, 30, 6, 2);
+  g.fillStyle(0x6a48c8);
+  g.fillRect(20, 6, 8, 2);
+  // cosmic band
+  g.fillStyle(0x4a30a0);
+  g.fillRect(18, 34, 28, 6);
+  g.fillStyle(0xa888ff);
+  g.fillRect(18, 34, 28, 2);
+  g.fillStyle(0x2a1860);
+  g.fillRect(18, 38, 28, 2);
+  // star buckle
+  g.fillStyle(0xffe066);
+  g.fillCircle(32, 37, 4);
+  g.fillStyle(0xffffff);
+  g.fillCircle(32, 37, 1.8);
+  // tiny stars on crown
+  g.fillStyle(0xe8d0ff, 0.9);
+  g.fillCircle(24, 16, 1.2);
+  g.fillCircle(36, 20, 1);
+  g.fillCircle(28, 26, 0.9);
+  g.fillStyle(0x88e0ff, 0.75);
+  g.fillCircle(40, 14, 1.1);
+  g.lineStyle(1, 0x8860e0, 0.45);
+  g.lineBetween(22, 12, 22, 32);
+  g.lineBetween(42, 12, 42, 32);
+  g.generateTexture("hat_resonated", S, S);
+
   g.destroy();
 }

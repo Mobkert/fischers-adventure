@@ -8,7 +8,8 @@ export type MusicZone =
   | "collectors"
   | "ashencast"
   | "frostpeak"
-  | "frostpeak_cave";
+  | "frostpeak_cave"
+  | "stellar_sky";
 
 const TRACK: Record<MusicZone, string> = {
   island: "music_island",
@@ -19,6 +20,7 @@ const TRACK: Record<MusicZone, string> = {
   ashencast: "music_ashencast",
   frostpeak: "music_frostpeak",
   frostpeak_cave: "music_frostpeak_cave",
+  stellar_sky: "music_frostpeak_cave",
 };
 
 /** Per-zone gain vs master music volume (reef a bit louder). */
@@ -31,6 +33,7 @@ const ZONE_GAIN: Record<MusicZone, number> = {
   ashencast: 1,
   frostpeak: 0.95,
   frostpeak_cave: 0.9,
+  stellar_sky: 0.75,
 };
 
 const STORAGE_KEY = "fischers_music_volume";
@@ -207,5 +210,7 @@ export function areaNameForZone(zone: MusicZone): string {
       return "Frostpeak Isle";
     case "frostpeak_cave":
       return "Frostpeak Cave";
+    case "stellar_sky":
+      return "Stellar Sky";
   }
 }

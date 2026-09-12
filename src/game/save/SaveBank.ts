@@ -95,6 +95,26 @@ export interface SaveData {
   equippedHatId: ItemId | null;
   /** Turned in a nautilus to the Entrance shell seeker. */
   nautilusQuestDone: boolean;
+  /** Astral Warden — Star Line quest completed. */
+  astralStarlineDone: boolean;
+  /** Astral Warden — Stellar Surfer quest stage 0–8. */
+  astralSurferQuestStage: number;
+  /** Caught Starlight while on Surfer stage 1. */
+  astralSurferStarlightCaught: boolean;
+  /** Caught Dolphin with Star Line on Surfer stage 2. */
+  astralSurferDolphinStarline: boolean;
+  /** Fish caught with Stellar Surfer during stage 5. */
+  astralSurferCatchCount: number;
+  /** Caught Dolphin with Surfer on stage 6. */
+  astralSurferDolphinSurfer: boolean;
+  /** Full UNDEFINED Stellar Surfer (stage 7 done). */
+  stellarSurferAscended: boolean;
+  /** Found the secret Stellar Sky (full-moon hover). */
+  stellarSkyDiscovered: boolean;
+  /** Spoken to Cosmic Haberdasher — Resonated Hat quest active. */
+  resonatedHatQuestStarted: boolean;
+  /** Resonated Hat crafted / owned via swamp quest. */
+  resonatedHatDone: boolean;
   /** One active island fish quest at a time. */
   activeFishQuest: import("../systems/FishQuest").ActiveFishQuest | null;
   /** Ashencast forge anvil quest: 0 not started … 3 anvil fixed. */
@@ -109,8 +129,18 @@ export interface SaveData {
   redeemedPromoCodes: import("../systems/PromoCodes").PromoCodeId[];
   /** Recoil Rod mastery — fish caught while Recoil is equipped (archived feature). */
   recoilMasteryCatches: number;
-  /** Recoil Rod mastery — Ash-mutation fish sold (archived feature). */
+  /** Recoil Rod mastery — Blasted-mutation fish sold. */
   recoilMasteryAshSold: number;
+  /** Portal Rod mastery — Legendaries caught with Portal equipped. */
+  portalMasteryLegendaries: number;
+  /** Portal Rod mastery — Tide Compass warps while Portal equipped. */
+  portalMasteryTideUses: number;
+  /** Stellar Surfer mastery — cumulative ms riding the board. */
+  surferMasteryRideMs: number;
+  /** Stellar Surfer mastery — black-hole duplicates landed. */
+  surferMasteryDupes: number;
+  /** Stellar Surfer mastery — Event Horizon catches. */
+  surferMasteryEventHorizon: number;
   updatedAt: number;
 }
 
@@ -185,6 +215,7 @@ export function defaultSave(): SaveData {
   hotbar[0] = { itemId: "starter_rod", count: 1, mutation: null, size: null, keep: false };
   hotbar[1] = { itemId: "equipment_bag", count: 1, mutation: null, size: null, keep: false };
   hotbar[2] = { itemId: "bestiary", count: 1, mutation: null, size: null, keep: false };
+  hotbar[3] = { itemId: "tide_compass", count: 1, mutation: null, size: null, keep: false };
   return {
     v: 1,
     coins: 0,
@@ -222,6 +253,16 @@ export function defaultSave(): SaveData {
     ownedHats: [...STARTER_HAT_IDS],
     equippedHatId: null,
     nautilusQuestDone: false,
+    astralStarlineDone: false,
+    astralSurferQuestStage: 0,
+    astralSurferStarlightCaught: false,
+    astralSurferDolphinStarline: false,
+    astralSurferCatchCount: 0,
+    astralSurferDolphinSurfer: false,
+    stellarSurferAscended: false,
+    stellarSkyDiscovered: false,
+    resonatedHatQuestStarted: false,
+    resonatedHatDone: false,
     activeFishQuest: null,
     ashencastQuestStage: 0,
     oreVendorStock: 20,
@@ -230,6 +271,11 @@ export function defaultSave(): SaveData {
     redeemedPromoCodes: [],
     recoilMasteryCatches: 0,
     recoilMasteryAshSold: 0,
+    portalMasteryLegendaries: 0,
+    portalMasteryTideUses: 0,
+    surferMasteryRideMs: 0,
+    surferMasteryDupes: 0,
+    surferMasteryEventHorizon: 0,
     updatedAt: Date.now(),
   };
 }
@@ -343,6 +389,7 @@ function normalizePromoCodes(raw: unknown): PromoCodeId[] {
     "new_stuff",
     "serpent_eels",
     "free_stellar_surfer",
+    "w_update",
   ];
   if (!Array.isArray(raw)) return [];
   return raw.filter(
@@ -432,9 +479,10 @@ export function cloneSave(raw: unknown): SaveData {
   if (!ITEMS[backpackId]?.isBackpack) backpackId = "backpack_starter";
 
   const hotbar = cloneSlots(s.hotbar, HOTBAR_SIZE);
-  // Always keep equipment bag on slot 2 and bestiary on slot 3
+  // Always keep equipment bag on slot 2, bestiary on slot 3, tide compass on slot 4
   hotbar[1] = { itemId: "equipment_bag", count: 1, mutation: null, size: null, keep: false };
   hotbar[2] = { itemId: "bestiary", count: 1, mutation: null, size: null, keep: false };
+  hotbar[3] = { itemId: "tide_compass", count: 1, mutation: null, size: null, keep: false };
   if (
     !hotbar[0].itemId ||
     !ITEMS[hotbar[0].itemId]?.isRod ||
@@ -471,6 +519,9 @@ export function cloneSave(raw: unknown): SaveData {
   }
   if (Boolean(s.nautilusQuestDone) && !ownedHats.includes("hat_shell")) {
     ownedHats.push("hat_shell");
+  }
+  if (Boolean(s.resonatedHatDone) && !ownedHats.includes("hat_resonated")) {
+    ownedHats.push("hat_resonated");
   }
   ownedHats = [...new Set(ownedHats)];
   const equippedHatRaw = normalizeHatId(s.equippedHatId);
@@ -523,6 +574,26 @@ export function cloneSave(raw: unknown): SaveData {
     ownedHats,
     equippedHatId,
     nautilusQuestDone: Boolean(s.nautilusQuestDone),
+    astralStarlineDone: Boolean(s.astralStarlineDone),
+    astralSurferQuestStage: Math.max(
+      0,
+      Math.min(8, Math.floor(Number(s.astralSurferQuestStage) || 0))
+    ) as SaveData["astralSurferQuestStage"],
+    astralSurferStarlightCaught: Boolean(s.astralSurferStarlightCaught),
+    astralSurferDolphinStarline: Boolean(s.astralSurferDolphinStarline),
+    astralSurferCatchCount: Math.max(
+      0,
+      Math.floor(Number(s.astralSurferCatchCount) || 0)
+    ),
+    astralSurferDolphinSurfer: Boolean(s.astralSurferDolphinSurfer),
+    stellarSurferAscended: Boolean(s.stellarSurferAscended),
+    stellarSkyDiscovered: Boolean(s.stellarSkyDiscovered),
+    resonatedHatQuestStarted:
+      Boolean(s.resonatedHatQuestStarted) ||
+      Boolean(s.resonatedHatDone) ||
+      ownedHats.includes("hat_resonated"),
+    resonatedHatDone:
+      Boolean(s.resonatedHatDone) || ownedHats.includes("hat_resonated"),
     activeFishQuest: normalizeActiveFishQuest(s.activeFishQuest),
     ashencastQuestStage: normalizeAshencastQuestStage(s.ashencastQuestStage),
     oreVendorStock: Math.max(
@@ -539,6 +610,26 @@ export function cloneSave(raw: unknown): SaveData {
     recoilMasteryAshSold: Math.max(
       0,
       Math.floor(Number(s.recoilMasteryAshSold) || 0)
+    ),
+    portalMasteryLegendaries: Math.max(
+      0,
+      Math.floor(Number(s.portalMasteryLegendaries) || 0)
+    ),
+    portalMasteryTideUses: Math.max(
+      0,
+      Math.floor(Number(s.portalMasteryTideUses) || 0)
+    ),
+    surferMasteryRideMs: Math.max(
+      0,
+      Math.floor(Number(s.surferMasteryRideMs) || 0)
+    ),
+    surferMasteryDupes: Math.max(
+      0,
+      Math.floor(Number(s.surferMasteryDupes) || 0)
+    ),
+    surferMasteryEventHorizon: Math.max(
+      0,
+      Math.floor(Number(s.surferMasteryEventHorizon) || 0)
     ),
     updatedAt: Number(s.updatedAt) || Date.now(),
   };

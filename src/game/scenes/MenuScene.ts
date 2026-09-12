@@ -129,7 +129,7 @@ export class MenuScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xc4a86a);
 
     const title = this.add
-      .text(0, -panelH / 2 + 28, "Ashencast 1.52", {
+      .text(0, -panelH / 2 + 28, "Stellar Sky 1.0", {
         fontFamily: "Georgia, serif",
         fontSize: "24px",
         color: "#f0e6d2",
@@ -137,7 +137,7 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const subtitle = this.add
-      .text(0, -panelH / 2 + 56, "What's New · Stellar Surfer Update", {
+      .text(0, -panelH / 2 + 56, "What's New · Stellar Sky Update", {
         fontFamily: "Arial",
         fontSize: "13px",
         color: "#9aaa9a",
@@ -161,34 +161,54 @@ export class MenuScene extends Phaser.Scene {
 
     const bodyText =
       "GENERAL\n\n" +
-      "The Stellar Surfer is here — a galactic surfboard rod\n" +
-      "with star-rain catches, a growing black hole, catch\n" +
-      "duplicates, and a rideable board at ports (faster than\n" +
-      "the Jet Ski). New mutations: Starstruck (dupe only)\n" +
-      "and Event Horizon (35% on this rod).\n\n" +
-      "CHANGES\n\n" +
-      "• Stellar Surfer rod — star rain minigame + black hole\n" +
-      "• Stars grow the hole / dupe chance; leaving the bar\n" +
-      "  shrinks it smoothly\n" +
-      "• Black-hole duplicates become Starstruck (0.9×)\n" +
-      "• Event Horizon mutation (7×) — 35% with Stellar Surfer\n" +
-      "• Q at a port to ride the board (galactic trail)\n" +
+      "Welcome to Stellar Sky 1.0 — a new night realm above the\n" +
+      "world, the Astral Warden questline, Star Line & Stellar\n" +
+      "Surfer rods, Surfer mastery, Resonated Hat travel, and\n" +
+      "more rod masteries.\n\n" +
+      "STELLAR SKY\n\n" +
+      "• New Stellar Sky pocket world (galactic music & sky)\n" +
+      "• Astral Warden — Star Line turn-in, then Surfer quest\n" +
+      "• Star Line Rod — night oval / meteor catch power\n" +
+      "• Stellar Surfer — DEFINED form (nerfed) → ascend for full\n" +
+      "  power, Event Horizon, black-hole dupes & rideable board\n" +
+      "• Q at a port to ride the Surfer (faster than Jet Ski)\n\n" +
+      "RESONATED HAT\n\n" +
+      "• Cosmic Haberdasher in the swamp (green shirt NPC)\n" +
+      "• Turn in Moonlight fish + gems for the Resonated Hat\n" +
+      "• Equip it to hover the full moon / Tide Compass to Sky\n\n" +
+      "STELLAR SURFER MASTERY\n\n" +
+      "• Ascended Surfer only (DEFINED cannot progress)\n" +
+      "• Surf 5:00 cumulative · 50 black-hole dupes · 33 Event Horizon\n" +
+      "• Reward: follower void (only while Surfer equipped)\n" +
+      "  — every 30s grants an area fish (80% Starstruck /\n" +
+      "  20% Event Horizon) with a burst animation\n" +
+      "• Rubber Duck skin — yellow duck surfboard, duck stars\n" +
+      "  that quack, duck void UI, duck rideable board\n\n" +
+      "OTHER MASTERY & RODS\n\n" +
+      "• Recoil mastery re-enabled (Blasted sell goal)\n" +
+      "• Portal mastery — Gate dupes, +25 stats, 4m depth\n" +
+      "• Coral Rod — ×2 world mutations; stacks with Mutation\n" +
+      "  Bobber to ×4\n" +
+      "• Grey Mastery buttons on Augment, Forge & Coral\n" +
+      "  (Coming soon)\n" +
+      "• Starweaver removed from the Ashencast Forge and is\n" +
+      "  no longer obtainable (keeps working if you own it)\n\n" +
+      "CATCH & UI\n\n" +
+      "• Star rain / black hole catch flow on Stellar Surfer\n" +
       "• Catch toasts above the hotbar with fish icons\n" +
-      "• Twin bobber / multi-catch show per-fish messages\n" +
-      "• Blue Limited badge on Starweaver & Birthday rods\n" +
-      "  (hover for when they were / are obtainable)\n" +
-      "• Starweaver is Limited at the Ashencast Forge\n" +
-      "  (still craftable)\n" +
-      "• Wildflower Rod Bloom chance raised to 30%\n\n" +
+      "• Twin bobber / multi-catch show per-fish messages\n\n" +
       "CODES (Code Guy)\n\n" +
+      "• W_UPDATE — $10,000, Moonlight Amulet, Celestial\n" +
+      "  Amulet, and 1 Austinite (one-time)\n" +
       "• SERPENTEELS — 15 Serpent Lure, 20 Bait Crates,\n" +
       "  and a Blasted Serpent Eel (Unsellable) (one-time)\n" +
       "• OREAREAWESOME — $2,200 and 10 Ore Clusters\n" +
       "  (one-time)\n" +
       "• NEWSTUFF & FREESKINCRATES — expired\n\n" +
-      "FROM 1.51\n\n" +
-      "• Bait system + The Appraiser on Collectors Island\n" +
-      "• Zeus Rod lightning bar speed stacks";
+      "FROM ASHENCAST 1.52\n\n" +
+      "• Stellar Surfer star rain + black hole foundations\n" +
+      "• Event Horizon & Starstruck mutations\n" +
+      "• Wildflower Bloom chance 30%";
 
     const body = this.add
       .text(0, 0, bodyText, {

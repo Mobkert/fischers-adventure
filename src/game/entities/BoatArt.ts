@@ -50,6 +50,14 @@ export function generateBoatArt(scene: Phaser.Scene): void {
   drawStellarSurfer(g);
   g.generateTexture("stellar_surfer_icon", BW, BH);
 
+  // Rubber Duck Surfer — yellow duck board
+  g.clear();
+  drawStellarSurferDuck(g);
+  if (scene.textures.exists("stellar_surfer_duck")) {
+    scene.textures.remove("stellar_surfer_duck");
+  }
+  g.generateTexture("stellar_surfer_duck", BW, BH);
+
   g.destroy();
 
   if (!scene.anims.exists("sail-idle")) {
@@ -538,4 +546,89 @@ function drawStellarSurfer(g: Phaser.GameObjects.Graphics): void {
   // Photon ring hint
   g.lineStyle(1.5, 0xc9a0ff, 0.55);
   g.strokeEllipse(ox + 52, oy + 27, 40, 8);
+}
+
+/** Yellow duck surfboard — Rubber Duck Stellar Surfer skin. */
+function drawStellarSurferDuck(g: Phaser.GameObjects.Graphics): void {
+  const ox = 18;
+  const oy = 10;
+
+  // Water reflection
+  g.fillStyle(0x4aa8e8, 0.25);
+  g.fillEllipse(ox + 52, oy + 42, 96, 8);
+
+  // Board shadow / underside
+  g.fillStyle(0xc48808, 1);
+  g.beginPath();
+  g.moveTo(ox + 4, oy + 30);
+  g.lineTo(ox + 22, oy + 18);
+  g.lineTo(ox + 88, oy + 16);
+  g.lineTo(ox + 108, oy + 26);
+  g.lineTo(ox + 100, oy + 36);
+  g.lineTo(ox + 16, oy + 38);
+  g.closePath();
+  g.fillPath();
+
+  // Yellow deck
+  g.fillStyle(0xffd84a, 1);
+  g.beginPath();
+  g.moveTo(ox + 10, oy + 30);
+  g.lineTo(ox + 26, oy + 20);
+  g.lineTo(ox + 86, oy + 18);
+  g.lineTo(ox + 102, oy + 26);
+  g.lineTo(ox + 94, oy + 34);
+  g.lineTo(ox + 20, oy + 36);
+  g.closePath();
+  g.fillPath();
+
+  // Bright center wash
+  g.fillStyle(0xffe878, 0.85);
+  g.fillEllipse(ox + 52, oy + 26, 68, 12);
+  g.fillStyle(0xfff6c8, 0.45);
+  g.fillEllipse(ox + 48, oy + 24, 40, 7);
+
+  // Blue water stripe
+  g.fillStyle(0x4aa8e8, 0.75);
+  g.fillRect(ox + 28, oy + 26, 58, 3);
+  g.fillStyle(0xffffff, 0.55);
+  g.fillRect(ox + 30, oy + 24, 54, 1.5);
+
+  // Rails
+  g.lineStyle(2.2, 0xfff0a0, 0.9);
+  g.lineBetween(ox + 18, oy + 22, ox + 96, oy + 20);
+  g.lineBetween(ox + 16, oy + 34, ox + 94, oy + 32);
+
+  // Tail fin
+  g.fillStyle(0xd49810, 1);
+  g.fillTriangle(ox + 8, oy + 32, ox + 2, oy + 40, ox + 18, oy + 36);
+
+  // —— Duck face at the nose ——
+  const hx = ox + 94;
+  const hy = oy + 24;
+  g.fillStyle(0xf5c518, 1);
+  g.fillCircle(hx, hy, 11);
+  g.fillStyle(0xffe066, 1);
+  g.fillCircle(hx - 1, hy - 1, 8);
+
+  // Beak
+  g.fillStyle(0xff8c2a, 1);
+  g.fillTriangle(hx + 6, hy - 4, hx + 22, hy + 1, hx + 6, hy + 5);
+  g.fillStyle(0xffa84a, 1);
+  g.fillEllipse(hx + 12, hy + 0.5, 8, 3.5);
+
+  // Eye
+  g.fillStyle(0x1a1a1a, 1);
+  g.fillCircle(hx - 2, hy - 3, 2.4);
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(hx - 2.8, hy - 3.6, 1);
+
+  // Cheek
+  g.fillStyle(0xff8866, 0.4);
+  g.fillEllipse(hx + 1, hy + 3, 4, 2.2);
+
+  // Tiny wing mark mid-deck
+  g.fillStyle(0xe8a810, 0.7);
+  g.fillEllipse(ox + 50, oy + 28, 14, 5);
+  g.fillStyle(0xfff0a0, 0.5);
+  g.fillEllipse(ox + 48, oy + 27, 8, 2.5);
 }

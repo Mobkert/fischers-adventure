@@ -15,6 +15,13 @@ import {
   FISH_QUEST_HABITAT_LABEL,
   FISH_QUEST_ISLAND_NAMES,
 } from "../systems/FishQuest";
+import {
+  ASTRAL_STARLINE_COST,
+  astralSurferObjectiveList,
+  formatQuestIngredientChecklist,
+} from "../systems/AstralWardenQuest";
+import { resonatedHatChecklist } from "../systems/ResonatedHatQuest";
+import { ANVIL_PIECE_IDS } from "../systems/AshencastQuest";
 import { ITEMS } from "../data/items";
 
 const GEM_HINTS: Record<(typeof VAULT_GEM_IDS)[number], string> = {
@@ -46,10 +53,20 @@ export class QuestTracker {
   private ashenBg: Phaser.GameObjects.Graphics;
   private ashenTitle: Phaser.GameObjects.Text;
   private ashenBody: Phaser.GameObjects.Text;
+  private astralRoot: Phaser.GameObjects.Container;
+  private astralBg: Phaser.GameObjects.Graphics;
+  private astralTitle: Phaser.GameObjects.Text;
+  private astralBody: Phaser.GameObjects.Text;
+  private resonateRoot: Phaser.GameObjects.Container;
+  private resonateBg: Phaser.GameObjects.Graphics;
+  private resonateTitle: Phaser.GameObjects.Text;
+  private resonateBody: Phaser.GameObjects.Text;
   private lastHermitKey = "";
   private lastVaultKey = "";
   private lastFishKey = "";
   private lastAshenKey = "";
+  private lastAstralKey = "";
+  private lastResonateKey = "";
 
   constructor(scene: Phaser.Scene, inventory: InventorySystem) {
     this.inventory = inventory;
@@ -150,6 +167,61 @@ export class QuestTracker {
     this.ashenRoot.add([this.ashenBg, this.ashenTitle, this.ashenBody]);
     this.ashenRoot.setVisible(false);
 
+    this.astralRoot = scene.add.container(14, 14).setScrollFactor(0).setDepth(105);
+    this.astralBg = scene.add.graphics();
+    this.astralTitle = scene.add
+      .text(10, 8, "", {
+        fontFamily: "Georgia, serif",
+        fontSize: "14px",
+        color: "#d4b8ff",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0, 0);
+    this.astralBody = scene.add
+      .text(10, 28, "", {
+        fontFamily: "Arial",
+        fontSize: "12px",
+        color: "#e8eef4",
+        stroke: "#000000",
+        strokeThickness: 2,
+        lineSpacing: 4,
+      })
+      .setOrigin(0, 0);
+    this.astralRoot.add([this.astralBg, this.astralTitle, this.astralBody]);
+    this.astralRoot.setVisible(false);
+
+    this.resonateRoot = scene.add
+      .container(14, 14)
+      .setScrollFactor(0)
+      .setDepth(105);
+    this.resonateBg = scene.add.graphics();
+    this.resonateTitle = scene.add
+      .text(10, 8, "", {
+        fontFamily: "Georgia, serif",
+        fontSize: "14px",
+        color: "#b8a0ff",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0, 0);
+    this.resonateBody = scene.add
+      .text(10, 28, "", {
+        fontFamily: "Arial",
+        fontSize: "12px",
+        color: "#e8eef4",
+        stroke: "#000000",
+        strokeThickness: 2,
+        lineSpacing: 4,
+      })
+      .setOrigin(0, 0);
+    this.resonateRoot.add([
+      this.resonateBg,
+      this.resonateTitle,
+      this.resonateBody,
+    ]);
+    this.resonateRoot.setVisible(false);
+
     this.refresh();
   }
 
@@ -158,6 +230,8 @@ export class QuestTracker {
     this.refreshVault();
     this.refreshFishQuest();
     this.refreshAshencast();
+    this.refreshAstral();
+    this.refreshResonatedHat();
     this.layout();
   }
 
@@ -177,9 +251,10 @@ export class QuestTracker {
       const have = this.inventory.hasFrostpeakAngelfish() ? 1 : 0;
       title = "Hermit — Quest 1";
       body =
-        have === 1
-          ? "Earthly/Sprout Angelfish ready\nReturn to the Hermit to turn in"
-          : `Bring an Earthly or Sprout Angelfish\n${have}/1 complete`;
+        `${have ? "☑" : "☐"}  Earthly or Sprout Angelfish` +
+        (have === 1
+          ? "\nReady — return to the Hermit"
+          : "\nAny size · mutation required");
       key += `|${have}`;
     } else if (stage === 2) {
       const done = this.inventory.frostpeakEpicRods;
@@ -204,10 +279,10 @@ export class QuestTracker {
       const have = this.inventory.hasFrostpeakMythicalOffer() ? 1 : 0;
       title = "Hermit — Quest 3";
       body =
-        have === 1
-          ? `Sellable Mythical > $${FROSTPEAK_MYTHICAL_MIN_VALUE} ready\nReturn to the Hermit to turn in`
-          : `Bring a sellable Mythical worth > $${FROSTPEAK_MYTHICAL_MIN_VALUE}\n` +
-            `(not favorited) · ${have}/1 complete`;
+        `${have ? "☑" : "☐"}  Sellable Mythical > $${FROSTPEAK_MYTHICAL_MIN_VALUE}` +
+        (have === 1
+          ? "\nReady — return to the Hermit"
+          : "\nNot favorited");
       key += `|${have}`;
     }
 
@@ -272,9 +347,11 @@ export class QuestTracker {
     const habitat =
       FISH_QUEST_HABITAT_LABEL[FISH_QUEST_HABITAT[q.islandId]];
     const have = this.inventory.hasItem(q.targetSpecies);
-    const body = have
-      ? `${name} ready — return to Fish Quest\non ${island}`
-      : `Catch a ${name} (${rarity})\nfrom the ${habitat}`;
+    const body =
+      `${have ? "☑" : "☐"}  ${name} (${rarity})\n` +
+      (have
+        ? `Ready — return to Fish Quest on ${island}`
+        : `Catch from the ${habitat}`);
     const title = `Fish Quest — ${island}`;
     const key = `${q.islandId}|${q.targetSpecies}|${have ? 1 : 0}`;
     if (key === this.lastFishKey && this.fishRoot.visible) return;
@@ -296,20 +373,26 @@ export class QuestTracker {
     let body = "";
     let key = `a${stage}`;
     if (stage === 1) {
+      const lines = ANVIL_PIECE_IDS.map((id) => {
+        const have = this.inventory.hasItem(id);
+        const name = ITEMS[id]?.name ?? id;
+        return `${have ? "☑" : "☐"}  ${name}`;
+      });
       const n = this.inventory.countOwnedAnvilPieces();
       title = `Forge — Anvil Pieces  (${n}/3)`;
       body =
         n >= 3
-          ? "All pieces ready — return to the Forge Keeper"
-          : "Find 3 anvil shards\nCurio · Ocean surface · Amulet cave";
-      key += `|${n}`;
+          ? `${lines.join("\n")}\nAll ready — return to the Forge Keeper`
+          : lines.join("\n");
+      key += `|${ANVIL_PIECE_IDS.map((id) => (this.inventory.hasItem(id) ? 1 : 0)).join("")}`;
     } else {
       const have = this.inventory.hasAshencastTrout() ? 1 : 0;
       title = "Forge — Ashencast Trout";
       body =
-        have === 1
-          ? "Trout ready — return to the Forge Keeper"
-          : "Catch an Ashencast Trout in the hotsprings";
+        `${have ? "☑" : "☐"}  Ashencast Trout` +
+        (have === 1
+          ? "\nReady — return to the Forge Keeper"
+          : "\nCatch in the hotsprings");
       key += `|${have}`;
     }
     if (key === this.lastAshenKey && this.ashenRoot.visible) return;
@@ -318,6 +401,84 @@ export class QuestTracker {
     this.ashenBody.setText(body);
     this.ashenRoot.setVisible(true);
     this.drawPanel(this.ashenBg, this.ashenTitle, this.ashenBody, 0xc45a3a);
+  }
+
+  private refreshAstral(): void {
+    const needStarline =
+      this.inventory.stellarSkyDiscovered &&
+      !this.inventory.astralStarlineDone &&
+      !this.inventory.ownsRod("star_line_rod");
+    const stage = this.inventory.astralSurferQuestStage;
+
+    if (!needStarline && (stage < 1 || stage >= 8)) {
+      this.astralRoot.setVisible(false);
+      this.lastAstralKey = "";
+      return;
+    }
+
+    let title = "";
+    let body = "";
+    let key = "";
+
+    if (needStarline && stage < 1) {
+      title = "Astral — Star Line";
+      body = formatQuestIngredientChecklist(
+        this.inventory,
+        ASTRAL_STARLINE_COST
+      );
+      const ready = ASTRAL_STARLINE_COST.every(
+        (ing) => this.inventory.countIngredientMatching(ing) >= ing.count
+      );
+      if (ready) body += "\nAll ready — return to the Warden";
+      key =
+        "starline|" +
+        ASTRAL_STARLINE_COST.map((ing) =>
+          this.inventory.countIngredientMatching(ing)
+        ).join(",");
+    } else if (stage >= 1 && stage < 8) {
+      title = `Astral — Surfer  (${stage}/7)`;
+      body = astralSurferObjectiveList(
+        this.inventory,
+        stage as 1 | 2 | 3 | 4 | 5 | 6 | 7
+      );
+      key = `s${stage}|${body}`;
+    } else {
+      this.astralRoot.setVisible(false);
+      this.lastAstralKey = "";
+      return;
+    }
+
+    if (key === this.lastAstralKey && this.astralRoot.visible) return;
+    this.lastAstralKey = key;
+    this.astralTitle.setText(title);
+    this.astralBody.setText(body);
+    this.astralRoot.setVisible(true);
+    this.drawPanel(this.astralBg, this.astralTitle, this.astralBody, 0xa88cff);
+  }
+
+  private refreshResonatedHat(): void {
+    if (
+      !this.inventory.resonatedHatQuestStarted ||
+      this.inventory.resonatedHatDone ||
+      this.inventory.ownsHat("hat_resonated")
+    ) {
+      this.resonateRoot.setVisible(false);
+      this.lastResonateKey = "";
+      return;
+    }
+    const body = resonatedHatChecklist(this.inventory);
+    const key = body;
+    if (key === this.lastResonateKey && this.resonateRoot.visible) return;
+    this.lastResonateKey = key;
+    this.resonateTitle.setText("Cosmic Haberdasher");
+    this.resonateBody.setText(body);
+    this.resonateRoot.setVisible(true);
+    this.drawPanel(
+      this.resonateBg,
+      this.resonateTitle,
+      this.resonateBody,
+      0x8860d0
+    );
   }
 
   private drawPanel(
@@ -345,12 +506,16 @@ export class QuestTracker {
       this.vaultRoot,
       this.fishRoot,
       this.ashenRoot,
+      this.astralRoot,
+      this.resonateRoot,
     ] as const;
     const bodies = [
       this.hermitBody,
       this.vaultBody,
       this.fishBody,
       this.ashenBody,
+      this.astralBody,
+      this.resonateBody,
     ];
     for (let i = 0; i < stack.length; i++) {
       const root = stack[i];
@@ -367,6 +532,8 @@ export class QuestTracker {
     this.vaultRoot.setScale(s);
     this.fishRoot.setScale(s);
     this.ashenRoot.setScale(s);
+    this.astralRoot.setScale(s);
+    this.resonateRoot.setScale(s);
     this.layout();
   }
 }

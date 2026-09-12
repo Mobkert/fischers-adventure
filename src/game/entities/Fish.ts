@@ -251,7 +251,8 @@ export class Fish {
     this.clearMutationFx();
     if (
       this.mutation !== "starstruck" &&
-      this.mutation !== "event_horizon"
+      this.mutation !== "event_horizon" &&
+      this.mutation !== "gate"
     ) {
       return;
     }

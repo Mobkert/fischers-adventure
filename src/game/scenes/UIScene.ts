@@ -6,6 +6,7 @@ import { SkinCrateReveal } from "../ui/SkinCrateReveal";
 import { SkinCrateMenu } from "../ui/SkinCrateMenu";
 import { EquipmentBag } from "../ui/EquipmentBag";
 import { BestiaryPanel } from "../ui/BestiaryPanel";
+import { TideCompassPanel } from "../ui/TideCompassPanel";
 import { FishingTutorial } from "../ui/FishingTutorial";
 import {
   AUGMENT_UPGRADE_CHANCE,
@@ -17,6 +18,8 @@ import {
   FISH_SIZES,
   sizeScale,
   applyMutationTint,
+  TideCompassDestId,
+  tideCompassTravelCost,
 } from "../data/items";
 import { BoatMenu } from "../ui/BoatMenu";
 import { CoinDisplay } from "../ui/CoinDisplay";
@@ -86,6 +89,7 @@ interface UISceneData {
   cancelBaitPlacement: () => void;
   isNearCaveCrack: () => boolean;
   isInFrostpeakCave: () => boolean;
+  isInStellarSky: () => boolean;
   isNearCoralRodOnBoat: () => boolean;
   tryOpenCoralRodOffer: () => boolean;
   offerCoralRodGift: (amount: number) => boolean;
@@ -99,6 +103,8 @@ interface UISceneData {
   markTutorialDone: () => void;
   quitToMenu: () => void;
   persistSave: () => void;
+  teleportTideCompass: (id: TideCompassDestId) => void;
+  getTideCompassHere: () => TideCompassDestId | null;
 }
 
 export class UIScene extends Phaser.Scene {
@@ -141,6 +147,7 @@ export class UIScene extends Phaser.Scene {
   private isBaitPlacing!: () => boolean;
   private cancelBaitPlacement!: () => void;
   private isInFrostpeakCave!: () => boolean;
+  private isInStellarSky!: () => boolean;
   private tryOpenCoralRodOffer!: () => boolean;
   private offerCoralRodGift!: (amount: number) => boolean;
   private isNearBlueHouse!: () => boolean;
@@ -153,12 +160,15 @@ export class UIScene extends Phaser.Scene {
   private markTutorialDone!: () => void;
   private quitToMenu!: () => void;
   private persistSave!: () => void;
+  private teleportTideCompass!: (id: TideCompassDestId) => void;
+  private getTideCompassHere!: () => TideCompassDestId | null;
   private hotbar!: Hotbar;
   private inventoryPanel!: InventoryPanel;
   private skinCrateReveal!: SkinCrateReveal;
   private skinCrateMenu!: SkinCrateMenu;
   private equipmentBag!: EquipmentBag;
   private bestiaryPanel!: BestiaryPanel;
+  private tideCompassPanel!: TideCompassPanel;
   private tutorial!: FishingTutorial;
   private minigame!: CatchMinigame;
   private boatMenu!: BoatMenu;
@@ -226,6 +236,7 @@ export class UIScene extends Phaser.Scene {
     this.isBaitPlacing = data.isBaitPlacing;
     this.cancelBaitPlacement = data.cancelBaitPlacement;
     this.isInFrostpeakCave = data.isInFrostpeakCave;
+    this.isInStellarSky = data.isInStellarSky;
     this.tryOpenCoralRodOffer = data.tryOpenCoralRodOffer;
     this.offerCoralRodGift = data.offerCoralRodGift;
     this.isNearBlueHouse = data.isNearBlueHouse;
@@ -238,6 +249,8 @@ export class UIScene extends Phaser.Scene {
     this.markTutorialDone = data.markTutorialDone;
     this.quitToMenu = data.quitToMenu;
     this.persistSave = data.persistSave;
+    this.teleportTideCompass = data.teleportTideCompass;
+    this.getTideCompassHere = data.getTideCompassHere;
   }
 
   create(): void {
@@ -347,6 +360,11 @@ export class UIScene extends Phaser.Scene {
       this.coins.refresh();
       this.persistSave();
       this.showToast(message, "#ffe066");
+    });
+    this.tideCompassPanel = new TideCompassPanel(this, this.inventory);
+    this.tideCompassPanel.setHereCheck(() => this.getTideCompassHere());
+    this.tideCompassPanel.setOnTravel((destId) => {
+      this.playTideCompassTravel(destId);
     });
     this.minigame = new CatchMinigame(this);
     this.boatMenu = new BoatMenu(this, this.inventory);
@@ -613,6 +631,10 @@ export class UIScene extends Phaser.Scene {
         this.bestiaryPanel.setOpen(false);
         return;
       }
+      if (this.tideCompassPanel.visible) {
+        this.tideCompassPanel.setOpen(false);
+        return;
+      }
       if (this.inventoryPanel.visible) {
         this.inventoryPanel.setOpen(false);
       }
@@ -622,11 +644,13 @@ export class UIScene extends Phaser.Scene {
       if (this.isTextEntryOpen()) return;
       if (this.tutorial.visible) return;
       if (this.isInFrostpeakCave?.()) return;
+      if (this.isInStellarSky?.()) return;
       if (this.minigame.isActive() || this.boatMenu.visible) return;
       if (
         this.inventoryPanel.visible ||
         this.equipmentBag.visible ||
-        this.bestiaryPanel.visible
+        this.bestiaryPanel.visible ||
+        this.tideCompassPanel.visible
       )
         return;
       if (this.tryEnterShop()) return;
@@ -806,6 +830,7 @@ export class UIScene extends Phaser.Scene {
 
       this.equipmentBag.setOpen(false);
       this.bestiaryPanel.setOpen(false);
+      this.tideCompassPanel.setOpen(false);
       this.hotbar.setVisible(false);
       this.minigame.start(
         (success, meta) => {
@@ -885,6 +910,10 @@ export class UIScene extends Phaser.Scene {
           starRain:
             ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
             "star_rain",
+          starRainDefined: this.inventory.isStellarSurferDefined(),
+          starLine:
+            ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+            "star_line",
           birthdayParty:
             ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
             "birthday_party",
@@ -999,18 +1028,26 @@ export class UIScene extends Phaser.Scene {
     }
     this.inventory.selectHotbar(i);
     this.hotbar.refresh();
-    // Slot 2 (index 1) = equipment bag · Slot 3 (index 2) = bestiary
+    // Slot 2 (index 1) = equipment bag · Slot 3 (index 2) = bestiary · Slot 4 (index 3) = tide compass
     if (i === 1) {
       this.bestiaryPanel.setOpen(false);
+      this.tideCompassPanel.setOpen(false);
       this.inventoryPanel.setOpen(false);
       this.equipmentBag.toggle();
     } else if (i === 2) {
       this.equipmentBag.setOpen(false);
+      this.tideCompassPanel.setOpen(false);
       this.inventoryPanel.setOpen(false);
       this.bestiaryPanel.toggle();
+    } else if (i === 3) {
+      this.equipmentBag.setOpen(false);
+      this.bestiaryPanel.setOpen(false);
+      this.inventoryPanel.setOpen(false);
+      this.tideCompassPanel.toggle();
     } else {
       if (this.equipmentBag.visible) this.equipmentBag.setOpen(false);
       if (this.bestiaryPanel.visible) this.bestiaryPanel.setOpen(false);
+      if (this.tideCompassPanel.visible) this.tideCompassPanel.setOpen(false);
     }
   }
 
@@ -1020,6 +1057,7 @@ export class UIScene extends Phaser.Scene {
     if (this.minigame.isActive() || this.boatMenu.visible) return;
     this.equipmentBag.setOpen(false);
     this.bestiaryPanel.setOpen(false);
+    this.tideCompassPanel.setOpen(false);
     this.inventoryPanel.toggle();
   }
 
@@ -1031,6 +1069,7 @@ export class UIScene extends Phaser.Scene {
       this.inventoryPanel.visible ||
       this.equipmentBag.visible ||
       this.bestiaryPanel.visible ||
+      this.tideCompassPanel.visible ||
       this.boatMenu.visible
     )
       return;
@@ -1045,7 +1084,8 @@ export class UIScene extends Phaser.Scene {
     if (
       this.inventoryPanel.visible ||
       this.equipmentBag.visible ||
-      this.bestiaryPanel.visible
+      this.bestiaryPanel.visible ||
+      this.tideCompassPanel.visible
     )
       return;
     if (this.boatMenu.visible) {
@@ -1062,7 +1102,12 @@ export class UIScene extends Phaser.Scene {
   private handleInteractKey(): void {
     if (this.tutorial.visible) return;
     if (this.minigame.isActive() || this.boatMenu.visible) return;
-    if (this.equipmentBag.visible || this.bestiaryPanel.visible) return;
+    if (
+      this.equipmentBag.visible ||
+      this.bestiaryPanel.visible ||
+      this.tideCompassPanel.visible
+    )
+      return;
     if (this.coralRodOffer.visible) return;
     if (this.codeGuyPanel.isOpen()) return;
     if (this.augmentUpgrade.visible) return;
@@ -1105,6 +1150,7 @@ export class UIScene extends Phaser.Scene {
       this.inventoryPanel.visible ||
       this.equipmentBag.visible ||
       this.bestiaryPanel.visible ||
+      this.tideCompassPanel.visible ||
       this.minigame.isActive() ||
       this.boatMenu.visible ||
       this.wildflowerBuy.visible ||
@@ -1286,6 +1332,58 @@ export class UIScene extends Phaser.Scene {
       onComplete: () => {
         this.toast?.destroy();
         this.toast = undefined;
+      },
+    });
+  }
+
+  /** Fade to black, warp, then fade back in. */
+  private playTideCompassTravel(destId: TideCompassDestId): void {
+    if (this.fishing.isBusy()) {
+      this.showToast("Finish fishing first.", "#ffaa66");
+      return;
+    }
+    if (this.getTideCompassHere() === destId) {
+      this.showToast("You're already there.", "#ffaa66");
+      return;
+    }
+    const cost = tideCompassTravelCost(destId);
+    if (this.inventory.coins < cost) {
+      this.showToast(
+        `Need $${cost.toLocaleString("en-US")} to warp.`,
+        "#ffaa66"
+      );
+      return;
+    }
+    this.inventory.coins -= cost;
+    this.coins.refresh();
+    this.inventory.recordPortalMasteryTideUse(1);
+    this.persistSave();
+
+    const w = this.scale.width;
+    const h = this.scale.height;
+    // Fill alpha must be 1 — tweening object alpha multiplies with fill alpha.
+    const veil = this.add
+      .rectangle(w / 2, h / 2, w + 40, h + 40, 0x000000, 1)
+      .setAlpha(0)
+      .setScrollFactor(0)
+      .setDepth(500)
+      .setInteractive();
+    this.tweens.add({
+      targets: veil,
+      alpha: 1,
+      duration: 420,
+      ease: "Quad.easeIn",
+      onComplete: () => {
+        this.teleportTideCompass(destId);
+        this.time.delayedCall(100, () => {
+          this.tweens.add({
+            targets: veil,
+            alpha: 0,
+            duration: 520,
+            ease: "Quad.easeOut",
+            onComplete: () => veil.destroy(),
+          });
+        });
       },
     });
   }

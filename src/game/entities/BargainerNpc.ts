@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { BargainKind } from "../systems/BargainLogic";
+import { NpcSpeechBubble } from "../ui/NpcSpeechBubble";
 
 /** Side-view bargainer NPC — same look as the village merchant. */
 export class BargainerNpc {
@@ -10,9 +11,9 @@ export class BargainerNpc {
   readonly x: number;
   readonly y: number;
   talking = false;
-  private bubbleBg?: Phaser.GameObjects.Graphics;
-  private bubbleText?: Phaser.GameObjects.Text;
+  private bubble?: NpcSpeechBubble;
   private nameTag: Phaser.GameObjects.Text;
+  private onNo?: () => void;
 
   constructor(
     scene: Phaser.Scene,
@@ -49,37 +50,29 @@ export class BargainerNpc {
     return Phaser.Math.Distance.Between(px, py, this.x, this.y - 28) < radius;
   }
 
-  showBubble(message: string): void {
+  showBubble(message: string, onNo?: () => void): void {
     this.clearBubble();
     this.talking = true;
-    this.bubbleText = this.scene.add
-      .text(this.x, this.y - 100, message, {
-        fontFamily: "Arial",
-        fontSize: "13px",
-        color: "#f0e6d2",
-        align: "center",
-        wordWrap: { width: 200 },
-      })
-      .setOrigin(0.5, 1)
-      .setDepth(30);
-    const b = this.bubbleText.getBounds();
-    this.bubbleBg = this.scene.add.graphics().setDepth(29);
-    this.bubbleBg.fillStyle(0x000000, 0.78);
-    this.bubbleBg.fillRoundedRect(
-      b.x - 8,
-      b.y - 6,
-      b.width + 16,
-      b.height + 12,
-      6
-    );
+    this.onNo = onNo;
+    this.bubble = new NpcSpeechBubble(this.scene, this.x, this.y - 100, "simple");
+    this.bubble.show(message, "#f0e6d2", {
+      onYes: () => {
+        /* Panel stays open — Yes just acknowledges the pitch */
+      },
+      onNo: () => {
+        this.onNo?.();
+        this.decline();
+      },
+      yesLabel: "Yes",
+      noLabel: "No",
+    });
   }
 
   clearBubble(): void {
-    this.bubbleBg?.destroy();
-    this.bubbleText?.destroy();
-    this.bubbleBg = undefined;
-    this.bubbleText = undefined;
+    this.bubble?.destroy();
+    this.bubble = undefined;
     this.talking = false;
+    this.onNo = undefined;
   }
 
   decline(): void {

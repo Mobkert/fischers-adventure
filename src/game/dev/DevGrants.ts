@@ -1,11 +1,13 @@
-import type { InventorySystem } from "../systems/InventorySystem";
+import { InventorySystem } from "../systems/InventorySystem";
+import { ASTRAL_SURFER_CATCH_GOAL } from "../systems/AstralWardenQuest";
 
 /**
  * Local-dev-only inventory cheats / one-shot migrations.
  *
  * Production (`vite build`) aliases this file to DevGrants.stub.ts — the
- * real grant code never ships. Even in `npm run dev`, grants only run when
- * you opt in (so recipe tweaks never dump free items into your save):
+ * real grant code never ships to other players.
+ *
+ * Even in `npm run dev` on localhost, nothing runs unless you opt in:
  *
  *   localStorage.setItem("fischers_dev_grants", "1")
  *
@@ -20,27 +22,88 @@ function isLocalDevHost(): boolean {
 }
 
 export function applyDevInventoryBootstrap(inventory: InventorySystem): void {
-  // Belt-and-suspenders: stubbed in prod; localhost DEV only
+  // Production builds never include this file (stubbed). Extra guards for safety.
   if (!import.meta.env.DEV) return;
   if (!isLocalDevHost()) return;
+  // Must opt in — other people on shared/dev hosts never get free mastery / items
+  if (localStorage.getItem(DEV_GRANTS_OPT_IN) !== "1") return;
 
-  // Explicit one-shot gifts (requested in chat) — no general opt-in needed
-  const testRodKey = "fischers_granted_test_rod_v1";
-  if (!localStorage.getItem(testRodKey)) {
+  // Strip prior free Astral rods so they must be earned from the Warden
+  const stripAstralKey = "fischers_stripped_free_astral_rods_v1";
+  if (!localStorage.getItem(stripAstralKey)) {
+    localStorage.removeItem("fischers_granted_test_rod_v1");
+    localStorage.removeItem("fischers_granted_star_line_rod_v1");
+    localStorage.setItem(stripAstralKey, "1");
+  }
+
+  const starLineKey = "fischers_granted_star_line_rod_v2";
+  if (!localStorage.getItem(starLineKey)) {
+    if (!inventory.ownsRod("star_line_rod")) {
+      inventory.addItem("star_line_rod");
+    }
+    inventory.astralStarlineDone = true;
+    inventory.equipRod("star_line_rod");
+    localStorage.setItem(starLineKey, "1");
+  }
+
+  const ashencastEelKey = "fischers_granted_ashencast_eel_v3";
+  if (!localStorage.getItem(ashencastEelKey)) {
+    inventory.addItem("phantom_eel", 1, "ashencast");
+    localStorage.setItem(ashencastEelKey, "1");
+  }
+
+  // One-shot: finish Surfer stage 5 (77 catches) when you're on it
+  const surferStage5SkipKey = "fischers_astral_surfer_stage5_skip_v1";
+  if (
+    !localStorage.getItem(surferStage5SkipKey) &&
+    inventory.astralSurferQuestStage === 5
+  ) {
+    inventory.astralSurferCatchCount = ASTRAL_SURFER_CATCH_GOAL;
+    inventory.astralSurferQuestStage = 6;
+    localStorage.setItem(surferStage5SkipKey, "1");
+  }
+
+  // One-shot: stage 7 ascension tribute (Lunar set + Lunar driftwood)
+  const surferStage7ItemsKey = "fischers_astral_surfer_stage7_items_v1";
+  if (!localStorage.getItem(surferStage7ItemsKey)) {
+    inventory.addItem("sunfish", 1, "lunar");
+    inventory.addItem("dolphin", 1, "lunar");
+    inventory.addItem("magma_jellyfish", 1, "lunar");
+    inventory.addItem("alligator", 1, "lunar");
+    inventory.addItem("driftwood", 20, "lunar");
+    localStorage.setItem(surferStage7ItemsKey, "1");
+  }
+
+  // One-shot: finish Stellar Surfer mastery for testing rewards
+  const surferMasteryKey = "fischers_surfer_mastery_complete_v1";
+  if (!localStorage.getItem(surferMasteryKey)) {
     if (!inventory.ownsRod("test_rod")) {
       inventory.addItem("test_rod");
     }
-    localStorage.setItem(testRodKey, "1");
+    inventory.stellarSurferAscended = true;
+    inventory.astralSurferQuestStage = 8;
+    inventory.surferMasteryRideMs = InventorySystem.SURFER_MASTERY_RIDE_MS;
+    inventory.surferMasteryDupes = InventorySystem.SURFER_MASTERY_DUPE_GOAL;
+    inventory.surferMasteryEventHorizon =
+      InventorySystem.SURFER_MASTERY_EVENT_HORIZON_GOAL;
+    inventory.equipRod("test_rod");
+    inventory.ensureSurferMasteryRewards();
+    localStorage.setItem(surferMasteryKey, "1");
+  }
+
+  // One-shot: Cosmic Haberdasher Resonated Hat materials
+  const resonatedHatMatsKey = "fischers_resonated_hat_materials_v1";
+  if (!localStorage.getItem(resonatedHatMatsKey)) {
+    inventory.addItem("angelfish", 1, "moonlight");
+    inventory.addItem("emerald", 5);
+    inventory.addItem("ruby", 3);
+    inventory.addItem("vivianite", 1);
+    localStorage.setItem(resonatedHatMatsKey, "1");
   }
 
   const starweaverCraftKey = "fischers_granted_starweaver_craft_v1";
+  // Starweaver retired from the forge — never dump craft mats again
   if (!localStorage.getItem(starweaverCraftKey)) {
-    inventory.coins = Math.max(inventory.coins, 70000);
-    inventory.addItem("taaffite", 2);
-    inventory.addItem("rhodochrosite", 1);
-    inventory.addItem("driftwood", 2, "tranquil");
-    inventory.addItem("angelfish", 1, "starlight");
-    inventory.addItem("ruby", 7);
     localStorage.setItem(starweaverCraftKey, "1");
   }
 
@@ -48,7 +111,13 @@ export function applyDevInventoryBootstrap(inventory: InventorySystem): void {
   const frostpeakSkinsKey = "fischers_granted_frostpeak_skins_v1";
   if (!localStorage.getItem(frostpeakSkinsKey)) {
     const frostSkins: Array<{
-      skin: "frigid" | "frozen_lotus" | "icicle" | "halo_of_ice" | "hyperboreal" | "hyperthermic";
+      skin:
+        | "frigid"
+        | "frozen_lotus"
+        | "icicle"
+        | "halo_of_ice"
+        | "hyperboreal"
+        | "hyperthermic";
       rod:
         | "amber_rod"
         | "wildflower_rod"
@@ -75,8 +144,6 @@ export function applyDevInventoryBootstrap(inventory: InventorySystem): void {
     }
     localStorage.setItem(frostpeakSkinsKey, "1");
   }
-
-  if (localStorage.getItem(DEV_GRANTS_OPT_IN) !== "1") return;
 
   const forgeClearKey = "fischers_cleared_forge_dev_grant_v1";
   if (!localStorage.getItem(forgeClearKey)) {
@@ -144,7 +211,7 @@ export function applyDevInventoryBootstrap(inventory: InventorySystem): void {
     localStorage.setItem(forgeCraftKey, "1");
   }
 
-  // Test-only: Laser Zeus skin (this file is stubbed out in production builds)
+  // Test-only: Laser Zeus skin
   const laserSkinKey = "fischers_granted_laser_skin_v1";
   if (!localStorage.getItem(laserSkinKey)) {
     if (!inventory.ownsRod("zeus_rod")) {
