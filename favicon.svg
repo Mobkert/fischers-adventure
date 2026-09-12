@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Fischer's Adventure">
+  <rect width="64" height="64" rx="14" fill="#14324a"/>
+  <!-- body -->
+  <ellipse cx="30" cy="32" rx="20" ry="12" fill="#3aa0d8"/>
+  <ellipse cx="28" cy="30" rx="12" ry="6" fill="#7ec8ff" opacity="0.55"/>
+  <!-- tail -->
+  <path d="M10 32 L2 20 L6 32 L2 44 Z" fill="#2a7fb0"/>
+  <!-- fin -->
+  <path d="M26 20 Q32 10 38 20 Q32 18 26 20 Z" fill="#2a7fb0"/>
+  <path d="M28 40 Q34 50 40 40 Q34 42 28 40 Z" fill="#2a7fb0"/>
+  <!-- eye -->
+  <circle cx="40" cy="29" r="3.2" fill="#0a1420"/>
+  <circle cx="41" cy="28" r="1.1" fill="#ffffff"/>
+  <!-- mouth -->
+  <path d="M48 33 Q52 32 50 35" fill="none" stroke="#1a4a68" stroke-width="1.5" stroke-linecap="round"/>
+</svg>
