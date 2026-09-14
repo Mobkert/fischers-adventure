@@ -1,4 +1,4 @@
-import { ItemId } from "./items";
+import { ItemId, LimitedEditionInfo } from "./items";
 import type { RodDrawStyle } from "../entities/PlayerArt";
 
 /** Cosmetic rod skins (crate + gallery). */
@@ -16,7 +16,8 @@ export type RodSkinId =
   | "halo_of_ice"
   | "hyperboreal"
   | "hyperthermic"
-  | "rubber_duck";
+  | "rubber_duck"
+  | "horizonbreaker";
 
 export type SkinCrateKind = "collectors" | "frostpeak";
 
@@ -48,6 +49,8 @@ export type RodSkinDef = {
   overlay: boolean;
   /** Baked player rod style (crate skins). */
   drawStyle?: RodDrawStyle;
+  /** Optional limited-time badge in the skin picker. */
+  limitedEdition?: LimitedEditionInfo;
 };
 
 /** Gallery knuckle-blaster overlay layout. */
@@ -249,6 +252,23 @@ export const ROD_SKINS: Record<RodSkinId, RodSkinDef> = {
     layout: { ...ROD_ICON_LAYOUT },
     overlay: false,
     drawStyle: "rubber_duck",
+    limitedEdition: {
+      obtainableWindow: "Stellar Surfer mastery — ending soon",
+      currentlyObtainable: true,
+    },
+  },
+  horizonbreaker: {
+    id: "horizonbreaker",
+    rodId: "tranquil_rod",
+    label: "Horizonbreaker",
+    description:
+      "Scattered star fragments with a black hole tip — galaxies fill the catch, a wavy cosmic bar, and a void bubble.",
+    textureKey: "skin_horizonbreaker",
+    crateWeight: 0,
+    cratePool: null,
+    layout: { ...ROD_ICON_LAYOUT },
+    overlay: false,
+    drawStyle: "horizonbreaker",
   },
 };
 

@@ -23,6 +23,7 @@ const RARITY_NAME: Record<string, string> = {
   legendary: "Legendary",
   mythical: "Mythical",
   mystical: "Mystical",
+  admin: "ADMIN",
 };
 
 const KEEP_COLOR = 0xffe066;
@@ -48,6 +49,7 @@ export class InventoryPanel {
   private onOpenSkinCrate?: (kind: SkinCrateKind) => void;
   private onOpenOreCluster?: () => void;
   private onOpenBaitCrate?: () => void;
+  private onOpenAdminDevice?: () => void;
   visible = false;
   private panelH = 560;
 
@@ -232,6 +234,10 @@ export class InventoryPanel {
     this.onOpenBaitCrate = cb;
   }
 
+  setOnOpenAdminDevice(cb: () => void): void {
+    this.onOpenAdminDevice = cb;
+  }
+
   private tryOpenBaitCrate(getSlot: () => InventorySlot): void {
     const slot = getSlot();
     if (slot.itemId !== "bait_crate" || slot.count <= 0) return;
@@ -242,6 +248,12 @@ export class InventoryPanel {
     const slot = getSlot();
     if (slot.itemId !== "ore_cluster" || slot.count <= 0) return;
     this.onOpenOreCluster?.();
+  }
+
+  private tryOpenAdminDevice(getSlot: () => InventorySlot): void {
+    const slot = getSlot();
+    if (slot.itemId !== "admin_device" || slot.count <= 0) return;
+    this.onOpenAdminDevice?.();
   }
 
   private tryLeftClickSlot(getSlot: () => InventorySlot): void {
@@ -256,6 +268,10 @@ export class InventoryPanel {
     }
     if (slot.itemId === "ore_cluster") {
       this.tryOpenOreCluster(getSlot);
+      return;
+    }
+    if (slot.itemId === "admin_device") {
+      this.tryOpenAdminDevice(getSlot);
     }
   }
 
@@ -319,7 +335,7 @@ export class InventoryPanel {
         sizeSellMult(slot.size);
       lines.push(`Sell: $${Math.round(unit)}`);
       if (slot.size === "unsellable") {
-        lines.push("Cannot be sold to merchants");
+        lines.push("Sells for $0 to merchants");
       }
       if (slot.keep) {
         lines.push(
@@ -343,6 +359,10 @@ export class InventoryPanel {
     } else if (slot.itemId === "bait_crate") {
       lines.push(def.description);
       lines.push("Left-click to open");
+    } else if (slot.itemId === "admin_device") {
+      lines.push(def.description);
+      if (def.rarity) lines.push(RARITY_NAME[def.rarity] ?? def.rarity);
+      lines.push("Left-click to open · Infinite uses");
     } else {
       lines.push(def.description);
     }

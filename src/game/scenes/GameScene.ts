@@ -31,6 +31,7 @@ import {
   ashencastPierCollisionBounds,
 } from "../world/AshencastIsland";
 import { applyDevInventoryBootstrap } from "../dev/DevGrants";
+import { applyOwnerDevGrant } from "../save/OwnerDevGrant";
 import { ensurePlayerRodArt } from "../entities/PlayerArt";
 import { ensureRodIconTextures } from "./BootScene";
 import { ForgeRodTipVfx } from "../fx/ForgeRodFx";
@@ -38,6 +39,8 @@ import { LaserRodHeldVfx } from "../fx/LaserRodFx";
 import { FrostRodHeldVfx } from "../fx/FrostRodHeldVfx";
 import { StellarSurferHeldVfx } from "../fx/StellarSurferHeldVfx";
 import { StarLineHeldVfx } from "../fx/StarLineHeldVfx";
+import { HorizonbreakerHeldVfx } from "../fx/HorizonbreakerHeldVfx";
+import { VoidharvesterHeldVfx } from "../fx/VoidharvesterHeldVfx";
 import { SurferMasteryBlackHole } from "../fx/SurferMasteryBlackHole";
 import { WorldZoneLoader } from "../world/WorldZoneLoader";
 import {
@@ -105,6 +108,7 @@ import {
   RESONATED_HAT_NPC_NAME,
   resonatedHatChecklist,
 } from "../systems/ResonatedHatQuest";
+import { STELLAR_SHOP_OFFERS } from "../systems/StellarMerchant";
 
 export class GameScene extends Phaser.Scene {
   player!: Player;
@@ -152,6 +156,8 @@ export class GameScene extends Phaser.Scene {
   private stellarLandLeft = 0;
   private stellarLandRight = 0;
   private stellarBeing?: TalkNpc;
+  /** Stellar Sky — Shop / Sell NPC (celestial mutations only). */
+  private stellarMerchant?: TalkNpc;
   /** Swamp — Resonated Hat quest NPC (between rope & east port). */
   private cosmicHaberdasher?: TalkNpc;
   private stellarAura?: Phaser.GameObjects.Arc;
@@ -198,6 +204,8 @@ export class GameScene extends Phaser.Scene {
   private frostRodVfx: FrostRodHeldVfx | null = null;
   private stellarSurferVfx: StellarSurferHeldVfx | null = null;
   private starLineVfx: StarLineHeldVfx | null = null;
+  private horizonbreakerVfx: HorizonbreakerHeldVfx | null = null;
+  private voidharvesterVfx: VoidharvesterHeldVfx | null = null;
   private surferMasteryBlackHole: SurferMasteryBlackHole | null = null;
   private surferMasteryGrantMs = 0;
   private surferMasteryGrantPending = false;
@@ -328,6 +336,7 @@ export class GameScene extends Phaser.Scene {
     this.inStellarSky = false;
     this.stellarLoaded = false;
     this.stellarBeing = undefined;
+    this.stellarMerchant = undefined;
     this.stellarAura = undefined;
     this.stellarDestroy = undefined;
     this.moonHoverMs = 0;
@@ -376,6 +385,7 @@ export class GameScene extends Phaser.Scene {
 
     const save = loadActiveSave();
     this.inventory = new InventorySystem(save);
+    const ownerGranted = applyOwnerDevGrant(this.inventory);
     if (import.meta.env.DEV && typeof location !== "undefined") {
       const h = location.hostname;
       if (h === "localhost" || h === "127.0.0.1" || h === "[::1]") {
@@ -410,6 +420,9 @@ export class GameScene extends Phaser.Scene {
     this.player = new Player(this, spawn.x, spawn.y);
     this.player.sprite.setDepth(12);
     this.syncPlayerCarriedRod();
+    if (ownerGranted) {
+      this.persistSave();
+    }
     this.groundCollider = this.physics.add.collider(
       this.player.sprite,
       this.ground
@@ -522,10 +535,11 @@ export class GameScene extends Phaser.Scene {
       },
       getIsSunny
     );
-    // One-shot: force dolphin abundance (requested in chat)
+    // One-shot dolphin abundance — only with explicit localStorage opt-in
     if (
       import.meta.env.DEV &&
       typeof localStorage !== "undefined" &&
+      localStorage.getItem("fischers_dev_grants") === "1" &&
       !localStorage.getItem("fischers_force_dolphin_abundance_v1")
     ) {
       this.dolphinAbundance.forceStart();
@@ -563,12 +577,13 @@ export class GameScene extends Phaser.Scene {
 
     this.whaleAbundance = new CaveWhaleAbundance(
       this,
-      this.caveWaters,
+      () => this.caveWaters,
       this.waterSurfaceY,
       this.fishList,
       () => this.inventory.getFishingStats().luck,
       (msg) => {
-        const ui = this.scene.get("UIScene") as UIScene;
+        const ui = this.scene.get("UIScene") as UIScene | undefined;
+        if (!ui) return;
         // Same top banner as dolphin abundance — visible in overworld & cave
         ui.showWeatherBanner(msg, "#ff69b4");
       }
@@ -1038,6 +1053,14 @@ export class GameScene extends Phaser.Scene {
     if (this.tryLeaveStellarSky()) return true;
 
     if (
+      this.stellarMerchant &&
+      (this.stellarMerchant.talking ||
+        this.stellarMerchant.isNear(this.player.sprite.x, this.player.sprite.y))
+    ) {
+      return this.handleStellarMerchantTalk();
+    }
+
+    if (
       this.stellarBeing &&
       (this.stellarBeing.talking ||
         this.stellarBeing.isNear(this.player.sprite.x, this.player.sprite.y))
@@ -1190,6 +1213,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.declineBargainers();
     this.stellarBeing?.decline();
+    this.stellarMerchant?.decline();
     this.cosmicHaberdasher?.decline();
     this.ashenForgeNpc?.decline();
     this.orePeddler?.decline();
@@ -1954,7 +1978,13 @@ export class GameScene extends Phaser.Scene {
         speciesId,
         getExcludeSpecies,
         getIsRainy,
-        { lockSpecies: true },
+        {
+          oneShot: true,
+          onRemoved: () => {
+            const idx = this.fishList.indexOf(fish);
+            if (idx >= 0) this.fishList.splice(idx, 1);
+          },
+        },
         getIsSunny
       );
       this.fishList.push(fish);
@@ -2039,6 +2069,117 @@ export class GameScene extends Phaser.Scene {
       ]
     );
     return true;
+  }
+
+  /** Stellar Merchant — Shop panel + premium celestial-mutation sells. */
+  private handleStellarMerchantTalk(): boolean {
+    if (!this.stellarMerchant) return false;
+    const ui = this.scene.get("UIScene") as UIScene;
+    if (ui.isStellarShopOpen()) {
+      ui.closeStellarShop();
+      return true;
+    }
+    if (this.stellarMerchant.talking) {
+      this.stellarMerchant.decline();
+      return true;
+    }
+
+    this.stellarMerchant.speakWithMenu(
+      "Starstruck, Event Horizon, Lunar, Moonlight —\nStarstruck pays 2× here (not the shore's 0.9×).\nOther celestial fish pay double shore price.\n\nHow may the night trade with you?",
+      [
+        {
+          label: "Shop",
+          hotkey: "1",
+          fill: 0x2a2048,
+          stroke: 0xc9a0ff,
+          onClick: () => this.handleStellarMerchantShop(),
+        },
+        {
+          label: "Sell",
+          hotkey: "2",
+          fill: 0x1a3050,
+          stroke: 0x7ec8e8,
+          onClick: () => this.handleStellarMerchantSell(),
+        },
+        {
+          label: "No",
+          hotkey: "X",
+          fill: 0x3a2a2a,
+          stroke: 0xffaa66,
+          onClick: () => {
+            this.stellarMerchant?.speak(
+              "The void keeps its shelves. Until the stars align again."
+            );
+          },
+        },
+      ]
+    );
+    return true;
+  }
+
+  private handleStellarMerchantShop(): void {
+    if (!this.stellarMerchant) return;
+    const ui = this.scene.get("UIScene") as UIScene;
+    this.stellarMerchant.decline();
+    if (STELLAR_SHOP_OFFERS.length === 0) {
+      this.stellarMerchant.speak(
+        "My shop has nothing for sale yet.\nThe nebulae have not restocked these shelves."
+      );
+      return;
+    }
+    ui.openStellarShop();
+  }
+
+  private handleStellarMerchantSell(): void {
+    if (!this.stellarMerchant) return;
+    const count = this.inventory.getStellarMerchantSellableCount();
+    const value = this.inventory.getStellarMerchantSellableValue();
+    if (count <= 0) {
+      this.stellarMerchant.speak(
+        "I only buy Starstruck, Event Horizon, Lunar,\nand Moonlight fish — nothing else."
+      );
+      return;
+    }
+
+    this.stellarMerchant.speakWithMenu(
+      `I'll take your celestial fish for $${value}.\n(${count} fish · Starstruck 2× · others double shore)`,
+      [
+        {
+          label: "Yes",
+          hotkey: "F",
+          fill: 0x2a4838,
+          stroke: 0x7dce7a,
+          onClick: () => {
+            if (!this.stellarMerchant) return;
+            const result = this.inventory.sellStellarMerchantFish();
+            const ui = this.scene.get("UIScene") as UIScene;
+            if (result.sold <= 0) {
+              this.stellarMerchant.speak(
+                "Nothing left to trade — favorites stay with you."
+              );
+            } else {
+              this.stellarMerchant.speak(
+                `A fair night's bargain.\nSold ${result.sold} fish for $${result.earned}.`
+              );
+              ui.showToast(
+                `Sold ${result.sold} celestial fish for $${result.earned}`,
+                "#c9a0ff"
+              );
+              this.persistSave();
+            }
+          },
+        },
+        {
+          label: "No",
+          hotkey: "X",
+          fill: 0x3a2a2a,
+          stroke: 0xffaa66,
+          onClick: () => {
+            this.stellarMerchant?.speak("Keep them close, then. Stars wait.");
+          },
+        },
+      ]
+    );
   }
 
   private handleAstralStarlineOption(): void {
@@ -3340,6 +3481,8 @@ export class GameScene extends Phaser.Scene {
     const ui = this.scene.get("UIScene") as UIScene | undefined;
     this.inStellarSky = false;
     this.stellarBeing?.decline();
+    this.stellarMerchant?.decline();
+    ui?.closeStellarShop?.();
     this.unloadStellarSkyZone();
     this.weather?.setRainBlocked(false);
     const x = Phaser.Math.Clamp(
@@ -3763,9 +3906,16 @@ export class GameScene extends Phaser.Scene {
   tryUseAmulet(amuletId: ItemId): boolean {
     if (this.amuletRitual.isBusy()) return false;
     if (this.fishing.isBusy()) return false;
+    const ui = this.scene.get("UIScene") as UIScene | undefined;
+    const def = ITEMS[amuletId];
+    if (def?.amuletEffect === "cave") {
+      if (this.whaleAbundance?.isActive()) {
+        ui?.showToast("A cave whale is already in the mountain caves.", "#ffaa66");
+        return false;
+      }
+    }
     const isDay = !this.dayNight.isNight();
     const result = this.inventory.useAmulet(amuletId, isDay);
-    const ui = this.scene.get("UIScene") as UIScene | undefined;
     if (!result.ok || !result.effect) {
       ui?.showToast(result.message, "#ffaa66");
       return false;
@@ -3781,8 +3931,19 @@ export class GameScene extends Phaser.Scene {
       }),
       weather: this.weather,
       dayNight: this.dayNight,
+      onCaveWhale: () => {
+        this.loadFrostpeakCaveZone();
+        const ok = this.whaleAbundance?.forceSpawn() ?? false;
+        if (!ok) {
+          ui?.showToast(
+            "The caves aren't ready — try again near Frostpeak.",
+            "#ffaa66"
+          );
+        }
+        return ok;
+      },
       onDone: (message) => {
-        ui?.showToast(message, "#ffe066");
+        ui?.showToast(message, "#7ad0ff");
       },
     });
     return true;
@@ -4001,6 +4162,16 @@ export class GameScene extends Phaser.Scene {
     this.stellarBeing.sprite.setTexture("galactic_being");
     this.stellarBeing.sprite.clearTint();
     this.stellarBeing.sprite.setDisplaySize(72, 108);
+    this.stellarMerchant = new TalkNpc(
+      this,
+      placed.merchantX,
+      this.groundY,
+      "Stellar Merchant",
+      ""
+    );
+    this.stellarMerchant.sprite.setTexture("stellar_merchant");
+    this.stellarMerchant.sprite.clearTint();
+    this.stellarMerchant.sprite.setDisplaySize(68, 92);
     this.stellarAura = this.add.circle(
       placed.npcX,
       this.groundY - 48,
@@ -4030,6 +4201,8 @@ export class GameScene extends Phaser.Scene {
     }
     this.stellarBeing?.destroy();
     this.stellarBeing = undefined;
+    this.stellarMerchant?.destroy();
+    this.stellarMerchant = undefined;
     this.stellarDestroy?.();
     this.stellarDestroy = undefined;
     this.stellarLoaded = false;
@@ -4524,6 +4697,8 @@ export class GameScene extends Phaser.Scene {
     this.syncFrostRodVfx();
     this.syncStellarSurferVfx();
     this.syncStarLineVfx();
+    this.syncHorizonbreakerVfx();
+    this.syncVoidharvesterVfx();
     this.updateSurferMastery(delta);
     this.updateMoonHover(delta);
     if (!this.inFrostpeakCave && !this.inStellarSky) {
@@ -4588,8 +4763,22 @@ export class GameScene extends Phaser.Scene {
     if (this.inStellarSky) {
       if (this.isNearStellarPortal()) {
         ui.setPrompt("F — Leave Stellar Sky");
-      } else if (this.stellarBeing?.talking) {
+      } else if (
+        this.stellarMerchant?.talking ||
+        this.stellarBeing?.talking
+      ) {
         ui.setPrompt("F / X — Close");
+      } else if (
+        this.stellarMerchant?.isNear(
+          this.player.sprite.x,
+          this.player.sprite.y
+        )
+      ) {
+        ui.setPrompt(
+          ui.isStellarShopOpen()
+            ? "Click a skin · Esc leave"
+            : "F — Talk to Stellar Merchant"
+        );
       } else if (
         this.stellarBeing?.isNear(this.player.sprite.x, this.player.sprite.y)
       ) {
@@ -4797,6 +4986,19 @@ export class GameScene extends Phaser.Scene {
       !this.stellarBeing.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
       this.stellarBeing.decline();
+    }
+    if (
+      this.stellarMerchant?.talking &&
+      !this.stellarMerchant.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      this.stellarMerchant.decline();
+    }
+    if (uiScene.isStellarShopOpen()) {
+      const nearShop = this.stellarMerchant?.isNear(
+        this.player.sprite.x,
+        this.player.sprite.y
+      );
+      if (!nearShop) uiScene.closeStellarShop();
     }
     if (
       this.cosmicHaberdasher?.talking &&
@@ -5313,6 +5515,44 @@ export class GameScene extends Phaser.Scene {
     this.starLineVfx.update(hand.x, hand.y, tip.x, tip.y, this.time.now);
   }
 
+  /** Soft tip accretion + sparse sparks for Horizonbreaker. */
+  private syncHorizonbreakerVfx(): void {
+    const show =
+      !this.inFrostpeakCave &&
+      !this.inStellarSky &&
+      this.player.isHorizonbreakerInHand();
+    if (!show) {
+      this.horizonbreakerVfx?.setActive(false);
+      return;
+    }
+    if (!this.horizonbreakerVfx) {
+      this.horizonbreakerVfx = new HorizonbreakerHeldVfx(this);
+    }
+    this.horizonbreakerVfx.setActive(true);
+    const hand = this.player.getRodHandWorld();
+    const tip = this.player.getRodTip();
+    this.horizonbreakerVfx.setDepth(this.player.sprite.depth + 2);
+    this.horizonbreakerVfx.update(hand.x, hand.y, tip.x, tip.y, this.time.now);
+  }
+
+  /** Astral sparks + tip bloom for The Voidharvester greatsword. */
+  private syncVoidharvesterVfx(): void {
+    const show =
+      !this.inFrostpeakCave && this.player.isVoidharvesterInHand();
+    if (!show) {
+      this.voidharvesterVfx?.setActive(false);
+      return;
+    }
+    if (!this.voidharvesterVfx) {
+      this.voidharvesterVfx = new VoidharvesterHeldVfx(this);
+    }
+    this.voidharvesterVfx.setActive(true);
+    const hand = this.player.getRodHandWorld();
+    const tip = this.player.getRodTip();
+    this.voidharvesterVfx.setDepth(this.player.sprite.depth + 2);
+    this.voidharvesterVfx.update(hand.x, hand.y, tip.x, tip.y, this.time.now);
+  }
+
   /** Surfer mastery: ride time, follower black hole, periodic area fish. */
   private updateSurferMastery(delta: number): void {
     if (this.isRidingStellarSurfer()) {
@@ -5339,10 +5579,12 @@ export class GameScene extends Phaser.Scene {
     this.surferMasteryBlackHole.setDuckMode(
       this.inventory.isRubberDuckSurferSkinActive()
     );
-    this.surferMasteryBlackHole.setDepth(this.player.sprite.depth - 1);
+    // Above player so padded frame art doesn't hide the follower.
+    this.surferMasteryBlackHole.setDepth(this.player.sprite.depth + 1);
+    const body = this.player.getBodyWorldCenter();
     this.surferMasteryBlackHole.update(
-      this.player.sprite.x,
-      this.player.sprite.y,
+      body.x,
+      body.y,
       this.player.getFacing() === "left",
       delta
     );

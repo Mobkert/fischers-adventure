@@ -7,6 +7,7 @@ import { SkinCrateMenu } from "../ui/SkinCrateMenu";
 import { EquipmentBag } from "../ui/EquipmentBag";
 import { BestiaryPanel } from "../ui/BestiaryPanel";
 import { TideCompassPanel } from "../ui/TideCompassPanel";
+import { AdminDevicePanel } from "../ui/AdminDevicePanel";
 import { FishingTutorial } from "../ui/FishingTutorial";
 import {
   AUGMENT_UPGRADE_CHANCE,
@@ -27,6 +28,7 @@ import { QuestTracker } from "../ui/QuestTracker";
 import { WildflowerBuyPanel } from "../ui/WildflowerBuyPanel";
 import { OreVendorPanel } from "../ui/OreVendorPanel";
 import { BaitVendorPanel } from "../ui/BaitVendorPanel";
+import { StellarShopPanel } from "../ui/StellarShopPanel";
 import { AppraiserPanel, rollAppraiseBonuses } from "../ui/AppraiserPanel";
 import { CoralRodOfferPanel } from "../ui/CoralRodOfferPanel";
 import { BargainPanel, BargainSession } from "../ui/BargainPanel";
@@ -169,12 +171,14 @@ export class UIScene extends Phaser.Scene {
   private equipmentBag!: EquipmentBag;
   private bestiaryPanel!: BestiaryPanel;
   private tideCompassPanel!: TideCompassPanel;
+  private adminDevicePanel!: AdminDevicePanel;
   private tutorial!: FishingTutorial;
   private minigame!: CatchMinigame;
   private boatMenu!: BoatMenu;
   private wildflowerBuy!: WildflowerBuyPanel;
   private oreVendor!: OreVendorPanel;
   private baitVendor!: BaitVendorPanel;
+  private stellarShop!: StellarShopPanel;
   private appraiserPanel!: AppraiserPanel;
   private coralRodOffer!: CoralRodOfferPanel;
   private bargainPanel!: BargainPanel;
@@ -317,6 +321,26 @@ export class UIScene extends Phaser.Scene {
       this.onCoinsChanged();
       this.persistSave();
     });
+    this.inventoryPanel.setOnOpenAdminDevice(() => {
+      if (this.inventory.countItem("admin_device") <= 0) return;
+      this.inventoryPanel.setOpen(false);
+      this.equipmentBag.setOpen(false);
+      this.bestiaryPanel.setOpen(false);
+      this.tideCompassPanel.setOpen(false);
+      this.adminDevicePanel.setOpen(true);
+    });
+    this.adminDevicePanel = new AdminDevicePanel(this, this.inventory);
+    this.adminDevicePanel.setOnGranted((message) => {
+      this.showToast(message, "#ffb070");
+      this.inventoryPanel.refresh();
+      this.hotbar.refresh();
+      this.equipmentBag.refresh();
+      this.persistSave();
+      const game = this.scene.get("GameScene") as
+        | { syncPlayerCarriedRod?: () => void }
+        | undefined;
+      game?.syncPlayerCarriedRod?.();
+    });
     this.equipmentBag = new EquipmentBag(this, this.inventory);
     this.equipmentBag.setOnBeforeEquipRod((rodId) => {
       if (this.isRidingStellarSurfer() && rodId !== "test_rod") {
@@ -420,6 +444,28 @@ export class UIScene extends Phaser.Scene {
         this.onCoinsChanged();
         this.inventoryPanel.refresh();
         this.persistSave();
+      },
+      () => {
+        /* closed */
+      }
+    );
+    this.stellarShop = new StellarShopPanel(this);
+    this.stellarShop.setInventory(this.inventory);
+    this.stellarShop.setCallbacks(
+      (offer) => {
+        const result =
+          offer.kind === "rod"
+            ? this.inventory.buyStellarShopRod(
+                offer.rodId,
+                offer.price,
+                offer.requiresItem
+              )
+            : this.inventory.buyRodSkin(offer.skinId, offer.price);
+        this.showToast(result.message, result.ok ? "#c9a0ff" : "#ffaa66");
+        this.onCoinsChanged();
+        this.equipmentBag.refresh();
+        this.persistSave();
+        this.stellarShop.refresh();
       },
       () => {
         /* closed */
@@ -627,6 +673,10 @@ export class UIScene extends Phaser.Scene {
         this.equipmentBag.setOpen(false);
         return;
       }
+      if (this.adminDevicePanel.visible) {
+        this.adminDevicePanel.setOpen(false);
+        return;
+      }
       if (this.bestiaryPanel.visible) {
         this.bestiaryPanel.setOpen(false);
         return;
@@ -706,6 +756,10 @@ export class UIScene extends Phaser.Scene {
         this.closeOreVendor();
         return;
       }
+      if (this.stellarShop.visible) {
+        this.closeStellarShop();
+        return;
+      }
       if (this.baitVendor.visible) {
         this.closeBaitVendor();
         return;
@@ -749,6 +803,10 @@ export class UIScene extends Phaser.Scene {
       }
       if (this.oreVendor.visible) {
         this.oreVendor.handleKey(event);
+        return;
+      }
+      if (this.stellarShop.visible) {
+        this.stellarShop.handleKey(event);
         return;
       }
       if (this.baitVendor.visible) {
@@ -827,6 +885,25 @@ export class UIScene extends Phaser.Scene {
       }
       // Twin-hook stacks can't go below -80; solo mythicals (whale) can hit -95.
       progressSpeed = Math.max(dual ? -80 : -95, progressSpeed);
+
+      const equippedRodId = this.inventory.getEquippedRodId();
+      const voidHarvest =
+        ITEMS[equippedRodId]?.rodMinigamePower === "void_harvest";
+      if (voidHarvest) {
+        const bluefinSpeed = ITEMS.bluefin_tuna.minigameSpeed ?? 1.4;
+        const rare =
+          def.rarity === "legendary" ||
+          def.rarity === "mythical" ||
+          def.rarity === "mystical" ||
+          (!!def2 &&
+            (def2.rarity === "legendary" ||
+              def2.rarity === "mythical" ||
+              def2.rarity === "mystical"));
+        if (rare) {
+          speedMult = dual ? bluefinSpeed * 1.25 : bluefinSpeed;
+          unstoppable = false;
+        }
+      }
 
       this.equipmentBag.setOpen(false);
       this.bestiaryPanel.setOpen(false);
@@ -917,6 +994,7 @@ export class UIScene extends Phaser.Scene {
           birthdayParty:
             ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
             "birthday_party",
+          voidHarvest,
           rodSkinId: (() => {
             const sid = this.inventory.getActiveRodSkinId(
               this.inventory.getEquippedRodId()
@@ -1058,6 +1136,7 @@ export class UIScene extends Phaser.Scene {
     this.equipmentBag.setOpen(false);
     this.bestiaryPanel.setOpen(false);
     this.tideCompassPanel.setOpen(false);
+    this.adminDevicePanel.setOpen(false);
     this.inventoryPanel.toggle();
   }
 
@@ -1155,6 +1234,7 @@ export class UIScene extends Phaser.Scene {
       this.boatMenu.visible ||
       this.wildflowerBuy.visible ||
       this.oreVendor.visible ||
+      this.stellarShop.visible ||
       this.baitVendor.visible ||
       this.appraiserPanel.visible ||
       this.coralRodOffer.visible ||
@@ -1249,6 +1329,18 @@ export class UIScene extends Phaser.Scene {
 
   closeBaitVendor(): void {
     this.baitVendor.setOpen(false);
+  }
+
+  openStellarShop(): void {
+    this.stellarShop.open();
+  }
+
+  closeStellarShop(): void {
+    this.stellarShop.setOpen(false);
+  }
+
+  isStellarShopOpen(): boolean {
+    return this.stellarShop.visible;
   }
 
   openAppraiser(): void {

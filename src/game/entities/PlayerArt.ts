@@ -20,37 +20,53 @@ import {
   drawHyperborealRod,
   drawHyperthermicRod,
   drawRubberDuckRod,
+  drawHorizonbreakerRod,
 } from "../art/RodSkinHeldArt";
+import { drawVoidharvesterRod, voidharvesterBladeTip } from "../art/VoidharvesterArt";
 
-/** Logical playable area — displayed size stays ~64px via setDisplaySize on the sprite. */
-export const PLAYER_FRAME_PAD_TOP = 12;
-export const PLAYER_FRAME_PAD_RIGHT = 18;
-export const PLAYER_FRAME_W = 64 + PLAYER_FRAME_PAD_RIGHT;
+/** Extra canvas around the 64×64 figure so long rods (greatsword) aren’t clipped. */
+export const PLAYER_FRAME_PAD_TOP = 52;
+/** Top pad when boat seats / body tuning were authored (for seat compensation). */
+export const PLAYER_FRAME_PAD_TOP_BASE = 12;
+export const PLAYER_FRAME_PAD_LEFT = 40;
+export const PLAYER_FRAME_PAD_RIGHT = 48;
+export const PLAYER_FRAME_W = 64 + PLAYER_FRAME_PAD_LEFT + PLAYER_FRAME_PAD_RIGHT;
 export const PLAYER_FRAME_H = 64 + PLAYER_FRAME_PAD_TOP;
+
+/** Extra top pad pushes the figure down vs sprite center — lift seats by this. */
+export function playerSeatPadLift(): number {
+  return (PLAYER_FRAME_PAD_TOP - PLAYER_FRAME_PAD_TOP_BASE) / 2;
+}
 
 /**
  * Top-center of the head hair strip in frame pixels (idle, lean 0, bob 0).
- * Matches drawPlayerFrame: ox=22, hx=ox-6, hair at hy-1.
+ * Matches drawPlayerFrame: ox=22+PAD_LEFT, hx=ox-6, hair at hy-1.
  */
-export const HEAD_TOP_LOCAL = { x: 23, y: 10 + PLAYER_FRAME_PAD_TOP };
+export const HEAD_TOP_LOCAL = {
+  x: 23 + PLAYER_FRAME_PAD_LEFT,
+  y: 10 + PLAYER_FRAME_PAD_TOP,
+};
 
 /**
  * Rod tip pixel in the fishing-wait frames (top-left origin of the frame).
  * Used so the cast line attaches exactly to the drawn tip.
  */
-export const ROD_TIP_LOCAL = { x: 58, y: 18 + PLAYER_FRAME_PAD_TOP };
+export const ROD_TIP_LOCAL = {
+  x: 58 + PLAYER_FRAME_PAD_LEFT,
+  y: 18 + PLAYER_FRAME_PAD_TOP,
+};
 
 /**
  * Tip positions for each `player_fish_*_N` frame (must match `fish` poses).
  * Windup swings the tip left/up behind the back, then whips forward.
  */
 export const FISH_FRAME_TIPS: ReadonlyArray<{ x: number; y: number }> = [
-  { x: 50, y: 12 + PLAYER_FRAME_PAD_TOP },
-  { x: 38, y: 2 + PLAYER_FRAME_PAD_TOP },
-  { x: 22, y: 0 + PLAYER_FRAME_PAD_TOP },
-  { x: 4, y: 8 + PLAYER_FRAME_PAD_TOP },
-  { x: 34, y: 0 + PLAYER_FRAME_PAD_TOP },
-  { x: 60, y: 14 + PLAYER_FRAME_PAD_TOP },
+  { x: 50 + PLAYER_FRAME_PAD_LEFT, y: 12 + PLAYER_FRAME_PAD_TOP },
+  { x: 38 + PLAYER_FRAME_PAD_LEFT, y: 2 + PLAYER_FRAME_PAD_TOP },
+  { x: 22 + PLAYER_FRAME_PAD_LEFT, y: 0 + PLAYER_FRAME_PAD_TOP },
+  { x: 4 + PLAYER_FRAME_PAD_LEFT, y: 8 + PLAYER_FRAME_PAD_TOP },
+  { x: 34 + PLAYER_FRAME_PAD_LEFT, y: 0 + PLAYER_FRAME_PAD_TOP },
+  { x: 60 + PLAYER_FRAME_PAD_LEFT, y: 14 + PLAYER_FRAME_PAD_TOP },
   { x: ROD_TIP_LOCAL.x, y: ROD_TIP_LOCAL.y },
   { x: ROD_TIP_LOCAL.x, y: ROD_TIP_LOCAL.y },
 ];
@@ -93,7 +109,9 @@ export type RodDrawStyle =
   | "halo_of_ice"
   | "hyperboreal"
   | "hyperthermic"
-  | "rubber_duck";
+  | "rubber_duck"
+  | "horizonbreaker"
+  | "voidharvester";
 
 /** Every rod that gets carry + cast player frames and anims — keep in sync with new rods. */
 export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
@@ -128,6 +146,8 @@ export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
   "hyperboreal",
   "hyperthermic",
   "rubber_duck",
+  "horizonbreaker",
+  "voidharvester",
 ];
 
 export function rodAnimStyleReady(scene: Phaser.Scene, style: RodDrawStyle): boolean {
@@ -136,6 +156,14 @@ export function rodAnimStyleReady(scene: Phaser.Scene, style: RodDrawStyle): boo
 
 /** Regenerate rod player art if a style is missing (e.g. after hot reload). */
 export function ensurePlayerRodArt(scene: Phaser.Scene): void {
+  const sample = scene.textures.get("player_idle_0");
+  const frame = sample?.get();
+  const sizeMismatch =
+    !!frame && (frame.width !== FW || frame.height !== FH);
+  if (sizeMismatch) {
+    generatePlayerArt(scene);
+    return;
+  }
   for (const style of ROD_ANIM_STYLES) {
     if (!rodAnimStyleReady(scene, style)) {
       generatePlayerArt(scene);
@@ -161,6 +189,7 @@ export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "birthday_rod") return "birthday";
   if (itemId === "test_rod") return "stellar_surfer";
   if (itemId === "star_line_rod") return "star_line";
+  if (itemId === "voidharvester_rod") return "voidharvester";
   return "starter";
 }
 
@@ -196,6 +225,8 @@ export function rodStyleForSkin(
       return "hyperthermic";
     case "rubber_duck":
       return "rubber_duck";
+    case "horizonbreaker":
+      return "horizonbreaker";
     case "gallery":
       return "hidden";
     default:
@@ -229,6 +260,11 @@ export type PlayerPose = {
 export function generatePlayerArt(scene: Phaser.Scene): void {
   const g = scene.make.graphics({ x: 0, y: 0 });
   g.setVisible(false);
+
+  const put = (key: string) => {
+    if (scene.textures.exists(key)) scene.textures.remove(key);
+    g.generateTexture(key, FW, FH);
+  };
 
   const idle: PlayerPose[] = [
     { bob: 0, legBack: 0, legFront: 0, legBackY: 0, legFrontY: 0, armX: 0, armY: 0, armLen: 0, bodyLean: 0 },
@@ -379,17 +415,17 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
   idle.forEach((pose, i) => {
     g.clear();
     drawPlayerFrame(g, pose);
-    g.generateTexture(`player_idle_${i}`, FW, FH);
+    put(`player_idle_${i}`);
   });
   walk.forEach((pose, i) => {
     g.clear();
     drawPlayerFrame(g, pose);
-    g.generateTexture(`player_walk_${i}`, FW, FH);
+    put(`player_walk_${i}`);
   });
   jump.forEach((pose, i) => {
     g.clear();
     drawPlayerFrame(g, pose);
-    g.generateTexture(`player_jump_${i}`, FW, FH);
+    put(`player_jump_${i}`);
   });
 
   // Idle / walk / jump with rod resting over the shoulder (hotbar selected)
@@ -407,17 +443,17 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
     idle.forEach((pose, i) => {
       g.clear();
       drawPlayerFrame(g, { ...withCarry(pose), rodStyle: style });
-      g.generateTexture(`player_idle_rod_${style}_${i}`, FW, FH);
+      put(`player_idle_rod_${style}_${i}`);
     });
     walk.forEach((pose, i) => {
       g.clear();
       drawPlayerFrame(g, { ...withCarry(pose), rodStyle: style });
-      g.generateTexture(`player_walk_rod_${style}_${i}`, FW, FH);
+      put(`player_walk_rod_${style}_${i}`);
     });
     jump.forEach((pose, i) => {
       g.clear();
       drawPlayerFrame(g, { ...withCarry(pose), rodStyle: style });
-      g.generateTexture(`player_jump_rod_${style}_${i}`, FW, FH);
+      put(`player_jump_rod_${style}_${i}`);
     });
   }
 
@@ -425,14 +461,14 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
     fish.forEach((pose, i) => {
       g.clear();
       drawPlayerFrame(g, { ...pose, rodStyle: style, rodPose: "cast" });
-      g.generateTexture(`player_fish_${style}_${i}`, FW, FH);
+      put(`player_fish_${style}_${i}`);
     });
   }
   // Legacy keys → starter (safety for any leftover refs)
   fish.forEach((pose, i) => {
     g.clear();
     drawPlayerFrame(g, { ...pose, rodStyle: "starter", rodPose: "cast" });
-    g.generateTexture(`player_fish_${i}`, FW, FH);
+    put(`player_fish_${i}`);
   });
 
   // Sitting in boat
@@ -449,7 +485,7 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
   };
   g.clear();
   drawPlayerFrame(g, sit);
-  g.generateTexture("player_sit_0", FW, FH);
+  put("player_sit_0");
   for (const style of rodStyles) {
     g.clear();
     drawPlayerFrame(g, {
@@ -460,7 +496,7 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
       armY: 0,
       armLen: 1,
     });
-    g.generateTexture(`player_sit_rod_${style}`, FW, FH);
+    put(`player_sit_rod_${style}`);
   }
 
   // Rowing strokes (seated + arm pull)
@@ -473,13 +509,13 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
   row.forEach((pose, i) => {
     g.clear();
     drawPlayerFrame(g, pose);
-    g.generateTexture(`player_row_${i}`, FW, FH);
+    put(`player_row_${i}`);
   });
 
   // Default single-frame fallback
   g.clear();
   drawPlayerFrame(g, idle[0]);
-  g.generateTexture("player", FW, FH);
+  put("player");
   g.destroy();
 
   createPlayerAnimations(scene);
@@ -487,7 +523,7 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
 
 function drawPlayerFrame(g: Phaser.GameObjects.Graphics, pose: PlayerPose): void {
   // Keep the body on the left so the rod has room on the right; pad top/right in canvas.
-  const ox = 22 + pose.bodyLean;
+  const ox = 22 + PLAYER_FRAME_PAD_LEFT + pose.bodyLean;
   const oy = 8 + pose.bob + PLAYER_FRAME_PAD_TOP;
 
   // Soft contact shadow
@@ -893,6 +929,15 @@ function drawHeldRod(
 
   if (style === "rubber_duck") {
     drawRubberDuckRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+  if (style === "horizonbreaker") {
+    drawHorizonbreakerRod(g, handX, handY, tipX, tipY);
+    return;
+  }
+  if (style === "voidharvester") {
+    const tip = voidharvesterBladeTip(handX, handY, tipX, tipY);
+    drawVoidharvesterRod(g, handX, handY, tip.x, tip.y);
     return;
   }
 

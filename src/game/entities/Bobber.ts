@@ -1,5 +1,10 @@
 import Phaser from "phaser";
 import { createSinkBubbles, playWaterSplash } from "../fx/WaterSplash";
+import {
+  playBobberSplashSfx,
+  playCastLineSfx,
+  playSinkBubbleSfx,
+} from "../audio/FishingSfx";
 
 export class Bobber {
   sprite: Phaser.GameObjects.Image;
@@ -87,6 +92,8 @@ export class Bobber {
     const arcHeight = Phaser.Math.Clamp(40 + dx * 0.28, 55, 150);
     const duration = Phaser.Math.Clamp(520 + dx * 0.7, 560, 980);
 
+    playCastLineSfx(this.sprite.scene, { durationMs: duration, volume: 0.3 });
+
     const flight = { t: 0 };
     this.castTween = this.sprite.scene.tweens.add({
       targets: flight,
@@ -105,8 +112,8 @@ export class Bobber {
         this.castTween = undefined;
         if (!this.active) return;
         this.sprite.setPosition(toX, surfaceY);
-        // Same splash language as dolphin leaps — a touch softer for a bobber.
         playWaterSplash(this.sprite.scene, toX, surfaceY, 0.85);
+        playBobberSplashSfx(this.sprite.scene, 0.85);
 
         if (sinkPx < 4) {
           this.floatY = surfaceY;
@@ -116,6 +123,8 @@ export class Bobber {
         }
         // Sink the line to rod depth — bubbles while descending
         this.sinking = true;
+        const sinkDuration = 280 + sinkPx * 4;
+        playSinkBubbleSfx(this.sprite.scene, sinkDuration);
         this.sinkBubbles = createSinkBubbles(this.sprite.scene, () => ({
           x: this.sprite.x,
           y: this.sprite.y,
@@ -123,7 +132,7 @@ export class Bobber {
         this.sinkTween = this.sprite.scene.tweens.add({
           targets: this.sprite,
           y: depthY,
-          duration: 280 + sinkPx * 4,
+          duration: sinkDuration,
           ease: "Sine.easeInOut",
           onUpdate: () => {
             this.floatY = this.sprite.y;

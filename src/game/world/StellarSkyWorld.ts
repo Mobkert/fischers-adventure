@@ -12,6 +12,8 @@ export const STELLAR_LAND_RIGHT = 2320;
 export type StellarSkyPlaceResult = {
   portalX: number;
   npcX: number;
+  /** Stellar Merchant stand (left of the Warden). */
+  merchantX: number;
   landLeft: number;
   landRight: number;
   /** Tear down visuals, tweens, and ground colliders. */
@@ -105,6 +107,102 @@ export function generateGalacticBeingTexture(scene: Phaser.Scene): void {
 }
 
 /**
+ * Stellar Merchant — cosmic trader being (rings, moon face, gold nebula).
+ * Same genre as the Astral Warden, different silhouette and palette.
+ */
+export function generateStellarMerchantTexture(scene: Phaser.Scene): void {
+  if (scene.textures.exists("stellar_merchant")) {
+    scene.textures.remove("stellar_merchant");
+  }
+  const g = scene.add.graphics();
+  const W = 68;
+  const H = 92;
+
+  // Soft gold aura (merchant warmth vs warden violet)
+  g.fillStyle(0xffc860, 0.14);
+  g.fillEllipse(34, 52, 58, 72);
+  g.fillStyle(0x7ec8ff, 0.1);
+  g.fillEllipse(34, 48, 44, 58);
+
+  // Wide layered robe — teal / midnight, not purple void
+  g.fillStyle(0x061828, 1);
+  g.fillRoundedRect(16, 30, 36, 54, 14);
+  g.fillStyle(0x0a3048, 1);
+  g.fillRoundedRect(18, 32, 32, 50, 12);
+  g.fillStyle(0x1a5878, 0.85);
+  g.fillTriangle(20, 40, 28, 86, 20, 86);
+  g.fillStyle(0xffc860, 0.4);
+  g.fillTriangle(48, 42, 48, 86, 40, 86);
+  // Gold trade sash
+  g.fillStyle(0xe8b040, 0.95);
+  g.fillRect(22, 54, 24, 5);
+  g.fillStyle(0xffe066, 1);
+  g.fillCircle(28, 56.5, 1.6);
+  g.fillCircle(34, 56.5, 1.6);
+  g.fillCircle(40, 56.5, 1.6);
+
+  // Orbital rings around torso (Saturn-like — unique vs warden)
+  g.lineStyle(2.5, 0xffc860, 0.85);
+  g.strokeEllipse(34, 58, 52, 16);
+  g.lineStyle(1.4, 0x7ec8ff, 0.75);
+  g.strokeEllipse(34, 58, 46, 12);
+
+  // Arms as comet trails
+  g.lineStyle(3.5, 0x1a5878, 0.9);
+  g.lineBetween(18, 46, 6, 68);
+  g.lineBetween(50, 46, 62, 68);
+  g.lineStyle(1.8, 0xffc860, 0.9);
+  g.lineBetween(18, 46, 6, 68);
+  g.lineBetween(50, 46, 62, 68);
+  g.fillStyle(0xffe066, 1);
+  g.fillCircle(6, 68, 3);
+  g.fillCircle(62, 68, 3);
+  g.fillStyle(0xffffff, 0.75);
+  g.fillCircle(6, 68, 1.2);
+  g.fillCircle(62, 68, 1.2);
+
+  // Moon face (crescent) — trader of lunar tides
+  g.fillStyle(0xe8f0ff, 1);
+  g.fillCircle(34, 26, 13);
+  g.fillStyle(0x0a3048, 1);
+  g.fillCircle(40, 24, 11);
+  // Soft eye glow on the crescent
+  g.fillStyle(0x7ec8ff, 0.95);
+  g.fillCircle(28, 26, 2.2);
+  g.fillStyle(0xffe066, 0.9);
+  g.fillCircle(28, 26, 1);
+
+  // Coin constellation halo (not a star crown)
+  const coins = [
+    [34, 6],
+    [22, 12],
+    [46, 12],
+    [16, 22],
+    [52, 22],
+  ];
+  for (const [cx, cy] of coins) {
+    g.fillStyle(0xe8b040, 0.95);
+    g.fillCircle(cx, cy, 2.4);
+    g.fillStyle(0xffe066, 1);
+    g.fillCircle(cx, cy, 1.2);
+  }
+  g.lineStyle(1.2, 0xffc860, 0.65);
+  g.strokeCircle(34, 16, 14);
+
+  // Floating trade orbs at hem
+  g.fillStyle(0x7ec8ff, 0.55);
+  g.fillCircle(26, 88, 2);
+  g.fillCircle(34, 90, 2.5);
+  g.fillCircle(42, 88, 2);
+  g.fillStyle(0xffc860, 0.5);
+  g.fillCircle(30, 84, 1.4);
+  g.fillCircle(38, 84, 1.4);
+
+  g.generateTexture("stellar_merchant", W, H);
+  g.destroy();
+}
+
+/**
  * Build the Stellar Sky pocket — void backdrop, nebulae, floating isle,
  * return portal, and ground tiles for walking.
  * Call `destroy()` when leaving so overworld stays light.
@@ -116,6 +214,7 @@ export function placeStellarSky(
   groundGroup: Phaser.Physics.Arcade.StaticGroup
 ): StellarSkyPlaceResult {
   generateGalacticBeingTexture(scene);
+  generateStellarMerchantTexture(scene);
 
   const W = STELLAR_LOCAL_W;
   const skyH = groundY + 520;
@@ -398,6 +497,7 @@ export function placeStellarSky(
   return {
     portalX,
     npcX: mid + 40,
+    merchantX: mid - 180,
     landLeft: landL,
     landRight: landR,
     destroy: () => {

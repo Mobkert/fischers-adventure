@@ -73,6 +73,8 @@ export function createLimitedTooltipHost(
       tip.setText(text);
       tip.setPosition(screenX - panelCx + 12, screenY - panelCy - 8);
       tip.setVisible(true);
+      // Skin / mastery overlays are added after this tip — keep it on top.
+      parent.bringToTop(tip);
     },
     hide() {
       tip.setVisible(false);

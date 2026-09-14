@@ -123,8 +123,9 @@ export class SurferMasteryBlackHole {
     this.phase += dt;
     this.facing = facingLeft ? -1 : 1;
 
-    const targetX = playerX - this.facing * 42;
-    const targetY = playerY - 10;
+    // Trail close; depth is set above the player so pads don't bury it.
+    const targetX = playerX - this.facing * 44;
+    const targetY = playerY - 6;
     if (this.followX === 0 && this.followY === 0) {
       this.followX = targetX;
       this.followY = targetY;

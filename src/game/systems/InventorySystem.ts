@@ -15,7 +15,6 @@ import {
   FishSizeId,
   mutationSellMult,
   sizeSellMult,
-  hasUnsellableEffect,
   BESTIARY_CLAIM_REWARD,
   BESTIARY_AREAS,
   FishHabitat,
@@ -42,6 +41,7 @@ import {
   rollBaitFromCrate,
   baitHasFishTargets,
   BAIT_USE_COOLDOWN_MS,
+  LimitedEditionInfo,
 } from "../data/items";
 import { SaveData, cloneSave, defaultSave } from "../save/SaveBank";
 import type { WeatherId } from "./WeatherSystem";
@@ -97,6 +97,10 @@ import {
   rollFishQuestAmulet,
   rollFishQuestTarget,
 } from "./FishQuest";
+import {
+  isStellarMerchantMutation,
+  stellarMerchantMutationMult,
+} from "./StellarMerchant";
 
 function sameMutation(
   a: FishMutationId | null | undefined,
@@ -887,7 +891,7 @@ export class InventorySystem {
   /** Buy a shop rod if affordable and not already owned. */
   buyRod(rodId: ItemId): { ok: boolean; message: string } {
     const def = ITEMS[rodId];
-    if (!def?.isRod || def.buyPrice == null || rodId === "tranquil_rod" || rodId === "recoil_rod" || rodId === "portal_rod" || rodId === "forge_rod" || rodId === "starweaver_rod" || rodId === "birthday_rod" || rodId === "star_line_rod") {
+    if (!def?.isRod || def.buyPrice == null || rodId === "tranquil_rod" || rodId === "recoil_rod" || rodId === "portal_rod" || rodId === "forge_rod" || rodId === "starweaver_rod" || rodId === "birthday_rod" || rodId === "star_line_rod" || rodId === "voidharvester_rod") {
       return { ok: false, message: "That isn't for sale." };
     }
     if (this.ownsRod(rodId)) {
@@ -1111,7 +1115,7 @@ export class InventorySystem {
 
   buyAmulet(amuletId: ItemId): { ok: boolean; message: string } {
     const def = ITEMS[amuletId];
-    if (!def?.isAmulet || def.buyPrice == null) {
+    if (!def?.isAmulet || def.buyPrice == null || def.rarity === "admin") {
       return { ok: false, message: "That isn't for sale." };
     }
     if (this.coins < def.buyPrice) {
@@ -1781,6 +1785,81 @@ export class InventorySystem {
     };
   }
 
+  /** Buy a rod skin for coins (Stellar Merchant cosmic shop, etc.). */
+  buyRodSkin(
+    skinId: RodSkinId,
+    price: number
+  ): { ok: boolean; message: string } {
+    const def = ROD_SKINS[skinId];
+    if (!def) return { ok: false, message: "Unknown skin." };
+    if (this.ownsRodSkin(skinId)) {
+      return { ok: false, message: `You already own ${def.label}.` };
+    }
+    if (this.coins < price) {
+      return {
+        ok: false,
+        message: `Need $${price.toLocaleString()} for ${def.label}.`,
+      };
+    }
+    this.coins -= price;
+    const unlocked = this.unlockRodSkin(skinId, 0);
+    return { ok: true, message: unlocked.message };
+  }
+
+  /** Buy a limited rod from the Stellar Merchant shop (custom price / materials). */
+  buyStellarShopRod(
+    rodId: ItemId,
+    price: number,
+    requiresItem?: ItemId
+  ): { ok: boolean; message: string } {
+    const def = ITEMS[rodId];
+    if (!def?.isRod) return { ok: false, message: "Unknown rod." };
+    if (this.ownsRod(rodId)) {
+      return { ok: false, message: `You already own the ${def.name}.` };
+    }
+    if (requiresItem && !this.hasItem(requiresItem)) {
+      const reqName = ITEMS[requiresItem]?.name ?? requiresItem;
+      return {
+        ok: false,
+        message: `Need ${reqName} to buy the ${def.name}.`,
+      };
+    }
+    if (this.coins < price) {
+      return {
+        ok: false,
+        message: `Need $${price.toLocaleString()} for ${def.name}.`,
+      };
+    }
+    this.coins -= price;
+    if (requiresItem && !this.removeOneItem(requiresItem)) {
+      this.coins += price;
+      const reqName = ITEMS[requiresItem]?.name ?? requiresItem;
+      return { ok: false, message: `Need ${reqName} to buy the ${def.name}.` };
+    }
+    this.registerOwnedRod(rodId);
+    const mat =
+      requiresItem && ITEMS[requiresItem]
+        ? ` (used ${ITEMS[requiresItem].name})`
+        : "";
+    return { ok: true, message: `Purchased ${def.name}!${mat}` };
+  }
+
+  /** Remove a rod from ownership (testing cleanup / dev grants). */
+  stripRodOwnership(rodId: ItemId): void {
+    if (!this.ownsRod(rodId)) return;
+    this.ownedRods = this.ownedRods.filter((id) => id !== rodId);
+    if (this.equippedRodId === rodId) {
+      this.equippedRodId = "starter_rod";
+      this.hotbar[0] = {
+        itemId: "starter_rod",
+        count: 1,
+        mutation: null,
+        size: null,
+        keep: false,
+      };
+    }
+  }
+
   /**
    * Skins owned / selectable for a rod.
    * Every rod has Default; extra skins come from gallery / crates.
@@ -1790,6 +1869,7 @@ export class InventorySystem {
     label: string;
     textureKey: string;
     owned: boolean;
+    limitedEdition?: LimitedEditionInfo;
   }> {
     const def = ITEMS[rodId];
     const baseTex = def?.textureKey ?? "rod";
@@ -1798,6 +1878,7 @@ export class InventorySystem {
       label: string;
       textureKey: string;
       owned: boolean;
+      limitedEdition?: LimitedEditionInfo;
     }> = [
       {
         id: "default",
@@ -1812,6 +1893,7 @@ export class InventorySystem {
         label: skin.label,
         textureKey: skin.textureKey,
         owned: this.ownsRodSkin(skin.id),
+        limitedEdition: skin.limitedEdition,
       });
     }
     return options;
@@ -2525,7 +2607,6 @@ export class InventorySystem {
           s.itemId != null &&
           isMerchantSellable(s.itemId) &&
           !s.keep &&
-          !hasUnsellableEffect(s.size) &&
           !ITEMS[s.itemId].isQuestItem &&
           ITEMS[s.itemId].sellPrice != null
       )
@@ -2541,7 +2622,6 @@ export class InventorySystem {
         !isMerchantSellable(slot.itemId) ||
         slot.count <= 0 ||
         slot.keep ||
-        hasUnsellableEffect(slot.size) ||
         ITEMS[slot.itemId].isQuestItem ||
         ITEMS[slot.itemId].sellPrice == null
       ) {
@@ -2576,7 +2656,6 @@ export class InventorySystem {
         !isMerchantSellable(slot.itemId) ||
         slot.count <= 0 ||
         slot.keep ||
-        hasUnsellableEffect(slot.size) ||
         ITEMS[slot.itemId].isQuestItem ||
         ITEMS[slot.itemId].sellPrice == null
       ) {
@@ -2598,14 +2677,60 @@ export class InventorySystem {
     return { sold, earned };
   }
 
+  private isStellarMerchantFishSlot(slot: InventorySlot): boolean {
+    return (
+      !!slot.itemId &&
+      FISH_ITEM_IDS.includes(slot.itemId) &&
+      !ITEMS[slot.itemId].isQuestItem &&
+      ITEMS[slot.itemId].sellPrice != null &&
+      !slot.keep &&
+      isStellarMerchantMutation(slot.mutation)
+    );
+  }
+
+  getStellarMerchantSellableCount(): number {
+    return [...this.bag, ...this.hotbar]
+      .filter((s) => this.isStellarMerchantFishSlot(s))
+      .reduce((sum, s) => sum + s.count, 0);
+  }
+
+  /** Premium offer for Starstruck / Event Horizon / Lunar / Moonlight fish. */
+  getStellarMerchantSellableValue(): number {
+    let earned = 0;
+    for (const slot of [...this.bag, ...this.hotbar]) {
+      if (!this.isStellarMerchantFishSlot(slot) || slot.count <= 0) continue;
+      const price = ITEMS[slot.itemId!].sellPrice ?? 0;
+      const mult =
+        stellarMerchantMutationMult(slot.mutation) * sizeSellMult(slot.size);
+      earned += slot.count * price * mult;
+    }
+    return Math.round(earned);
+  }
+
+  sellStellarMerchantFish(): { sold: number; earned: number } {
+    let sold = 0;
+    let earned = 0;
+    for (const slot of [...this.bag, ...this.hotbar]) {
+      if (!this.isStellarMerchantFishSlot(slot) || slot.count <= 0) continue;
+      const price = ITEMS[slot.itemId!].sellPrice ?? 0;
+      const mult =
+        stellarMerchantMutationMult(slot.mutation) * sizeSellMult(slot.size);
+      sold += slot.count;
+      earned += slot.count * price * mult;
+      slot.itemId = null;
+      slot.count = 0;
+      slot.mutation = null;
+      slot.size = null;
+      slot.keep = false;
+    }
+    earned = Math.round(earned);
+    this.coins += earned;
+    return { sold, earned };
+  }
+
   /** Fair coin value for one unit in a sellable fish slot. */
   getFishUnitFairValue(slot: InventorySlot): number {
-    if (
-      !slot.itemId ||
-      !isMerchantSellable(slot.itemId) ||
-      slot.keep ||
-      hasUnsellableEffect(slot.size)
-    ) {
+    if (!slot.itemId || !isMerchantSellable(slot.itemId) || slot.keep) {
       return 0;
     }
     const price = ITEMS[slot.itemId].sellPrice ?? 0;
@@ -2618,7 +2743,6 @@ export class InventorySystem {
   listAppraisableFishSlots(): InventorySlot[] {
     return [...this.bag, ...this.hotbar].filter((s) => {
       if (!s.itemId || s.count <= 0) return false;
-      if (hasUnsellableEffect(s.size)) return false;
       const def = ITEMS[s.itemId];
       if (!def || def.isMineral || def.isQuestItem || def.isRod || def.isBait) {
         return false;
@@ -2655,9 +2779,6 @@ export class InventorySystem {
   } {
     if (!slot.itemId || slot.count <= 0) {
       return { ok: false, message: "Nothing to appraise.", paid: 0 };
-    }
-    if (hasUnsellableEffect(slot.size)) {
-      return { ok: false, message: "I can't appraise unsellable fish.", paid: 0 };
     }
     const id = slot.itemId;
     const def = ITEMS[id];
@@ -2759,8 +2880,7 @@ export class InventorySystem {
         s.itemId != null &&
         isMerchantSellable(s.itemId) &&
         s.count > 0 &&
-        !s.keep &&
-        !hasUnsellableEffect(s.size)
+        !s.keep
     );
   }
 
@@ -2773,14 +2893,11 @@ export class InventorySystem {
       !slot.itemId ||
       !isMerchantSellable(slot.itemId) ||
       slot.count <= 0 ||
-      slot.keep ||
-      hasUnsellableEffect(slot.size)
+      slot.keep
     ) {
       return {
         ok: false,
-        message: hasUnsellableEffect(slot.size)
-          ? "That fish is unsellable."
-          : "Nothing to sell.",
+        message: "Nothing to sell.",
       };
     }
     const id = slot.itemId;

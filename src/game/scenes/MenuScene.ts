@@ -128,21 +128,22 @@ export class MenuScene extends Phaser.Scene {
       .rectangle(0, 0, panelW, panelH, 0x1a241c, 0.97)
       .setStrokeStyle(2, 0xc4a86a);
 
-    const title = this.add
-      .text(0, -panelH / 2 + 28, "Stellar Sky 1.0", {
-        fontFamily: "Georgia, serif",
-        fontSize: "24px",
-        color: "#f0e6d2",
-      })
-      .setOrigin(0.5);
+    const titleWave = this.createCosmicWaveText("Update 1.25", {
+      fontFamily: "Georgia, serif",
+      fontSize: "24px",
+      color: "#8ec0ff",
+    });
+    titleWave.root.setY(-panelH / 2 + 28 - titleWave.height / 2);
 
-    const subtitle = this.add
-      .text(0, -panelH / 2 + 56, "What's New · Stellar Sky Update", {
+    const subtitleWave = this.createCosmicWaveText(
+      "What's New · Voidharvester & Stellar Shop",
+      {
         fontFamily: "Arial",
         fontSize: "13px",
-        color: "#9aaa9a",
-      })
-      .setOrigin(0.5);
+        color: "#a090e8",
+      }
+    );
+    subtitleWave.root.setY(-panelH / 2 + 56 - subtitleWave.height / 2);
 
     const listRoot = this.add.container(0, viewTop);
     const listContent = this.add.container(0, 0);
@@ -159,70 +160,117 @@ export class MenuScene extends Phaser.Scene {
     maskShape.setVisible(false);
     listRoot.setMask(maskShape.createGeometryMask());
 
-    const bodyText =
-      "GENERAL\n\n" +
-      "Welcome to Stellar Sky 1.0 — a new night realm above the\n" +
-      "world, the Astral Warden questline, Star Line & Stellar\n" +
-      "Surfer rods, Surfer mastery, Resonated Hat travel, and\n" +
-      "more rod masteries.\n\n" +
-      "STELLAR SKY\n\n" +
-      "• New Stellar Sky pocket world (galactic music & sky)\n" +
-      "• Astral Warden — Star Line turn-in, then Surfer quest\n" +
-      "• Star Line Rod — night oval / meteor catch power\n" +
-      "• Stellar Surfer — DEFINED form (nerfed) → ascend for full\n" +
-      "  power, Event Horizon, black-hole dupes & rideable board\n" +
-      "• Q at a port to ride the Surfer (faster than Jet Ski)\n\n" +
-      "RESONATED HAT\n\n" +
-      "• Cosmic Haberdasher in the swamp (green shirt NPC)\n" +
-      "• Turn in Moonlight fish + gems for the Resonated Hat\n" +
-      "• Equip it to hover the full moon / Tide Compass to Sky\n\n" +
-      "STELLAR SURFER MASTERY\n\n" +
-      "• Ascended Surfer only (DEFINED cannot progress)\n" +
-      "• Surf 5:00 cumulative · 50 black-hole dupes · 33 Event Horizon\n" +
-      "• Reward: follower void (only while Surfer equipped)\n" +
-      "  — every 30s grants an area fish (80% Starstruck /\n" +
-      "  20% Event Horizon) with a burst animation\n" +
-      "• Rubber Duck skin — yellow duck surfboard, duck stars\n" +
-      "  that quack, duck void UI, duck rideable board\n\n" +
-      "OTHER MASTERY & RODS\n\n" +
-      "• Recoil mastery re-enabled (Blasted sell goal)\n" +
-      "• Portal mastery — Gate dupes, +25 stats, 4m depth\n" +
-      "• Coral Rod — ×2 world mutations; stacks with Mutation\n" +
-      "  Bobber to ×4\n" +
-      "• Grey Mastery buttons on Augment, Forge & Coral\n" +
-      "  (Coming soon)\n" +
-      "• Starweaver removed from the Ashencast Forge and is\n" +
-      "  no longer obtainable (keeps working if you own it)\n\n" +
-      "CATCH & UI\n\n" +
-      "• Star rain / black hole catch flow on Stellar Surfer\n" +
-      "• Catch toasts above the hotbar with fish icons\n" +
-      "• Twin bobber / multi-catch show per-fish messages\n\n" +
-      "CODES (Code Guy)\n\n" +
-      "• W_UPDATE — $10,000, Moonlight Amulet, Celestial\n" +
-      "  Amulet, and 1 Austinite (one-time)\n" +
-      "• SERPENTEELS — 15 Serpent Lure, 20 Bait Crates,\n" +
-      "  and a Blasted Serpent Eel (Unsellable) (one-time)\n" +
-      "• OREAREAWESOME — $2,200 and 10 Ore Clusters\n" +
-      "  (one-time)\n" +
-      "• NEWSTUFF & FREESKINCRATES — expired\n\n" +
-      "FROM ASHENCAST 1.52\n\n" +
-      "• Stellar Surfer star rain + black hole foundations\n" +
-      "• Event Horizon & Starstruck mutations\n" +
-      "• Wildflower Bloom chance 30%";
+    const wrapW = panelW - 64;
+    const bodyStyle = {
+      fontFamily: "Arial",
+      fontSize: "14px",
+      color: "#d0d8d0",
+      align: "left" as const,
+      lineSpacing: 4,
+      wordWrap: { width: wrapW },
+    };
+    const headerStyle = {
+      fontFamily: "Arial",
+      fontSize: "14px",
+      color: "#9ab8ff",
+      fontStyle: "bold" as const,
+    };
 
-    const body = this.add
-      .text(0, 0, bodyText, {
-        fontFamily: "Arial",
-        fontSize: "14px",
-        color: "#d0d8d0",
-        align: "left",
-        lineSpacing: 4,
-        wordWrap: { width: panelW - 64 },
-      })
-      .setOrigin(0.5, 0);
-    listContent.add(body);
+    /** Accent = purple/blue multi-letter wave; plain = static body copy. */
+    const blocks: Array<{ text: string; accent?: boolean }> = [
+      {
+        text:
+          "GENERAL\n\n" +
+          "Update 1.25 opens the Stellar Merchant shop with a new\n" +
+          "limited rod, a Tranquil skin, fishing sound polish, and\n" +
+          "a few important fixes.\n",
+      },
+      { text: "STELLAR MERCHANT SHOP", accent: true },
+      {
+        text:
+          "\n" +
+          "• Shop is live in Stellar Sky (left of the Astral Warden)\n" +
+          "• Sell still buys Starstruck, Event Horizon, Lunar &\n" +
+          "  Moonlight fish at premium rates\n",
+      },
+      { text: "THE VOIDHARVESTER", accent: true },
+      {
+        text:
+          "\n" +
+          "• Limited astral greatsword rod — $1,750,000 + 1 Painite\n" +
+          "• Stats: 75 luck · 100 resilience · 70 control · 5m depth\n" +
+          "• 12% Event Horizon chance\n" +
+          "• Void Harvest: while the fish is in the bar, the zone\n" +
+          "  shrinks toward 0% with no normal progress; when it\n" +
+          "  leaves, you blast progress from the shrink, then the\n" +
+          "  bar becomes 25% control / 15% resilience and fills\n" +
+          "  normally while the fish stays inside\n" +
+          "• Legendaries & mythicals move like Bluefin Tuna\n",
+      },
+      { text: "HORIZONBREAKER", accent: true },
+      {
+        text:
+          "\n" +
+          "• New Tranquil Rod skin — $75,000 at the Stellar Merchant\n" +
+          "• Scattered star shaft, black-hole tip, cosmic catch UI\n",
+      },
+      {
+        text:
+          "FISHING & AUDIO\n\n" +
+          "• Cast swoosh, bobber splash, and sink bubble SFX\n",
+      },
+      { text: "CODES (Code Guy)", accent: true },
+      {
+        text:
+          "\n" +
+          "• FINALYCAVEWHALE — Cave Amulet (ADMIN rarity).\n" +
+          "  Use it to summon a Cave Whale abundance in\n" +
+          "  Frostpeak Cave (one-time)\n" +
+          "• W_UPDATE — $10,000, Moonlight Amulet, Celestial\n" +
+          "  Amulet, and 1 Austinite (one-time)\n" +
+          "• SERPENTEELS — 15 Serpent Lure, 20 Bait Crates,\n" +
+          "  and a Blasted Serpent Eel (Worthless — $0 sell)\n" +
+          "  (one-time)\n" +
+          "• OREAREAWESOME — expired\n",
+      },
+      {
+        text:
+          "FIXES\n\n" +
+          "• Cave whale abundance no longer fails after cave load\n" +
+          "  (banner includes the lake name)\n" +
+          "• Stellar Surfer mastery black hole follower shows again\n" +
+          "  beside the player while granting fish\n" +
+          "• Worthless size effect sells for $0 (no longer blocked)\n\n" +
+          "FROM STELLAR SKY 1.0\n\n" +
+          "• Stellar Sky pocket world, Astral Warden questline\n" +
+          "• Star Line & Stellar Surfer rods, Surfer mastery\n" +
+          "• Resonated Hat travel via Cosmic Haberdasher",
+      },
+    ];
 
-    const contentH = body.height + 16;
+    const waveLetterGroups: Phaser.GameObjects.Text[][] = [
+      titleWave.letters,
+      subtitleWave.letters,
+    ];
+    let y = 0;
+    for (const block of blocks) {
+      if (block.accent) {
+        const wave = this.createCosmicWaveText(block.text, headerStyle);
+        wave.root.setY(y);
+        listContent.add(wave.root);
+        waveLetterGroups.push(wave.letters);
+        y += wave.height + 2;
+      } else {
+        const tx = this.add
+          .text(0, y, block.text, bodyStyle)
+          .setOrigin(0.5, 0);
+        listContent.add(tx);
+        y += tx.height + 8;
+      }
+    }
+
+    const contentH = y + 8;
+    const stopAccentPulse = this.startPurpleBlueGradientWave(waveLetterGroups);
     let scrollY = 0;
     const maxScroll = () => Math.max(0, contentH - viewH);
 
@@ -281,6 +329,7 @@ export class MenuScene extends Phaser.Scene {
     closeBg.on("pointerover", () => closeBg.setFillStyle(0x3a8a5a));
     closeBg.on("pointerout", () => closeBg.setFillStyle(0x2a6b4a));
     const closeUpdateLog = () => {
+      stopAccentPulse();
       this.input.off("wheel", wheelHandler);
       listRoot.clearMask(true);
       maskShape.destroy();
@@ -294,14 +343,75 @@ export class MenuScene extends Phaser.Scene {
     root.add([
       dim,
       panel,
-      title,
-      subtitle,
+      titleWave.root,
+      subtitleWave.root,
       listRoot,
       scrollTrack,
       scrollThumb,
       closeBg,
       closeLabel,
     ]);
+  }
+
+  /** Centered per-letter text so a color wave can show blue and purple at once. */
+  private createCosmicWaveText(
+    str: string,
+    style: Phaser.Types.GameObjects.Text.TextStyle
+  ): {
+    root: Phaser.GameObjects.Container;
+    letters: Phaser.GameObjects.Text[];
+    height: number;
+  } {
+    const root = this.add.container(0, 0);
+    const letters: Phaser.GameObjects.Text[] = [];
+    let x = 0;
+    for (const ch of str) {
+      const glyph = ch === " " ? "\u00A0" : ch;
+      const letter = this.add.text(x, 0, glyph, style).setOrigin(0, 0);
+      letters.push(letter);
+      root.add(letter);
+      x += letter.width;
+    }
+    const totalW = x;
+    for (const letter of letters) {
+      letter.x -= totalW / 2;
+    }
+    return {
+      root,
+      letters,
+      height: letters[0]?.height ?? 16,
+    };
+  }
+
+  /**
+   * Slow purple/blue gradient that swipes across letters so multiple
+   * colors are visible on the same word at once.
+   */
+  private startPurpleBlueGradientWave(
+    letterGroups: Phaser.GameObjects.Text[][]
+  ): () => void {
+    const blue = Phaser.Display.Color.ValueToColor(0x5aa8ff);
+    const purple = Phaser.Display.Color.ValueToColor(0xb878ff);
+    let phase = 0;
+    const onUpdate = (_time: number, delta: number) => {
+      phase += delta * 0.0016;
+      for (const letters of letterGroups) {
+        for (let i = 0; i < letters.length; i++) {
+          const letter = letters[i]!;
+          if (!letter.active) continue;
+          // Spatial offset → blue and purple coexist across the word
+          const u = (Math.sin(phase - i * 0.55) + 1) * 0.5;
+          const r = Math.round(Phaser.Math.Linear(blue.red, purple.red, u));
+          const g = Math.round(Phaser.Math.Linear(blue.green, purple.green, u));
+          const b = Math.round(Phaser.Math.Linear(blue.blue, purple.blue, u));
+          letter.setColor(
+            Phaser.Display.Color.RGBToString(r, g, b, 0, "#")
+          );
+        }
+      }
+    };
+    this.events.on("update", onUpdate);
+    return () => this.events.off("update", onUpdate);
   }
 
   private showAccessoriesPanel(): void {

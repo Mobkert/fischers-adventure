@@ -17,7 +17,7 @@ export type CaveLake = { id: string; left: number; right: number; name: string }
  */
 export class CaveWhaleAbundance {
   private scene: Phaser.Scene;
-  private lakes: CaveLake[];
+  private getLakes: () => CaveLake[];
   private waterSurfaceY: number;
   private getLuck: () => number;
   private fishList: Fish[];
@@ -33,14 +33,14 @@ export class CaveWhaleAbundance {
 
   constructor(
     scene: Phaser.Scene,
-    lakes: CaveLake[],
+    getLakes: () => CaveLake[],
     waterSurfaceY: number,
     fishList: Fish[],
     getLuck: () => number,
     onAnnounce?: (message: string) => void
   ) {
     this.scene = scene;
-    this.lakes = lakes;
+    this.getLakes = getLakes;
     this.waterSurfaceY = waterSurfaceY;
     this.fishList = fishList;
     this.getLuck = getLuck;
@@ -51,15 +51,18 @@ export class CaveWhaleAbundance {
     return this.active;
   }
 
-  /** Force an immediate whale spawn (for testing). */
-  forceSpawn(preferLakeId?: string): void {
-    if (this.active || this.ending) return;
+  /** Force an immediate whale spawn. Returns false if lakes aren't ready. */
+  forceSpawn(preferLakeId?: string): boolean {
+    if (this.active || this.ending) return false;
+    const lakes = this.getLakes();
+    if (lakes.length === 0) return false;
     this.checkElapsed = 0;
     this.cooldownRemaining = 0;
     const preferred = preferLakeId
-      ? this.lakes.find((l) => l.id === preferLakeId)
+      ? lakes.find((l) => l.id === preferLakeId)
       : undefined;
     this.startAbundance(preferred);
+    return this.active;
   }
 
   notifyFishRemoved(fish: Fish): void {
@@ -73,7 +76,10 @@ export class CaveWhaleAbundance {
 
     if (this.active) {
       this.activeRemaining -= delta;
-      if (this.whale && (this.whale.state === "caught" || !this.whale.sprite.active)) {
+      if (
+        this.whale &&
+        (this.whale.state === "caught" || !this.whale.sprite.active)
+      ) {
         this.whale = null;
       }
       if (this.activeRemaining <= 0 && !this.ending) {
@@ -83,6 +89,8 @@ export class CaveWhaleAbundance {
     }
 
     if (this.cooldownRemaining > 0) return;
+    // Cave lakes load when Frostpeak Cave is first placed — don't roll until then.
+    if (this.getLakes().length === 0) return;
 
     this.checkElapsed += delta;
     if (this.checkElapsed < CHECK_MS) return;
@@ -99,7 +107,8 @@ export class CaveWhaleAbundance {
   }
 
   private startAbundance(forceLake?: CaveLake): void {
-    const lake = forceLake ?? Phaser.Utils.Array.GetRandom(this.lakes);
+    const lakes = this.getLakes();
+    const lake = forceLake ?? Phaser.Utils.Array.GetRandom(lakes);
     if (!lake) return;
 
     this.active = true;
@@ -108,14 +117,14 @@ export class CaveWhaleAbundance {
     this.chance = BASE_CHANCE;
     this.spawnWhale(lake);
     this.onAnnounce?.(
-      "A massive whale has spawned in the mountain caves"
+      `A massive whale has spawned in the mountain caves (${lake.name})`
     );
   }
 
   private spawnWhale(lake: CaveLake): void {
     const pad = 120;
     const left = lake.left + pad;
-    const right = lake.right - pad;
+    const right = Math.max(left + 40, lake.right - pad);
     const x = Phaser.Math.Between(left, right);
     const fish = new Fish(
       this.scene,

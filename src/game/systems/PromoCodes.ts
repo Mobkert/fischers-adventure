@@ -10,7 +10,9 @@ export type PromoCodeId =
   | "new_stuff"
   | "serpent_eels"
   | "free_stellar_surfer"
-  | "w_update";
+  | "w_update"
+  | "finally_cave_whale"
+  | "admin_code";
 
 export type PromoRedeemResult =
   | { ok: true; message: string }
@@ -26,6 +28,9 @@ const CODE_MAP: Record<string, PromoCodeId> = {
   NEWSTUFF: "new_stuff",
   SERPENTEELS: "serpent_eels",
   W_UPDATE: "w_update",
+  FINALYCAVEWHALE: "finally_cave_whale",
+  // Secret — expire later; not listed in update log
+  ADMINCODE: "admin_code",
   // Secret — not listed in update log / Code Guy hints
   ")(freestellarsurfer!!!)(": "free_stellar_surfer",
 };
@@ -38,6 +43,8 @@ const EXPIRED_PROMO_CODES = new Set<PromoCodeId>([
   "sorry_for_bugs",
   "free_skin_crates",
   "new_stuff",
+  "admin_code",
+  "ore_area_awesome",
 ]);
 
 export function normalizePromoCodeInput(raw: string): string {
@@ -161,7 +168,7 @@ export function redeemPromoCode(
       return {
         ok: true,
         message:
-          "Code Guy hands you 15 Serpent Lure, 20 Bait Crates, and a Blasted Serpent Eel (Unsellable)!",
+          "Code Guy hands you 15 Serpent Lure, 20 Bait Crates, and a Blasted Serpent Eel (Worthless — $0 sell)!",
       };
     }
     case "free_stellar_surfer": {
@@ -209,6 +216,36 @@ export function redeemPromoCode(
         ok: true,
         message:
           "Code Guy hands you $10,000, a Moonlight Amulet, a Celestial Amulet, and 1 Austinite!",
+      };
+    }
+    case "finally_cave_whale": {
+      inventory.grantAmulet("amulet_cave");
+      inventory.markPromoRedeemed(codeId);
+      return {
+        ok: true,
+        message:
+          "Code Guy slips you a Cave Amulet — ADMIN rarity. Use it to summon a cave whale.",
+      };
+    }
+    case "admin_code": {
+      if (inventory.hasItem("admin_device")) {
+        inventory.markPromoRedeemed(codeId);
+        return {
+          ok: true,
+          message: "You already carry the Admin Device — code marked used.",
+        };
+      }
+      if (inventory.countEmptyBagSlots() < 1) {
+        return { ok: false, message: "Need 1 free bag slot for the Admin Device." };
+      }
+      if (!inventory.addItem("admin_device")) {
+        return { ok: false, message: "Couldn't grant the Admin Device." };
+      }
+      inventory.markPromoRedeemed(codeId);
+      return {
+        ok: true,
+        message:
+          "Code Guy presses a sealed tablet into your hands. Left-click it anytime.",
       };
     }
     default:

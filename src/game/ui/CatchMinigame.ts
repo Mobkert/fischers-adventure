@@ -91,6 +91,23 @@ export class CatchMinigame {
     color: number;
     forks: number;
   }> = [];
+  /** Horizonbreaker — galaxy panel + wavy cosmic bar + BH bubble. */
+  private horizonCosmosGfx?: Phaser.GameObjects.Graphics;
+  private horizonFxGfx?: Phaser.GameObjects.Graphics;
+  private horizonBarGfx?: Phaser.GameObjects.Graphics;
+  private horizonBhGfx?: Phaser.GameObjects.Graphics;
+  private horizonPhase = 0;
+  private horizonStars: Array<{
+    x: number;
+    y: number;
+    size: number;
+    spin: number;
+    spinSpeed: number;
+    life: number;
+    maxLife: number;
+    color: number;
+  }> = [];
+  private horizonStarSpawn = 0;
   private fishIcon!: Phaser.GameObjects.Image;
   private fishGlow!: Phaser.GameObjects.Image;
   private fishIcon2!: Phaser.GameObjects.Image;
@@ -311,6 +328,28 @@ export class CatchMinigame {
   private starLineHitCount = 0;
   /** Birthday Rod: party balloons, zone tick, instant confetti catch. */
   private birthdayParty = false;
+  /** The Voidharvester shrink / blast catch power. */
+  private voidHarvest = false;
+  private voidControlShare = 0.7;
+  private voidResilience = 100;
+  private voidWasOverlapping = false;
+  /** Control share when the current in-bar hold started (for progress grant). */
+  private voidHoldStartShare = 0.7;
+  private voidBaseSpeedMult = 1;
+  private voidWantJerky = false;
+  private voidUnstoppableJerky = false;
+  private readonly voidControlMax = 0.7;
+  private readonly voidControlMin = 0;
+  /** After the fish leaves, bar restores to this control share. */
+  private readonly voidControlAfterZero = 0.25;
+  /** ~6s to fully shrink 70% → 0% control. */
+  private readonly voidShrinkPerSec = 0.12;
+  /** Queued catch progress from harvest blasts (applied smoothly). */
+  private voidPendingProgress = 0;
+  /** Almost-instant bank of harvest blast progress (~0.1s for a full bar). */
+  private readonly voidProgressPerSec = 10;
+  /** False until fish leaves once — then normal in-bar progress fills while catching. */
+  private voidHarvestFillEnabled = false;
   private birthdayBalloons: BirthdayBalloon[] = [];
   private birthdayBalloonLayer!: Phaser.GameObjects.Container;
   private birthdaySpawnTimer = 0;
@@ -560,6 +599,8 @@ export class CatchMinigame {
       forgeStrike?: boolean;
       /** Starweaver Rod progress sacrifice stun. */
       starweaverWeave?: boolean;
+      /** The Voidharvester — shrink zone while fish inside, blast progress on leave. */
+      voidHarvest?: boolean;
       /** Test Rod accelerating star rain. */
       starRain?: boolean;
       /** Defined Surfer — stars only to 0.3s, no black hole. */
@@ -662,6 +703,16 @@ export class CatchMinigame {
     this.forgeHadEmberWeapon = false;
     this.clearForgeWeapons();
     this.birthdayParty = !!options?.birthdayParty;
+    this.voidHarvest = !!options?.voidHarvest;
+    this.voidControlShare = this.voidControlMax;
+    this.voidResilience = 100;
+    this.voidWasOverlapping = false;
+    this.voidHoldStartShare = this.voidControlMax;
+    this.voidPendingProgress = 0;
+    this.voidHarvestFillEnabled = false;
+    this.voidBaseSpeedMult = options?.speedMult ?? 1;
+    this.voidWantJerky = !!options?.jerky;
+    this.voidUnstoppableJerky = !!options?.unstoppableJerky;
     this.rodSkinId = options?.rodSkinId ?? null;
     this.laserElectrifyTween?.stop();
     this.laserElectrifyTween = undefined;
@@ -690,13 +741,18 @@ export class CatchMinigame {
     this.clearLaserSpaceUi();
     this.clearFrostChromeUi();
     this.clearBlackHoleUi();
+    this.clearHorizonbreakerUi();
     this.applyRodSkinVisuals();
     this.facesLeft2 = !!options?.second?.facesLeft;
     this.glowColor2 = options?.second?.glowColor ?? null;
 
     const control = options?.control ?? 0;
-    this.birthdayControlShare = control / 100;
-    const resilience = options?.resilience ?? 0;
+    this.birthdayControlShare = this.voidHarvest
+      ? this.voidControlShare
+      : control / 100;
+    const resilience = this.voidHarvest
+      ? this.voidResilience
+      : options?.resilience ?? 0;
     const progressSpeed = options?.progressSpeed ?? 0;
     this.baseProgressSpeed = progressSpeed;
     this.forgeSwordSpeedAdd = 0;
@@ -704,7 +760,11 @@ export class CatchMinigame {
     this.jerkyChaos = Math.max(0.35, options?.chaos ?? 1);
 
     // Control = extra % of the grey bar (0 → 20% wide, +20 → 40% wide)
-    this.applyWhiteBarWidth();
+    if (this.voidHarvest) {
+      this.applyVoidHarvestBarWidth(0);
+    } else {
+      this.applyWhiteBarWidth();
+    }
 
     // Progress speed boosts fill rate (forge swords add percentage points later)
     this.applyProgressSpeedFillRate();
@@ -729,6 +789,7 @@ export class CatchMinigame {
     // Resilience 50% → fish moves at 50% speed; 0% = normal
     const resFactor = Math.max(0.05, 1 - resilience / 100);
     const baseSpeed = options?.speedMult ?? 1;
+    this.voidBaseSpeedMult = baseSpeed;
     this.speedMult = baseSpeed * resFactor;
 
     // High resilience calms normal jerky fish; mythical can stay wild
@@ -856,6 +917,9 @@ export class CatchMinigame {
       if (this.rodSkinId === "laser") {
         this.updateLaserSpaceUi(dt);
       }
+      if (this.rodSkinId === "horizonbreaker") {
+        this.updateHorizonbreakerUi(dt);
+      }
       if (this.isFrostChromeSkin()) {
         this.updateFrostChromeUi(dt);
       }
@@ -874,6 +938,9 @@ export class CatchMinigame {
     }
     if (this.rodSkinId === "laser") {
       this.updateLaserSpaceUi(dt);
+    }
+    if (this.rodSkinId === "horizonbreaker") {
+      this.updateHorizonbreakerUi(dt);
     }
     if (this.isFrostChromeSkin()) {
       this.updateFrostChromeUi(dt);
@@ -913,8 +980,14 @@ export class CatchMinigame {
     }
 
     if (overlapping) {
-      const rate = this.tranquilRush ? this.tranquilRushFillRate : this.fillRate;
-      this.progress = Math.min(1, this.progress + rate * dt);
+      const voidShrinkOnly =
+        this.voidHarvest && !this.voidHarvestFillEnabled;
+      if (!voidShrinkOnly) {
+        const rate = this.tranquilRush
+          ? this.tranquilRushFillRate
+          : this.fillRate;
+        this.progress = Math.min(1, this.progress + rate * dt);
+      }
       if (this.birthdayParty) {
         this.birthdayBarTickTimer += dt;
         if (this.birthdayBarTickTimer >= this.birthdayZoneTickInterval) {
@@ -928,7 +1001,10 @@ export class CatchMinigame {
         }
       }
     } else {
-      this.progress = Math.max(0, this.progress - this.drainRate * dt);
+      // Don't drain while a harvest blast is banking into the progress bar.
+      if (!(this.voidHarvest && this.voidPendingProgress > 0)) {
+        this.progress = Math.max(0, this.progress - this.drainRate * dt);
+      }
       if (this.birthdayParty) {
         this.birthdayBarTickTimer = 0;
         this.birthdayZoneTickInterval = this.birthdayZoneTickIntervalStart;
@@ -938,6 +1014,9 @@ export class CatchMinigame {
         }
       }
     }
+
+    // After fill/drain so a full harvest blast can still finish the catch this frame.
+    this.updateVoidHarvest(dt, overlapping);
 
     if (this.bubbleActive && this.progress >= this.bubbleBurstProgress) {
       this.triggerTranquilBubblePop();
@@ -953,6 +1032,172 @@ export class CatchMinigame {
     if (this.progress <= 0) {
       this.finish(false);
     }
+  }
+
+  private updateVoidHarvest(dt: number, overlapping: boolean): void {
+    if (!this.voidHarvest || !this.ready) return;
+
+    // Smoothly bank queued blast progress into the catch bar.
+    if (this.voidPendingProgress > 0) {
+      const step = Math.min(
+        this.voidPendingProgress,
+        this.voidProgressPerSec * dt
+      );
+      this.voidPendingProgress -= step;
+      this.progress = Math.min(1, this.progress + step);
+    }
+
+    if (overlapping) {
+      if (!this.voidWasOverlapping) {
+        this.voidHoldStartShare = this.voidControlShare;
+      }
+      this.voidControlShare = Math.max(
+        this.voidControlMin,
+        this.voidControlShare - this.voidShrinkPerSec * dt
+      );
+      // −2% resilience per 1% shrink while inside (from 100% on first hold,
+      // or from 15% after a leave when the bar is already at 25%).
+      this.syncVoidHarvestResilience();
+      this.birthdayControlShare = this.voidControlShare;
+      this.applyVoidHarvestBarWidth(0);
+      this.applyVoidHarvestFishSpeed();
+      this.voidWasOverlapping = true;
+      return;
+    }
+
+    if (!this.voidWasOverlapping) return;
+
+    const shrunkThisHold = Math.max(
+      0,
+      this.voidHoldStartShare - this.voidControlShare
+    );
+    const shrinkFrac = Phaser.Math.Clamp(
+      this.voidControlMax > 0 ? shrunkThisHold / this.voidControlMax : 0,
+      0,
+      1
+    );
+    const fullyDrained = this.voidControlShare <= 0.001;
+    // Leave snaps bar to 25% control and 15% resilience.
+    this.voidControlShare = this.voidControlAfterZero;
+    this.voidResilience = 15;
+    this.birthdayControlShare = this.voidControlShare;
+    this.applyVoidHarvestBarWidth(fullyDrained ? 180 : 140);
+    this.applyVoidHarvestFishSpeed();
+    this.voidWasOverlapping = false;
+    this.voidHarvestFillEnabled = true;
+
+    if (shrinkFrac > 0.02) {
+      this.voidPendingProgress += shrinkFrac;
+      this.playVoidHarvestBlastFx(shrinkFrac);
+    }
+  }
+
+  /**
+   * Resilience while the fish is in the bar.
+   * First hold (from 70%): −2% per 1% control lost from 70%.
+   * After leave (bar at 25%): starts at 15%, then −2% per 1% further shrink.
+   */
+  private syncVoidHarvestResilience(): void {
+    if (this.voidHoldStartShare <= this.voidControlAfterZero + 0.001) {
+      const lostFromLeavePct = Math.max(
+        0,
+        (this.voidControlAfterZero - this.voidControlShare) * 100
+      );
+      this.voidResilience = Math.max(0, 15 - 2 * lostFromLeavePct);
+      return;
+    }
+    const controlLostPct =
+      (this.voidControlMax - this.voidControlShare) * 100;
+    this.voidResilience = Math.max(0, 100 - 2 * controlLostPct);
+  }
+
+  /**
+   * Map control share onto the full harvest bar width so 0% control = 0 width
+   * (normal rods keep the 20% base white share).
+   */
+  private applyVoidHarvestBarWidth(animateMs = 0): void {
+    const maxShare = Math.min(
+      0.85,
+      this.baseWhiteShare + this.voidControlMax
+    );
+    const t =
+      this.voidControlMax > 0
+        ? this.voidControlShare / this.voidControlMax
+        : 0;
+    const whiteShare = maxShare * t;
+    const target = this.barWidth * whiteShare;
+    this.whiteBarWidthTween?.stop();
+    this.whiteBarWidthTween = undefined;
+    if (animateMs <= 0 || Math.abs(target - this.whiteWidth) < 0.5) {
+      this.whiteWidth = target;
+      this.whiteBar.setSize(this.whiteWidth, this.barHeight - 10);
+      this.whiteBar.updateDisplayOrigin();
+      this.whiteBarSkin?.setDisplaySize(this.whiteWidth, this.barHeight - 6);
+      return;
+    }
+    const scene = this.root.scene;
+    const state = { w: this.whiteWidth };
+    this.whiteBarWidthTween = scene.tweens.add({
+      targets: state,
+      w: target,
+      duration: animateMs,
+      ease: "Cubic.easeOut",
+      onUpdate: () => {
+        this.whiteWidth = state.w;
+        this.whiteBar.setSize(this.whiteWidth, this.barHeight - 10);
+        this.whiteBar.updateDisplayOrigin();
+        this.whiteBarSkin?.setDisplaySize(this.whiteWidth, this.barHeight - 6);
+      },
+      onComplete: () => {
+        this.whiteBarWidthTween = undefined;
+      },
+    });
+  }
+
+  private applyVoidHarvestFishSpeed(): void {
+    const resFactor = Math.max(0.05, 1 - this.voidResilience / 100);
+    this.speedMult = this.voidBaseSpeedMult * resFactor;
+    this.fishAccel = 220 * this.speedMult;
+    this.fishMaxSpeed = 155 * this.speedMult;
+    this.baseFishAccel = this.fishAccel;
+    this.baseFishMaxSpeed = this.fishMaxSpeed;
+    this.jerky =
+      this.voidWantJerky &&
+      (this.voidUnstoppableJerky || this.voidResilience < 50);
+  }
+
+  private playVoidHarvestBlastFx(intensity: number): void {
+    const scene = this.root.scene;
+    const cx = this.root.x + this.whiteX;
+    const cy = this.root.y - 8;
+    const flash = scene.add
+      .rectangle(cx, cy, this.whiteWidth + 20, this.barHeight + 12, 0xc9a0ff, 0.85)
+      .setDepth(this.root.depth + 5)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    scene.tweens.add({
+      targets: flash,
+      alpha: 0,
+      scaleX: 1.35,
+      scaleY: 1.6,
+      duration: 220,
+      ease: "Cubic.easeOut",
+      onComplete: () => flash.destroy(),
+    });
+    const ring = scene.add
+      .circle(cx, cy, 10, 0x9b5de5, 0.5)
+      .setStrokeStyle(2, 0xe8d0ff, 0.95)
+      .setDepth(this.root.depth + 6)
+      .setScrollFactor(0);
+    scene.tweens.add({
+      targets: ring,
+      scaleX: 2.8 + intensity,
+      scaleY: 2.2 + intensity * 0.5,
+      alpha: 0,
+      duration: 280,
+      ease: "Cubic.easeOut",
+      onComplete: () => ring.destroy(),
+    });
   }
 
   private updateCrystalBurst(dt: number): void {
@@ -2786,12 +3031,60 @@ export class CatchMinigame {
     if (this.starLine) {
       this.setupStarLineUi();
     }
+    if (this.rodSkinId === "horizonbreaker") {
+      this.setupHorizonbreakerUi();
+    }
 
     this.applyRodSkinThemeColors();
   }
 
   /** Progress / panel tints that must win over start() defaults. */
   private applyRodSkinThemeColors(): void {
+    if (this.voidHarvest) {
+      this.panel
+        .setSize(560, 148)
+        .setPosition(0, -6)
+        .setFillStyle(0x08040e, 0.96)
+        .setStrokeStyle(2, 0x9b5de5, 0.95);
+      this.title
+        .setText("Keep the fish in the void harvest!")
+        .setColor("#e8d0ff")
+        .setY(-58);
+      this.greyBar.setFillStyle(0x100818);
+      this.greyBar.setStrokeStyle(2, 0x4a2878);
+      this.whiteBar.setFillStyle(0xc9a0ff, 0.92);
+      this.whiteBar.setStrokeStyle(1, 0x9b5de5);
+      this.progressBg.setFillStyle(0x0a0614);
+      this.progressBg.setStrokeStyle(1, 0x6a3cff);
+      this.progressFill.setFillStyle(0x9b5de5);
+      this.hint.setColor("#c9a0ff");
+      return;
+    }
+    if (this.rodSkinId === "horizonbreaker") {
+      this.panel
+        .setSize(580, 200)
+        .setPosition(0, -26)
+        .setFillStyle(0x02010a, 0.2)
+        .setStrokeStyle(2, 0xc9a0ff, 0.95);
+      this.title
+        .setText(
+          this.bubbleActive
+            ? "Keep the fish in the event horizon!"
+            : "Keep the fish in the cosmic wave!"
+        )
+        .setColor("#f0e0ff")
+        .setY(-104);
+      this.greyBar.setFillStyle(0x0a0618, 0.55);
+      this.greyBar.setStrokeStyle(2, 0x4a2878);
+      this.whiteBar.setVisible(false);
+      this.progressBg.setFillStyle(0x080418);
+      this.progressBg.setStrokeStyle(1, 0x9b5de5);
+      this.progressFill.setFillStyle(0xff8c42);
+      this.hint.setColor("#e0c8ff");
+      this.fishBubble.setVisible(false);
+      this.fishBubbleShine.setVisible(false);
+      return;
+    }
     if (this.starLine && !this.bubbleActive) {
       this.panel
         .setSize(580, 176)
@@ -3610,11 +3903,368 @@ export class CatchMinigame {
     }
   }
 
+  private clearHorizonbreakerUi(): void {
+    this.horizonCosmosGfx?.destroy();
+    this.horizonCosmosGfx = undefined;
+    this.horizonFxGfx?.destroy();
+    this.horizonFxGfx = undefined;
+    this.horizonBarGfx?.destroy();
+    this.horizonBarGfx = undefined;
+    this.horizonBhGfx?.destroy();
+    this.horizonBhGfx = undefined;
+    this.horizonStars = [];
+    this.horizonPhase = 0;
+    this.horizonStarSpawn = 0;
+  }
+
+  private setupHorizonbreakerUi(): void {
+    const scene = this.root.scene;
+    this.clearHorizonbreakerUi();
+    this.horizonCosmosGfx = scene.add.graphics();
+    this.horizonFxGfx = scene.add
+      .graphics()
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.horizonBarGfx = scene.add.graphics();
+    this.horizonBhGfx = scene.add
+      .graphics()
+      .setBlendMode(Phaser.BlendModes.NORMAL);
+    this.root.addAt(this.horizonCosmosGfx, 0);
+    const titleIdx = this.root.getIndex(this.title);
+    if (titleIdx >= 0) this.root.addAt(this.horizonFxGfx, titleIdx + 1);
+    else this.root.add(this.horizonFxGfx);
+    // Wavy bar sits with the control zone; BH bubble above fish
+    const whiteIdx = this.root.getIndex(this.whiteBar);
+    if (whiteIdx >= 0) this.root.addAt(this.horizonBarGfx, whiteIdx + 1);
+    else this.root.add(this.horizonBarGfx);
+    const fishIdx = this.root.getIndex(this.fishIcon);
+    if (fishIdx >= 0) this.root.addAt(this.horizonBhGfx, fishIdx);
+    else this.root.add(this.horizonBhGfx);
+
+    this.horizonStars = [];
+    for (let i = 0; i < 28; i++) {
+      this.spawnHorizonStar(true);
+    }
+    this.horizonStarSpawn = 0.08;
+    this.whiteBar.setVisible(false);
+    this.redrawHorizonCosmos();
+    this.redrawHorizonWavyBar();
+  }
+
+  private randomHorizonChromePoint(): { x: number; y: number } {
+    const barHalfW = this.barWidth / 2 + 8;
+    const barTop = -8 - this.barHeight / 2 - 6;
+    const barBot = -8 + this.barHeight / 2 + 6;
+    const band = Phaser.Math.Between(0, 3);
+    if (band === 0) {
+      return {
+        x: Phaser.Math.FloatBetween(-275, 275),
+        y: Phaser.Math.FloatBetween(-96, barTop),
+      };
+    }
+    if (band === 1) {
+      return {
+        x: Phaser.Math.FloatBetween(-275, 275),
+        y: Phaser.Math.FloatBetween(barBot, 58),
+      };
+    }
+    if (band === 2) {
+      return {
+        x: Phaser.Math.FloatBetween(-278, -barHalfW),
+        y: Phaser.Math.FloatBetween(-90, 54),
+      };
+    }
+    return {
+      x: Phaser.Math.FloatBetween(barHalfW, 278),
+      y: Phaser.Math.FloatBetween(-90, 54),
+    };
+  }
+
+  private spawnHorizonStar(initial = false): void {
+    const pos = this.randomHorizonChromePoint();
+    const colors = [0xffffff, 0xffe066, 0xc9a0ff, 0x7ec8ff, 0xff8c42];
+    this.horizonStars.push({
+      x: pos.x,
+      y: pos.y,
+      size: Phaser.Math.FloatBetween(1.2, 3.4),
+      spin: Math.random() * Math.PI * 2,
+      spinSpeed: Phaser.Math.FloatBetween(1.8, 4.5) * (Math.random() < 0.5 ? -1 : 1),
+      life: initial ? Math.random() * 0.6 : 0,
+      maxLife: Phaser.Math.FloatBetween(0.55, 1.35),
+      color: colors[Phaser.Math.Between(0, colors.length - 1)]!,
+    });
+  }
+
+  private updateHorizonbreakerUi(dt: number): void {
+    this.horizonPhase += dt;
+    this.horizonStarSpawn -= dt;
+    while (this.horizonStarSpawn <= 0) {
+      this.spawnHorizonStar();
+      if (Math.random() < 0.4) this.spawnHorizonStar();
+      this.horizonStarSpawn += Phaser.Math.FloatBetween(0.05, 0.12);
+    }
+    for (let i = this.horizonStars.length - 1; i >= 0; i--) {
+      const s = this.horizonStars[i]!;
+      s.life += dt;
+      s.spin += s.spinSpeed * dt;
+      // Grow then shrink to vanish
+      if (s.life >= s.maxLife) this.horizonStars.splice(i, 1);
+    }
+    this.redrawHorizonCosmos();
+    this.redrawHorizonWavyBar();
+    if (!this.bubbleActive) {
+      this.horizonBhGfx?.clear();
+    }
+  }
+
+  private redrawHorizonCosmos(): void {
+    const g = this.horizonCosmosGfx;
+    const fx = this.horizonFxGfx;
+    if (!g || !fx) return;
+    g.clear();
+    fx.clear();
+    const t = this.horizonPhase;
+    const pw = 580;
+    const ph = 200;
+    const panelY = -26;
+
+    // Deep void panel fill
+    g.fillStyle(0x03010c, 0.96);
+    g.fillRoundedRect(-pw / 2, panelY - ph / 2, pw, ph, 14);
+
+    // Milky Way band (diagonal wash)
+    for (let i = 0; i < 5; i++) {
+      const ox = Math.sin(t * 0.35 + i) * 18;
+      const oy = Math.cos(t * 0.28 + i * 0.7) * 8;
+      g.fillStyle(i % 2 ? 0x2a1848 : 0x1a3058, 0.22 + i * 0.03);
+      g.fillEllipse(-40 + ox + i * 30, panelY - 36 + oy, 220 - i * 20, 28 + i * 4);
+      g.fillStyle(0x4a2878, 0.12);
+      g.fillEllipse(60 - ox + i * 18, panelY - 20 - oy, 180, 22);
+    }
+
+    // Spiral galaxies
+    const galaxies = [
+      { x: -180, y: -70, s: 1.1, spin: 1 },
+      { x: 160, y: -78, s: 0.85, spin: -1.2 },
+      { x: -90, y: 42, s: 0.7, spin: 0.8 },
+      { x: 110, y: 38, s: 0.95, spin: -0.9 },
+      { x: 0, y: -88, s: 0.55, spin: 1.4 },
+    ];
+    for (const gal of galaxies) {
+      const spin = t * gal.spin;
+      for (let arm = 0; arm < 3; arm++) {
+        g.lineStyle(1.4, arm === 1 ? 0xc9a0ff : 0x7ec8ff, 0.35);
+        g.beginPath();
+        for (let s = 0; s <= 18; s++) {
+          const a = spin + arm * ((Math.PI * 2) / 3) + s * 0.28;
+          const r = (4 + s * 2.2) * gal.s;
+          const x = gal.x + Math.cos(a) * r;
+          const y = gal.y + Math.sin(a) * r * 0.55;
+          if (s === 0) g.moveTo(x, y);
+          else g.lineTo(x, y);
+        }
+        g.strokePath();
+      }
+      g.fillStyle(0xffe066, 0.85);
+      g.fillCircle(gal.x, gal.y, 2.2 * gal.s);
+      g.fillStyle(0xffffff, 0.7);
+      g.fillCircle(gal.x, gal.y, 1.1 * gal.s);
+    }
+
+    // Distant static stars
+    for (let i = 0; i < 40; i++) {
+      const sx =
+        ((i * 89) % (pw - 36)) - (pw - 36) / 2 + Math.sin(t * 0.4 + i) * 1.5;
+      const sy =
+        panelY -
+        ph / 2 +
+        8 +
+        ((i * 47) % (ph - 16)) +
+        Math.cos(t * 0.3 + i) * 1.2;
+      if (Math.abs(sy + 8) < this.barHeight / 2 + 10 && Math.abs(sx) < this.barWidth / 2)
+        continue;
+      const tw = 0.3 + Math.sin(t * 2.8 + i * 1.3) * 0.35;
+      g.fillStyle(i % 6 === 0 ? 0xffe066 : 0xffffff, tw);
+      g.fillCircle(sx, sy, i % 8 === 0 ? 1.5 : 0.9);
+    }
+
+    // Spinning stars that resize & vanish
+    for (const s of this.horizonStars) {
+      const u = s.life / s.maxLife;
+      const grow = u < 0.35 ? u / 0.35 : 1 - (u - 0.35) / 0.65;
+      const size = s.size * (0.35 + grow * 1.65);
+      const alpha = Math.max(0, grow);
+      fx.lineStyle(1.4, s.color, alpha);
+      const arm = size * 2.2;
+      for (let k = 0; k < 4; k++) {
+        const a = s.spin + (k * Math.PI) / 2;
+        fx.lineBetween(
+          s.x + Math.cos(a) * arm * 0.15,
+          s.y + Math.sin(a) * arm * 0.15,
+          s.x + Math.cos(a) * arm,
+          s.y + Math.sin(a) * arm
+        );
+      }
+      fx.fillStyle(0xffffff, alpha);
+      fx.fillCircle(s.x, s.y, Math.max(0.6, size * 0.45));
+      fx.fillStyle(s.color, alpha * 0.7);
+      fx.fillCircle(s.x, s.y, Math.max(1, size * 0.85));
+    }
+  }
+
+  private redrawHorizonWavyBar(): void {
+    const g = this.horizonBarGfx;
+    if (!g) return;
+    g.clear();
+    const cx = this.whiteX;
+    const cy = -8;
+    const hw = this.whiteWidth / 2;
+    const hh = (this.barHeight - 10) / 2;
+    const t = this.horizonPhase;
+    const segs = 28;
+
+    // Soft glow under the wave
+    g.fillStyle(0x9b5de5, 0.22);
+    g.fillEllipse(cx, cy, this.whiteWidth + 18, this.barHeight + 8);
+
+    // Wavy orange→purple body
+    g.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      const u = i / segs;
+      const x = cx - hw + u * this.whiteWidth;
+      const wave =
+        Math.sin(u * Math.PI * 3 + t * 3.2) * 3.2 +
+        Math.sin(u * Math.PI * 5 - t * 2.1) * 1.6;
+      const y = cy - hh + wave;
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    for (let i = segs; i >= 0; i--) {
+      const u = i / segs;
+      const x = cx - hw + u * this.whiteWidth;
+      const wave =
+        Math.sin(u * Math.PI * 3 + t * 3.2 + 0.8) * 3.2 +
+        Math.sin(u * Math.PI * 5 - t * 2.1) * 1.6;
+      const y = cy + hh + wave;
+      g.lineTo(x, y);
+    }
+    g.closePath();
+    g.fillStyle(0xff8c42, 0.88);
+    g.fillPath();
+
+    // Inner purple ribbon
+    g.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      const u = i / segs;
+      const x = cx - hw + 4 + u * (this.whiteWidth - 8);
+      const wave = Math.sin(u * Math.PI * 4 - t * 2.6) * 2.4;
+      const y = cy - hh * 0.45 + wave;
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    for (let i = segs; i >= 0; i--) {
+      const u = i / segs;
+      const x = cx - hw + 4 + u * (this.whiteWidth - 8);
+      const wave = Math.sin(u * Math.PI * 4 - t * 2.6 + 1) * 2.4;
+      const y = cy + hh * 0.45 + wave;
+      g.lineTo(x, y);
+    }
+    g.closePath();
+    g.fillStyle(0x9b5de5, 0.75);
+    g.fillPath();
+
+    // Bright edge sparkles along the wave crest
+    g.lineStyle(1.5, 0xffe066, 0.7);
+    g.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      const u = i / segs;
+      const x = cx - hw + u * this.whiteWidth;
+      const wave =
+        Math.sin(u * Math.PI * 3 + t * 3.2) * 3.2 +
+        Math.sin(u * Math.PI * 5 - t * 2.1) * 1.6;
+      const y = cy - hh + wave;
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.strokePath();
+
+    // Traveling energy dots
+    for (let i = 0; i < 5; i++) {
+      const u = (t * 0.35 + i * 0.2) % 1;
+      const x = cx - hw + u * this.whiteWidth;
+      const wave = Math.sin(u * Math.PI * 3 + t * 3.2) * 3.2;
+      g.fillStyle(0xffffff, 0.85);
+      g.fillCircle(x, cy + wave * 0.3, 1.8);
+      g.fillStyle(0xffc860, 0.55);
+      g.fillCircle(x, cy + wave * 0.3, 3.2);
+    }
+  }
+
+  private redrawHorizonBlackHoleBubble(fx: number, fy: number): void {
+    const g = this.horizonBhGfx;
+    if (!g) return;
+    g.clear();
+    const t = this.horizonPhase;
+    const r = this.bubbleCoverRadius(this.fishBubbleW, this.fishBubbleH);
+    const pulse = 0.9 + Math.sin(t * 4) * 0.08;
+
+    // Accretion glow
+    g.fillStyle(0x9b5de5, 0.2);
+    g.fillCircle(fx, fy, r * 1.35 * pulse);
+    g.fillStyle(0xff8c42, 0.18);
+    g.fillEllipse(fx, fy, r * 2.4 * pulse, r * 0.85 * pulse);
+
+    // Spinning accretion rings
+    for (let i = 0; i < 4; i++) {
+      const spin = t * (1.6 + i * 0.35) + i;
+      const rx = (r * 0.95 + i * 4) * pulse;
+      const ry = (r * 0.38 + i * 1.5) * pulse;
+      g.lineStyle(
+        2 - i * 0.3,
+        i % 2 ? 0xff8c42 : 0xc9a0ff,
+        0.55 - i * 0.08
+      );
+      g.beginPath();
+      const segs = 24;
+      for (let s = 0; s <= segs; s++) {
+        const a = (s / segs) * Math.PI * 2 + spin;
+        const x = fx + Math.cos(a) * rx;
+        const y = fy + Math.sin(a) * ry;
+        if (s === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.strokePath();
+    }
+
+    // Event horizon core
+    g.fillStyle(0x000000, 0.92);
+    g.fillCircle(fx, fy, r * 0.72 * pulse);
+    g.fillStyle(0x12081c, 1);
+    g.fillCircle(fx, fy, r * 0.55 * pulse);
+    g.fillStyle(0x000000, 1);
+    g.fillCircle(fx, fy, r * 0.38 * pulse);
+    g.lineStyle(1.6, 0xffe066, 0.75);
+    g.strokeCircle(fx, fy, r * 0.78 * pulse);
+
+    // Infalling spark flecks
+    for (let i = 0; i < 8; i++) {
+      const a = t * 2.5 + i * 0.8;
+      const dist = r * (0.85 + Math.sin(t * 3 + i) * 0.15);
+      g.fillStyle(i % 2 ? 0xff8c42 : 0xffffff, 0.7);
+      g.fillCircle(fx + Math.cos(a) * dist, fy + Math.sin(a) * dist * 0.45, 1.4);
+    }
+  }
+
   private bubbleCoverRadius(w: number, h: number): number {
     return Math.max(w, h) * 0.68 + 10;
   }
 
   private layoutFishBubble(fx: number, fy: number): void {
+    if (this.rodSkinId === "horizonbreaker") {
+      this.fishBubble.setVisible(false);
+      this.fishBubbleShine.setVisible(false);
+      this.redrawHorizonBlackHoleBubble(fx, fy);
+      return;
+    }
     const r = this.bubbleCoverRadius(this.fishBubbleW, this.fishBubbleH);
     const pulse = 0.82 + Math.sin(Date.now() / 170) * 0.1;
     this.fishBubble
@@ -3632,9 +4282,17 @@ export class CatchMinigame {
     this.bubbleActive = false;
     this.tranquilRush = true;
     this.bubbleCatch = true;
-    this.progressBg.setFillStyle(0x1a4a32);
-    this.progressBg.setStrokeStyle(1, 0x6dff9a);
-    this.progressFill.setFillStyle(0x7dffb0);
+    this.horizonBhGfx?.clear();
+    if (this.rodSkinId === "horizonbreaker") {
+      this.progressBg.setFillStyle(0x1a0a28);
+      this.progressBg.setStrokeStyle(1, 0xff8c42);
+      this.progressFill.setFillStyle(0xffc860);
+      this.title.setText("Keep the fish in the cosmic wave!").setColor("#f0e0ff");
+    } else {
+      this.progressBg.setFillStyle(0x1a4a32);
+      this.progressBg.setStrokeStyle(1, 0x6dff9a);
+      this.progressFill.setFillStyle(0x7dffb0);
+    }
     this.playTranquilBubblePopFx();
     this.onTranquilBubblePop?.();
   }
@@ -4382,6 +5040,7 @@ export class CatchMinigame {
     const blackHoleDuplicateChance = this.getBlackHoleDuplicateChance();
     const guaranteeLunar = this.starLineHitCount >= this.starLineCount;
     this.clearBlackHoleUi();
+    this.clearHorizonbreakerUi();
     this.fadeWorldDim(false);
     this.root.setVisible(false);
     const cb = this.onResult;

@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { BoatDef, BoatId, BOATS } from "../data/boats";
 import { Player } from "./Player";
+import { playerSeatPadLift } from "./PlayerArt";
 import { ensureSplashTextures } from "../fx/WaterSplash";
 
 /**
@@ -110,7 +111,8 @@ export class Sailboat {
     const ox = this.def.seatOffset.x;
     return {
       x: this.hull.x + (this.facingLeft ? -ox : ox),
-      y: this.hull.y + this.def.seatOffset.y,
+      // Extra player-frame top pad shifts the figure down vs sprite center
+      y: this.hull.y + this.def.seatOffset.y - playerSeatPadLift(),
     };
   }
 

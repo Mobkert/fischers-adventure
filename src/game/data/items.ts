@@ -15,6 +15,7 @@ export type ItemId =
   | "birthday_rod"
   | "test_rod"
   | "star_line_rod"
+  | "voidharvester_rod"
   | "equipment_bag"
   | "bestiary"
   | "tide_compass"
@@ -79,6 +80,8 @@ export type ItemId =
   | "amulet_dusky"
   | "amulet_sunlit"
   | "amulet_thunder"
+  | "amulet_cave"
+  | "admin_device"
   | "gem_red"
   | "gem_green"
   | "gem_blue"
@@ -120,7 +123,8 @@ export type AmuletEffectId =
   | "tempest"
   | "dusky"
   | "sunlit"
-  | "thunder";
+  | "thunder"
+  | "cave";
 
 export type FishMutationId =
   | "bloom"
@@ -159,7 +163,8 @@ export type FishRarity =
   | "epic"
   | "legendary"
   | "mythical"
-  | "mystical";
+  | "mystical"
+  | "admin";
 
 export interface MutationDef {
   id: FishMutationId;
@@ -414,10 +419,10 @@ export const FISH_SIZES: Record<FishSizeId, SizeDef> = {
     scale: 2.15,
     spawnChance: 0.015,
   },
-  /** Promo / special grant — worth $0 and cannot be sold to merchants. */
+  /** Promo / special grant — sells to merchants for $0. */
   unsellable: {
     id: "unsellable",
-    name: "Unsellable",
+    name: "Worthless",
     sellMult: 0,
     scale: 1,
     spawnChance: 0,
@@ -644,6 +649,8 @@ export interface ItemDef {
   isBestiary?: boolean;
   /** Tide Compass — hotbar warp map. */
   isTideCompass?: boolean;
+  /** Secret admin grant tablet — left-click in inventory, infinite uses. */
+  isAdminDevice?: boolean;
   isBobber?: boolean;
   isBackpack?: boolean;
   isAmulet?: boolean;
@@ -684,7 +691,8 @@ export interface ItemDef {
     | "starweaver_weave"
     | "birthday_party"
     | "star_rain"
-    | "star_line";
+    | "star_line"
+    | "void_harvest";
   /**
    * Limited / seasonal rod — blue badge in bag (and forge when craftable).
    * Tooltip shows when it was / is obtainable.
@@ -792,6 +800,8 @@ export function preferredDepthBand(rarity: FishRarity): {
       return { min: 28, max: 158 };
     case "mystical":
       return { min: 28, max: 120 };
+    case "admin":
+      return { min: 40, max: 160 };
   }
 }
 
@@ -844,6 +854,8 @@ export const RARITY_COLOR: Record<FishRarity, string> = {
   legendary: "#ffd54a",
   mythical: "#ff69b4",
   mystical: "#7a8cff",
+  /** Fallback solid — ADMIN uses a live orange/blue/green wave in UI. */
+  admin: "#ff9944",
 };
 
 export const RARITY_LABEL: Record<FishRarity, string> = {
@@ -854,7 +866,23 @@ export const RARITY_LABEL: Record<FishRarity, string> = {
   legendary: "Legendary! ",
   mythical: "Mythical! ",
   mystical: "Mystical! ",
+  admin: "ADMIN! ",
 };
+
+/** Display name for rarity tags (bag / tooltips). */
+export const RARITY_NAME: Record<FishRarity, string> = {
+  common: "Common",
+  uncommon: "Uncommon",
+  rare: "Rare",
+  epic: "Epic",
+  legendary: "Legendary",
+  mythical: "Mythical",
+  mystical: "Mystical",
+  admin: "ADMIN",
+};
+
+/** Orange → blue → green wave used for ADMIN rarity labels. */
+export const ADMIN_RARITY_WAVE_COLORS = [0xff8844, 0x4aa8ff, 0x55dd88] as const;
 
 export const ITEMS: Record<ItemId, ItemDef> = {
   starter_rod: {
@@ -1189,6 +1217,28 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       lineDepth: 4,
     },
   },
+  voidharvester_rod: {
+    id: "voidharvester_rod",
+    name: "The Voidharvester",
+    description:
+      "A massive black-purple astral greatsword. While the fish stays in the zone the bar shrinks toward 0% with no catch progress. When it leaves, you gain progress from the shrink, the bar becomes 25% control and 15% resilience, and keeping the fish in the zone fills progress normally. Legendaries and mythicals move like Bluefin Tuna. Void 12%.",
+    stackable: false,
+    textureKey: "rod_voidharvester",
+    isRod: true,
+    rodMinigamePower: "void_harvest",
+    rodMutation: { mutation: "event_horizon", chance: 0.12 },
+    limitedEdition: {
+      obtainableWindow: "Stellar Merchant — $1.75M + Painite",
+      currentlyObtainable: true,
+    },
+    rodStats: {
+      luck: 75,
+      resilience: 100,
+      control: 70,
+      progressSpeed: 0,
+      lineDepth: 5,
+    },
+  },
   test_rod: {
     id: "test_rod",
     name: "Stellar Surfer",
@@ -1289,6 +1339,16 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     stackable: false,
     textureKey: "equipment_bag",
     isEquipmentBag: true,
+  },
+  admin_device: {
+    id: "admin_device",
+    name: "Admin Device",
+    description:
+      "A sealed tablet for operators. Left-click to open — infinite grants.",
+    stackable: false,
+    textureKey: "admin_device",
+    isAdminDevice: true,
+    rarity: "admin",
   },
   hat_tophat: {
     id: "hat_tophat",
@@ -1610,6 +1670,17 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     buyPrice: 200000,
     isAmulet: true,
     amuletEffect: "thunder",
+  },
+  amulet_cave: {
+    id: "amulet_cave",
+    name: "Cave Amulet",
+    description:
+      "Admin relic (code only) — summons a Cave Whale abundance in Frostpeak Cave. Insanely rare.",
+    stackable: true,
+    textureKey: "amulet_cave",
+    isAmulet: true,
+    amuletEffect: "cave",
+    rarity: "admin",
   },
   backpack_starter: {
     id: "backpack_starter",
@@ -2868,6 +2939,7 @@ export const BESTIARY_CLAIM_REWARD: Record<FishRarity, number> = {
   legendary: 650,
   mythical: 1000,
   mystical: 1500,
+  admin: 0,
 };
 
 export interface BestiaryArea {
@@ -2885,6 +2957,7 @@ const RARITY_SORT_ORDER: Record<FishRarity, number> = {
   legendary: 4,
   mythical: 5,
   mystical: 6,
+  admin: 99,
 };
 
 /** Higher = rarer fish species. */
@@ -3076,7 +3149,7 @@ export const STARTER_HAT_IDS: ItemId[] = [
 ];
 
 export const AMULET_SHOP_IDS: ItemId[] = AMULET_ITEM_IDS.filter(
-  (id) => ITEMS[id].buyPrice != null
+  (id) => ITEMS[id].buyPrice != null && ITEMS[id].rarity !== "admin"
 );
 
 export const BOBBER_SHOP_IDS: ItemId[] = BOBBER_ITEM_IDS.filter(
@@ -3390,11 +3463,6 @@ export function applyMutationTint(
 export function sizeSellMult(size?: FishSizeId | null): number {
   if (!size || size === "normal") return 1;
   return FISH_SIZES[size]?.sellMult ?? 1;
-}
-
-/** Size effect that zeros sell value and blocks merchant sales. */
-export function hasUnsellableEffect(size?: FishSizeId | null): boolean {
-  return size === "unsellable";
 }
 
 export function sizeScale(size?: FishSizeId | null): number {

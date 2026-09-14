@@ -15,7 +15,7 @@ import {
   applyMutationTint,
 } from "../data/items";
 import { playWaterSplash } from "../fx/WaterSplash";
-import { playTranquilBubblePopFx } from "../fx/TranquilBubblePop";
+import { playTranquilBubblePopFx, playHorizonBubblePopFx } from "../fx/TranquilBubblePop";
 import { drawFishMutationOrnament } from "../fx/FishMutationOrnament";
 import { CAVE_FISH_MAX_DEPTH_PX } from "../world/FrostpeakCaveWorld";
 
@@ -28,10 +28,13 @@ export class Fish {
   /** Extra mutation FX (starstruck sparkles / event-horizon void). */
   private mutFx?: Phaser.GameObjects.Graphics;
   private mutFxPhase = 0;
-  /** Tranquil Rod — glass bubble enveloping the hooked fish. */
+  /** Tranquil Rod — glass bubble or Horizonbreaker black hole around the fish. */
   private tranquilBubble?: Phaser.GameObjects.Arc;
   private tranquilBubbleShine?: Phaser.GameObjects.Arc;
+  private tranquilBhGfx?: Phaser.GameObjects.Graphics;
   private tranquilBubbleActive = false;
+  private tranquilBubbleStyle: "glass" | "blackhole" = "glass";
+  private tranquilBhPhase = 0;
   state: FishState = "idle";
   speciesId: ItemId;
   size: FishSizeId = "normal";
@@ -68,6 +71,12 @@ export class Fish {
   private lockSpecies = false;
   /** Skip natural despawn cycle. */
   private noDespawn = false;
+  /**
+   * Bait chum — after catch or natural despawn, remove permanently
+   * (do not respawn as the same locked species).
+   */
+  private oneShot = false;
+  private onRemoved?: () => void;
   /** Optional custom species roller (Ashencast ocean trout chance). */
   private customRollSpecies?: () => ItemId;
   /** Arc-jump state for surface-jumping species. */
@@ -95,7 +104,13 @@ export class Fish {
     speciesId?: ItemId,
     getExcludeSpecies: (self: Fish) => ItemId[] = () => [],
     getIsRainy: () => boolean = () => false,
-    options?: { lockSpecies?: boolean; noDespawn?: boolean; rollSpecies?: () => ItemId },
+    options?: {
+      lockSpecies?: boolean;
+      noDespawn?: boolean;
+      oneShot?: boolean;
+      onRemoved?: () => void;
+      rollSpecies?: () => ItemId;
+    },
     getIsSunny: () => boolean = () => false
   ) {
     this.getLuck = getLuck;
@@ -105,6 +120,8 @@ export class Fish {
     this.habitat = habitat;
     this.lockSpecies = !!options?.lockSpecies;
     this.noDespawn = !!options?.noDespawn;
+    this.oneShot = !!options?.oneShot;
+    this.onRemoved = options?.onRemoved;
     this.customRollSpecies = options?.rollSpecies;
     this.speciesId =
       speciesId ??
@@ -390,21 +407,41 @@ export class Fish {
   }
 
   /** Show or hide the Tranquil Rod catch bubble around this fish. */
-  setTranquilBubble(active: boolean): void {
-    if (active === this.tranquilBubbleActive) return;
-    this.tranquilBubbleActive = active;
-    if (!active) {
-      this.clearTranquilBubble();
+  setTranquilBubble(
+    active: boolean,
+    style: "glass" | "blackhole" = "glass"
+  ): void {
+    if (active && this.tranquilBubbleActive && this.tranquilBubbleStyle === style) {
       return;
     }
+    if (!active && !this.tranquilBubbleActive) return;
+    this.clearTranquilBubble();
+    if (!active) return;
+
+    this.tranquilBubbleActive = true;
+    this.tranquilBubbleStyle = style;
     const scene = this.sprite.scene;
     const r = this.tranquilBubbleRadius();
+
+    if (style === "blackhole") {
+      this.tranquilBhGfx = scene.add.graphics().setDepth(this.sprite.depth + 1);
+      this.tranquilBhPhase = 0;
+      this.redrawTranquilBlackHole();
+      return;
+    }
+
     this.tranquilBubble = scene.add
       .circle(this.sprite.x, this.sprite.y, r, 0x8fe9ff, 0.34)
       .setStrokeStyle(3, 0xf7ffff, 0.95)
       .setDepth(this.sprite.depth + 1);
     this.tranquilBubbleShine = scene.add
-      .circle(this.sprite.x - r * 0.28, this.sprite.y - r * 0.32, r * 0.14, 0xffffff, 0.88)
+      .circle(
+        this.sprite.x - r * 0.28,
+        this.sprite.y - r * 0.32,
+        r * 0.14,
+        0xffffff,
+        0.88
+      )
       .setDepth(this.sprite.depth + 2);
   }
 
@@ -412,39 +449,118 @@ export class Fish {
     if (!this.tranquilBubbleActive) return;
     const scene = this.sprite.scene;
     const r = this.tranquilBubbleRadius();
-    playTranquilBubblePopFx(scene, this.sprite.x, this.sprite.y, r, {
-      depth: this.sprite.depth + 3,
-      scrollFactor: 1,
-      intensity: 1,
-    });
+    const x = this.sprite.x;
+    const y = this.sprite.y;
+    const depth = this.sprite.depth + 3;
+    if (this.tranquilBubbleStyle === "blackhole") {
+      playHorizonBubblePopFx(scene, x, y, r, { depth, scrollFactor: 1 });
+    } else {
+      playTranquilBubblePopFx(scene, x, y, r, {
+        depth,
+        scrollFactor: 1,
+        intensity: 1,
+      });
+    }
     this.setTranquilBubble(false);
   }
 
   private tranquilBubbleRadius(): number {
-    return Math.max(this.sprite.displayWidth, this.sprite.displayHeight) * 0.68 + 10;
+    return (
+      Math.max(this.sprite.displayWidth, this.sprite.displayHeight) * 0.68 + 10
+    );
   }
 
   private clearTranquilBubble(): void {
     this.tranquilBubble?.destroy();
     this.tranquilBubbleShine?.destroy();
+    this.tranquilBhGfx?.destroy();
     this.tranquilBubble = undefined;
     this.tranquilBubbleShine = undefined;
+    this.tranquilBhGfx = undefined;
     this.tranquilBubbleActive = false;
+    this.tranquilBubbleStyle = "glass";
+  }
+
+  private redrawTranquilBlackHole(): void {
+    const g = this.tranquilBhGfx;
+    if (!g || !this.tranquilBubbleActive) return;
+    g.clear();
+    if (!this.sprite.visible) {
+      g.setVisible(false);
+      return;
+    }
+    g.setVisible(true);
+    const fx = this.sprite.x;
+    const fy = this.sprite.y;
+    const r = this.tranquilBubbleRadius();
+    const t = this.tranquilBhPhase;
+    const pulse = 0.9 + Math.sin(t * 4) * 0.08;
+
+    g.fillStyle(0x9b5de5, 0.18);
+    g.fillCircle(fx, fy, r * 1.3 * pulse);
+    g.fillStyle(0xff8c42, 0.16);
+    g.fillEllipse(fx, fy, r * 2.3 * pulse, r * 0.8 * pulse);
+
+    for (let i = 0; i < 3; i++) {
+      const spin = t * (1.5 + i * 0.4) + i;
+      const rx = (r * 0.9 + i * 3.5) * pulse;
+      const ry = (r * 0.36 + i * 1.4) * pulse;
+      g.lineStyle(2 - i * 0.35, i % 2 ? 0xff8c42 : 0xc9a0ff, 0.5 - i * 0.08);
+      g.beginPath();
+      const segs = 20;
+      for (let s = 0; s <= segs; s++) {
+        const a = (s / segs) * Math.PI * 2 + spin;
+        const x = fx + Math.cos(a) * rx;
+        const y = fy + Math.sin(a) * ry;
+        if (s === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.strokePath();
+    }
+
+    g.fillStyle(0x000000, 0.9);
+    g.fillCircle(fx, fy, r * 0.7 * pulse);
+    g.fillStyle(0x12081c, 1);
+    g.fillCircle(fx, fy, r * 0.52 * pulse);
+    g.fillStyle(0x000000, 1);
+    g.fillCircle(fx, fy, r * 0.36 * pulse);
+    g.lineStyle(1.5, 0xffe066, 0.7);
+    g.strokeCircle(fx, fy, r * 0.76 * pulse);
+
+    for (let i = 0; i < 6; i++) {
+      const a = t * 2.4 + i * 1.05;
+      const dist = r * (0.82 + Math.sin(t * 3 + i) * 0.12);
+      g.fillStyle(i % 2 ? 0xff8c42 : 0xffffff, 0.65);
+      g.fillCircle(
+        fx + Math.cos(a) * dist,
+        fy + Math.sin(a) * dist * 0.45,
+        1.3
+      );
+    }
   }
 
   private syncTranquilBubble(now: number): void {
-    if (!this.tranquilBubbleActive || !this.tranquilBubble) return;
+    if (!this.tranquilBubbleActive) return;
+    if (this.tranquilBubbleStyle === "blackhole") {
+      this.tranquilBhPhase = now * 0.001;
+      this.tranquilBhGfx?.setDepth(this.sprite.depth + 1);
+      this.redrawTranquilBlackHole();
+      return;
+    }
+    if (!this.tranquilBubble) return;
     const r = this.tranquilBubbleRadius();
     const pulse = 0.82 + Math.sin(now / 170) * 0.1;
     this.tranquilBubble
       .setPosition(this.sprite.x, this.sprite.y)
       .setRadius(r)
       .setScale(pulse)
-      .setVisible(this.sprite.visible);
+      .setVisible(this.sprite.visible)
+      .setDepth(this.sprite.depth + 1);
     this.tranquilBubbleShine
       ?.setPosition(this.sprite.x - r * 0.28, this.sprite.y - r * 0.32)
       .setRadius(Math.max(3, r * 0.14))
-      .setVisible(this.sprite.visible);
+      .setVisible(this.sprite.visible)
+      .setDepth(this.sprite.depth + 2);
   }
 
   markCaught(): void {
@@ -536,6 +652,11 @@ export class Fish {
     }
   }
 
+  /** Bait chum fish — remove after catch / idle despawn (no respawn). */
+  isOneShot(): boolean {
+    return this.oneShot;
+  }
+
   /** True while fading out / about to respawn. */
   isDespawning(): boolean {
     return this.despawning;
@@ -590,6 +711,11 @@ export class Fish {
         if (this.state !== "idle") {
           this.despawning = false;
           this.sprite.setAlpha(1);
+          return;
+        }
+        if (this.oneShot) {
+          this.onRemoved?.();
+          this.destroy();
           return;
         }
         this.resetIdle();

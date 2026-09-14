@@ -150,3 +150,87 @@ export function playTranquilBubblePopFx(
     }
   }
 }
+
+/** Horizonbreaker void bubble burst — orange/purple rings + dark sparks. */
+export function playHorizonBubblePopFx(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  radius: number,
+  opts?: TranquilBubblePopOptions
+): void {
+  const depth = opts?.depth ?? 200;
+  const scrollFactor = opts?.scrollFactor ?? 1;
+  const r = Math.max(6, radius);
+
+  for (let i = 0; i < 3; i++) {
+    const ring = scene.add
+      .circle(x, y, r * (0.8 - i * 0.05), i % 2 ? 0xff8c42 : 0x9b5de5, 0.4 - i * 0.1)
+      .setStrokeStyle(Math.max(1, 3 - i), i % 2 ? 0xffe066 : 0xc9a0ff, 0.9)
+      .setDepth(depth + i)
+      .setScrollFactor(scrollFactor);
+    scene.tweens.add({
+      targets: ring,
+      scaleX: 2.2 + i * 0.3,
+      scaleY: 2.2 + i * 0.3,
+      alpha: 0,
+      duration: 280 + i * 80,
+      delay: i * 40,
+      ease: "Cubic.easeOut",
+      onComplete: () => ring.destroy(),
+    });
+  }
+
+  const core = scene.add
+    .circle(x, y, r * 0.4, 0x000000, 0.95)
+    .setDepth(depth + 4)
+    .setScrollFactor(scrollFactor);
+  scene.tweens.add({
+    targets: core,
+    scaleX: 0.2,
+    scaleY: 0.2,
+    alpha: 0,
+    duration: 220,
+    ease: "Quad.easeIn",
+    onComplete: () => core.destroy(),
+  });
+
+  const flash = scene.add
+    .circle(x, y, r * 0.35, 0xffe066, 0.85)
+    .setDepth(depth + 5)
+    .setScrollFactor(scrollFactor)
+    .setBlendMode(Phaser.BlendModes.ADD);
+  scene.tweens.add({
+    targets: flash,
+    scaleX: 2.4,
+    scaleY: 2.4,
+    alpha: 0,
+    duration: 200,
+    ease: "Quad.easeOut",
+    onComplete: () => flash.destroy(),
+  });
+
+  for (let i = 0; i < 12; i++) {
+    const ang = (i / 12) * Math.PI * 2;
+    const spark = scene.add
+      .circle(
+        x,
+        y,
+        Phaser.Math.FloatBetween(1.5, 3.2),
+        i % 2 ? 0xff8c42 : 0xc9a0ff,
+        0.95
+      )
+      .setDepth(depth + 6)
+      .setScrollFactor(scrollFactor);
+    scene.tweens.add({
+      targets: spark,
+      x: x + Math.cos(ang) * r * Phaser.Math.FloatBetween(1.2, 2.1),
+      y: y + Math.sin(ang) * r * Phaser.Math.FloatBetween(0.7, 1.4),
+      alpha: 0,
+      scale: 0.1,
+      duration: Phaser.Math.Between(260, 420),
+      ease: "Cubic.easeOut",
+      onComplete: () => spark.destroy(),
+    });
+  }
+}

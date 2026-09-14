@@ -6,6 +6,8 @@ import {
   formatBobberStats,
   formatRodMutationLines,
   RARITY_COLOR,
+  RARITY_NAME,
+  ADMIN_RARITY_WAVE_COLORS,
 } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
 import {
@@ -13,6 +15,10 @@ import {
   createLimitedTooltipHost,
   LimitedTooltipHost,
 } from "./LimitedEditionBadge";
+import {
+  createGradientWaveText,
+  startGradientColorWave,
+} from "./GradientWaveText";
 
 const PANEL_W = 460;
 const PANEL_H = 520;
@@ -22,7 +28,7 @@ const ROW_H = 136;
 const BOBBER_ROW_H = 118;
 const ROW_GAP = 12;
 
-const AMULET_ROW_H = 100;
+const AMULET_ROW_H = 112;
 const HAT_ROW_H = 96;
 
 type BagTab = "rods" | "bobbers" | "amulets" | "bait" | "hats";
@@ -62,6 +68,7 @@ export class EquipmentBag {
   private masteryPanel: Phaser.GameObjects.Container | null = null;
   private skinPanel: Phaser.GameObjects.Container | null = null;
   private limitedTooltip!: LimitedTooltipHost;
+  private stopAdminRarityWave: (() => void) | null = null;
   private wheelHandler: (
     pointer: Phaser.Input.Pointer,
     _gos: unknown,
@@ -281,6 +288,8 @@ export class EquipmentBag {
     this.root.setVisible(open);
     if (!open) {
       this.limitedTooltip.hide();
+      this.stopAdminRarityWave?.();
+      this.stopAdminRarityWave = null;
       this.closeMasteryPanel();
       this.closeSkinPanel();
       return;
@@ -292,6 +301,8 @@ export class EquipmentBag {
 
   refresh(): void {
     this.limitedTooltip.hide();
+    this.stopAdminRarityWave?.();
+    this.stopAdminRarityWave = null;
     for (const child of [...this.listContent.list]) {
       child.destroy(true);
     }
@@ -381,9 +392,25 @@ export class EquipmentBag {
         this.applyScroll();
         return;
       }
+      const adminWaves: Phaser.GameObjects.Text[][] = [];
       for (const { id, count } of amulets) {
-        this.listContent.add(this.makeAmuletRow(id, count, y, AMULET_ROW_H));
+        const { row, adminLetters } = this.makeAmuletRow(
+          id,
+          count,
+          y,
+          AMULET_ROW_H
+        );
+        this.listContent.add(row);
+        if (adminLetters) adminWaves.push(adminLetters);
         y += AMULET_ROW_H + ROW_GAP;
+      }
+      if (adminWaves.length > 0) {
+        this.stopAdminRarityWave = startGradientColorWave(
+          this.scene,
+          adminWaves,
+          [...ADMIN_RARITY_WAVE_COLORS],
+          0.0018
+        );
       }
     } else if (this.tab === "bait") {
       const bait = this.inventory.getOwnedBait();
@@ -571,6 +598,10 @@ export class EquipmentBag {
       def.rodMinigamePower === "birthday_party"
         ? "\n15% instant catch (Confetti 3×) · balloons (minigame bar → top of screen; right-click: blue +10% progress, red +10% speed, green +10% bar) · +1% progress speed in white zone (0.5s → 0.4s → …, resets off bar)"
         : "";
+    const voidHarvestLine =
+      def.rodMinigamePower === "void_harvest"
+        ? "\nWhile fish in bar: zone shrinks to 0% (no progress until first leave) · leave → 25% control, 15% resilience + shrink progress · then normal progress while catching · legendaries/mythicals move like Bluefin"
+        : "";
     const statsText = this.scene.add
       .text(
         -112,
@@ -588,7 +619,8 @@ export class EquipmentBag {
           starweaverLine +
           starRainLine +
           starLineLine +
-          birthdayLine,
+          birthdayLine +
+          voidHarvestLine,
         {
           fontFamily: "Arial",
           fontSize: "13px",
@@ -791,6 +823,7 @@ export class EquipmentBag {
   }
 
   private closeSkinPanel(): void {
+    this.limitedTooltip.hide();
     this.skinPanel?.destroy(true);
     this.skinPanel = null;
   }
@@ -894,6 +927,17 @@ export class EquipmentBag {
         .setOrigin(0, 0.5);
 
       panel.add([rowBg, icon, label, status]);
+
+      if (skin.limitedEdition) {
+        const badge = createLimitedEditionBadge(
+          this.scene,
+          skin.limitedEdition,
+          textX + label.width + 36,
+          y - 14,
+          this.limitedTooltip
+        );
+        panel.add(badge);
+      }
 
       if (skin.owned && !active) {
         rowBg.setInteractive({ useHandCursor: true });
@@ -1485,12 +1529,22 @@ export class EquipmentBag {
     count: number,
     y: number,
     rowH: number
-  ): Phaser.GameObjects.Container {
+  ): {
+    row: Phaser.GameObjects.Container;
+    adminLetters?: Phaser.GameObjects.Text[];
+  } {
     const def = ITEMS[amuletId];
+    const rarity = def.rarity;
+    const isAdmin = rarity === "admin";
+    const stroke = isAdmin
+      ? 0xff8844
+      : rarity
+        ? Phaser.Display.Color.HexStringToColor(RARITY_COLOR[rarity]).color
+        : 0x6a7355;
 
     const card = this.scene.add
       .rectangle(0, y, 400, rowH, 0x2a2f3a, 0.95)
-      .setStrokeStyle(2, 0x6a7355)
+      .setStrokeStyle(2, stroke)
       .setOrigin(0.5, 0);
 
     const [iw, ih] = this.fitIcon(def.textureKey, 52);
@@ -1499,21 +1553,77 @@ export class EquipmentBag {
       .setDisplaySize(iw, ih);
 
     const name = this.scene.add
-      .text(-112, y + 14, `${def.name}  ×${count}`, {
+      .text(-112, y + 10, `${def.name}  ×${count}`, {
         fontFamily: "Georgia, serif",
         fontSize: "17px",
         color: "#ffffff",
       })
       .setOrigin(0, 0);
 
+    let adminLetters: Phaser.GameObjects.Text[] | undefined;
+    const kids: Phaser.GameObjects.GameObject[] = [card, icon, name];
+
+    if (rarity) {
+      if (isAdmin) {
+        const wave = createGradientWaveText(
+          this.scene,
+          RARITY_NAME.admin,
+          {
+            fontFamily: "Arial",
+            fontSize: "12px",
+            color: RARITY_COLOR.admin,
+            fontStyle: "bold",
+          },
+          0
+        );
+        // Left-align under the name (wave is centered on its root)
+        wave.root.setPosition(-112 + wave.width / 2, y + 32);
+        kids.push(wave.root);
+        adminLetters = wave.letters;
+      } else {
+        kids.push(
+          this.scene.add
+            .text(-112, y + 32, RARITY_NAME[rarity], {
+              fontFamily: "Arial",
+              fontSize: "11px",
+              color: RARITY_COLOR[rarity],
+            })
+            .setOrigin(0, 0)
+        );
+      }
+    }
+
     const desc = this.scene.add
-      .text(-112, y + 42, def.description, {
+      .text(-112, y + (rarity ? 50 : 40), def.description, {
         fontFamily: "Arial",
         fontSize: "12px",
         color: "#c8c8c8",
         wordWrap: { width: 210 },
       })
       .setOrigin(0, 0);
+    kids.push(desc);
+
+    const tipLines = [
+      def.name,
+      rarity ? RARITY_NAME[rarity] : "Amulet",
+      "",
+      def.description,
+      "",
+      "Click Use to activate.",
+    ];
+    const tip = tipLines.join("\n");
+    const hit = this.scene.add
+      .rectangle(0, y, 400, rowH, 0x000000, 0.001)
+      .setOrigin(0.5, 0)
+      .setInteractive({ useHandCursor: true });
+    hit.on("pointerover", (p: Phaser.Input.Pointer) => {
+      this.limitedTooltip.show(tip, p.x, p.y);
+    });
+    hit.on("pointermove", (p: Phaser.Input.Pointer) => {
+      this.limitedTooltip.show(tip, p.x, p.y);
+    });
+    hit.on("pointerout", () => this.limitedTooltip.hide());
+    kids.push(hit);
 
     const btn = this.scene.add
       .rectangle(140, y + rowH / 2, 100, 36, 0x4a3d6b)
@@ -1532,10 +1642,14 @@ export class EquipmentBag {
     btn.on("pointerdown", () => {
       this.onAmuletUsed?.(amuletId);
     });
+    kids.push(btn, label);
 
     const row = this.scene.add.container(0, 0);
-    row.add([card, icon, name, desc, btn, label]);
-    return row;
+    row.add(kids);
+    // Keep Use button above the full-row hit for clicks
+    row.bringToTop(btn);
+    row.bringToTop(label);
+    return { row, adminLetters };
   }
 
   private makeBaitRow(

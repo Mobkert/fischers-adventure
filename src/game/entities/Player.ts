@@ -7,10 +7,12 @@ import {
   PLAYER_FRAME_H,
   PLAYER_FRAME_W,
   PLAYER_FRAME_PAD_TOP,
+  PLAYER_FRAME_PAD_LEFT,
   ROD_TIP_LOCAL,
   RodDrawStyle,
   rodStyleForSkin,
 } from "./PlayerArt";
+import { voidharvesterBladeTip } from "../art/VoidharvesterArt";
 import { ITEMS, ItemId } from "../data/items";
 import { ROD_SKINS, RodSkinLayout } from "../data/rodSkins";
 
@@ -55,9 +57,9 @@ export class Player {
     this.sprite.setDepth(12);
 
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
-    // Body sits on the left of the wider (rod) frame
+    // Body sits on the figure; offsets track frame pads
     body.setSize(22, 52);
-    body.setOffset(11, 10);
+    body.setOffset(11 + PLAYER_FRAME_PAD_LEFT, PLAYER_FRAME_PAD_TOP - 2);
     this.sprite.setFlipX(false);
 
     this.skinSprite = scene.add
@@ -154,6 +156,14 @@ export class Player {
     };
   }
 
+  /** Visual torso center — use for followers (not sprite origin; pads shift art). */
+  getBodyWorldCenter(): { x: number; y: number } {
+    return this.localToWorld({
+      x: 22 + PLAYER_FRAME_PAD_LEFT,
+      y: 30 + PLAYER_FRAME_PAD_TOP,
+    });
+  }
+
   private currentRodHandLocal(): { x: number; y: number } {
     // Matches drawPlayerFrame hand (approx) for carry / cast
     const fishing =
@@ -162,12 +172,15 @@ export class Player {
       const tip = this.currentRodTipLocal();
       // Hand sits toward the torso from the tip
       return {
-        x: Phaser.Math.Linear(28, tip.x, 0.15),
+        x: Phaser.Math.Linear(28 + PLAYER_FRAME_PAD_LEFT, tip.x, 0.15),
         y: Phaser.Math.Linear(40 + PLAYER_FRAME_PAD_TOP, tip.y, 0.15),
       };
     }
     // Shoulder-carry grip (idle / walk / boat sit)
-    return { x: 30, y: 42 + PLAYER_FRAME_PAD_TOP };
+    return {
+      x: 30 + PLAYER_FRAME_PAD_LEFT,
+      y: 42 + PLAYER_FRAME_PAD_TOP,
+    };
   }
 
   private updateSkinSprite(): void {
@@ -347,9 +360,13 @@ export class Player {
   private currentRodTipLocalForSkin(): { x: number; y: number } {
     const fishing =
       this.animMode === "fishing-cast" || this.animMode === "fishing-wait";
-    if (fishing) return this.currentRodTipLocal();
-    // Shoulder-carry tip: PlayerArt uses ox-4, oy-6 (oy includes PAD_TOP, bob≈0)
-    return { x: 18, y: 2 + PLAYER_FRAME_PAD_TOP };
+    const base = fishing
+      ? this.currentRodTipLocal()
+      : { x: 18 + PLAYER_FRAME_PAD_LEFT, y: 2 + PLAYER_FRAME_PAD_TOP };
+    const style = fishing ? this.fishingRodStyle : this.carriedRodStyle;
+    if (style !== "voidharvester") return base;
+    const hand = this.currentRodHandLocal();
+    return voidharvesterBladeTip(hand.x, hand.y, base.x, base.y);
   }
 
   /** Anim style for baked frames — hide rod art when overlay skin is on. */
@@ -460,6 +477,22 @@ export class Player {
       return this.fishingRodStyle === "star_line";
     }
     return this.carriedRodStyle === "star_line";
+  }
+
+  /** Horizonbreaker Tranquil skin — tip accretion / sparse sparks. */
+  isHorizonbreakerInHand(): boolean {
+    if (this.isFishingAnim()) {
+      return this.fishingRodStyle === "horizonbreaker";
+    }
+    return this.carriedRodStyle === "horizonbreaker";
+  }
+
+  /** The Voidharvester greatsword — astral wisps / tip bloom. */
+  isVoidharvesterInHand(): boolean {
+    if (this.isFishingAnim()) {
+      return this.fishingRodStyle === "voidharvester";
+    }
+    return this.carriedRodStyle === "voidharvester";
   }
 
   /**

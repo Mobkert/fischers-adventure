@@ -8,6 +8,11 @@ import { drawPortalRodIcon } from "../art/PortalRodArt";
 import { drawForgeRodIcon } from "../art/ForgeRodArt";
 import { drawStarweaverRodIcon } from "../art/StarweaverRodArt";
 import { drawBirthdayRodIcon } from "../art/BirthdayRodArt";
+import {
+  drawVoidharvesterRodIcon,
+  VOIDHARVESTER_ICON_W,
+  VOIDHARVESTER_ICON_H,
+} from "../art/VoidharvesterArt";
 import { drawStellarSurferIcon } from "../art/StellarSurferArt";
 import { drawStarLineRodIcon } from "../art/StarLineRodArt";
 import { generateCraftStarlightFishIcon } from "../art/CraftIngredientArt";
@@ -408,6 +413,18 @@ export function generateRodTextures(scene: Phaser.Scene): void {
   drawBirthdayRodIcon(g);
   g.generateTexture("rod_birthday", S, S);
 
+  // —— Voidharvester: wide greatsword icon (not square-squished) ——
+  g.clear();
+  drawVoidharvesterRodIcon(g);
+  if (scene.textures.exists("rod_voidharvester")) {
+    scene.textures.remove("rod_voidharvester");
+  }
+  g.generateTexture(
+    "rod_voidharvester",
+    VOIDHARVESTER_ICON_W,
+    VOIDHARVESTER_ICON_H
+  );
+
   // —— Stellar Surfer: galactic surfboard icon ——
   g.clear();
   drawStellarSurferIcon(g);
@@ -429,7 +446,7 @@ function generateAmuletTextures(scene: Phaser.Scene): void {
     metalDark: number;
     glow: number;
     accent: number;
-    style: "celestial" | "moon" | "tempest" | "dusky" | "sun" | "thunder";
+    style: "celestial" | "moon" | "tempest" | "dusky" | "sun" | "thunder" | "cave";
   };
   const specs: Spec[] = [
     {
@@ -491,6 +508,16 @@ function generateAmuletTextures(scene: Phaser.Scene): void {
       glow: 0xfff0a0,
       accent: 0xffffff,
       style: "thunder",
+    },
+    {
+      key: "amulet_cave",
+      gem: 0x7ad0ff,
+      gemDark: 0x1a4068,
+      metal: 0x8898a8,
+      metalDark: 0x2a3848,
+      glow: 0xa8e8ff,
+      accent: 0xe8ffff,
+      style: "cave",
     },
   ];
 
@@ -645,6 +672,25 @@ function generateAmuletTextures(scene: Phaser.Scene): void {
       g.fillPath();
       g.fillStyle(s.gem, 0.5);
       g.fillTriangle(cx, cy - 5, cx - 1, cy - 1, cx + 2, cy - 1);
+    } else if (s.style === "cave") {
+      // Ice-cave gem: jagged crystal + whale silhouette arc
+      g.fillStyle(s.accent, 0.9);
+      g.beginPath();
+      g.moveTo(cx, cy - 7);
+      g.lineTo(cx + 5, cy - 1);
+      g.lineTo(cx + 3, cy + 6);
+      g.lineTo(cx - 3, cy + 6);
+      g.lineTo(cx - 5, cy - 1);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(s.gemDark, 0.55);
+      g.fillTriangle(cx, cy - 5, cx + 3, cy + 1, cx - 3, cy + 1);
+      // Tiny whale body
+      g.fillStyle(0x0a2038, 0.85);
+      g.fillEllipse(cx, cy + 2, 9, 3.5);
+      g.fillTriangle(cx + 5, cy + 2, cx + 8, cy, cx + 8, cy + 4);
+      g.fillStyle(s.accent, 0.5);
+      g.fillCircle(cx - 2, cy + 1.5, 0.7);
     }
 
     // Specular highlight
@@ -674,6 +720,7 @@ export function ensureRodIconTextures(scene: Phaser.Scene): void {
     "rod_recoil",
     "rod_test",
     "rod_star_line",
+    "rod_voidharvester",
   ];
   for (const key of required) {
     if (!scene.textures.exists(key)) {
@@ -828,6 +875,24 @@ function makeTextures(scene: Phaser.Scene): void {
   g.fillStyle(0x3a2a1a);
   g.fillRect(14, 16, 4, 5);
   g.generateTexture("equipment_bag", 32, 32);
+
+  // Admin device — dark tablet with orange/blue/green glints
+  g.clear();
+  g.fillStyle(0x000000, 0.25);
+  g.fillEllipse(16, 28, 22, 6);
+  g.fillStyle(0x1a1c24);
+  g.fillRoundedRect(6, 4, 20, 26, 3);
+  g.fillStyle(0x2a3040);
+  g.fillRoundedRect(8, 6, 16, 18, 2);
+  g.fillStyle(0xff8844, 0.9);
+  g.fillCircle(12, 12, 2);
+  g.fillStyle(0x4aa8ff, 0.9);
+  g.fillCircle(16, 15, 2);
+  g.fillStyle(0x55dd88, 0.9);
+  g.fillCircle(20, 12, 2);
+  g.fillStyle(0xc4a86a);
+  g.fillRect(12, 26, 8, 2);
+  g.generateTexture("admin_device", 32, 32);
 
   generateHatTextures(scene);
   generateBaitTextures(scene);

@@ -390,6 +390,8 @@ function normalizePromoCodes(raw: unknown): PromoCodeId[] {
     "serpent_eels",
     "free_stellar_surfer",
     "w_update",
+    "finally_cave_whale",
+    "admin_code",
   ];
   if (!Array.isArray(raw)) return [];
   return raw.filter(

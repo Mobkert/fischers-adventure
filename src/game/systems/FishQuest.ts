@@ -49,7 +49,10 @@ export const FISH_QUEST_HABITAT_LABEL: Record<FishHabitat, string> = {
   hotspring: "hotsprings",
 };
 
-const COIN_REWARD: Record<Exclude<FishRarity, "mythical" | "mystical">, number> = {
+const COIN_REWARD: Record<
+  Exclude<FishRarity, "mythical" | "mystical" | "admin">,
+  number
+> = {
   common: 75,
   uncommon: 180,
   rare: 450,
@@ -92,12 +95,18 @@ export function rollFishQuestTarget(islandId: FishQuestIslandId): ItemId | null 
 export function fishQuestCoinReward(speciesId: ItemId): number {
   const rarity = (ITEMS[speciesId]?.rarity ?? "common") as FishRarity;
   if (rarity === "mythical" || rarity === "mystical") return COIN_REWARD.legendary;
-  return COIN_REWARD[rarity as Exclude<FishRarity, "mythical" | "mystical">] ?? COIN_REWARD.common;
+  return COIN_REWARD[rarity as Exclude<FishRarity, "mythical" | "mystical" | "admin">] ?? COIN_REWARD.common;
 }
 
 /** Amulets that can drop from epic/legendary turn-ins (thunder rolled separately). */
 export function standardAmuletPool(): ItemId[] {
-  return AMULET_ITEM_IDS.filter((id) => id !== "amulet_thunder");
+  return AMULET_ITEM_IDS.filter((id) => {
+    const def = ITEMS[id];
+    if (!def?.isAmulet) return false;
+    if (def.rarity === "admin") return false;
+    if (id === "amulet_thunder" || id === "amulet_cave") return false;
+    return true;
+  });
 }
 
 /**

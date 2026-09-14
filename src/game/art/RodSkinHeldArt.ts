@@ -427,6 +427,88 @@ export function drawRubberDuckRod(
   g.fillCircle(handX + 1, handY + 6, 1.2);
 }
 
+/**
+ * Horizonbreaker (Tranquil) — unconnected star fragments along the shaft,
+ * black hole tip (no continuous rod line).
+ */
+export function drawHorizonbreakerRod(
+  g: Phaser.GameObjects.Graphics,
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number
+): void {
+  const dx = tipX - handX;
+  const dy = tipY - handY;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const px = -uy;
+  const py = ux;
+
+  const at = (t: number, off = 0) => ({
+    x: handX + dx * t + px * off,
+    y: handY + dy * t + py * off,
+  });
+
+  // Soft void glow under the constellation (not a connected shaft)
+  g.fillStyle(0x1a0a40, 0.35);
+  for (let i = 0; i < 5; i++) {
+    const p = at(0.12 + i * 0.16);
+    g.fillCircle(p.x, p.y, 5);
+  }
+
+  // Scattered star fragments — deliberately unconnected
+  const stars: Array<{ t: number; off: number; r: number; col: number }> = [
+    { t: 0.06, off: 0, r: 2.8, col: 0xffe066 },
+    { t: 0.14, off: 2.2, r: 1.8, col: 0xffffff },
+    { t: 0.22, off: -2.8, r: 2.2, col: 0xc9a0ff },
+    { t: 0.32, off: 1.4, r: 2.6, col: 0x7ec8ff },
+    { t: 0.4, off: -1.8, r: 1.6, col: 0xffe066 },
+    { t: 0.48, off: 3.2, r: 2.0, col: 0xffffff },
+    { t: 0.56, off: -2.4, r: 2.4, col: 0xff8c42 },
+    { t: 0.64, off: 0.8, r: 1.7, col: 0xc9a0ff },
+    { t: 0.72, off: -3.0, r: 2.1, col: 0x7ec8ff },
+    { t: 0.8, off: 2.0, r: 1.9, col: 0xffe066 },
+  ];
+  for (const s of stars) {
+    const p = at(s.t, s.off);
+    g.fillStyle(s.col, 0.95);
+    g.fillCircle(p.x, p.y, s.r);
+    g.fillStyle(0xffffff, 0.85);
+    g.fillCircle(p.x, p.y, s.r * 0.4);
+    g.lineStyle(1.1, s.col, 0.9);
+    g.lineBetween(p.x - s.r * 1.8, p.y, p.x + s.r * 1.8, p.y);
+    g.lineBetween(p.x, p.y - s.r * 1.8, p.x, p.y + s.r * 1.8);
+  }
+
+  // Grip — small dark crystal handle
+  g.fillStyle(0x0a0618, 1);
+  g.fillCircle(handX, handY, 5);
+  g.fillStyle(0x2a1848, 1);
+  g.fillCircle(handX - ux * 0.5, handY - uy * 0.5, 3.2);
+  g.fillStyle(0xffe066, 0.9);
+  g.fillCircle(handX + px * 1.5, handY + py * 1.5, 1.2);
+
+  // —— Black hole tip ——
+  const hx = tipX - ux * 2;
+  const hy = tipY - uy * 2;
+  g.lineStyle(2.2, 0xff8c42, 0.85);
+  g.strokeEllipse(hx, hy, 16, 6);
+  g.lineStyle(1.4, 0x9b5de5, 0.8);
+  g.strokeEllipse(hx, hy, 12, 4.5);
+  g.lineStyle(1, 0xffe066, 0.7);
+  g.strokeEllipse(hx, hy, 8, 3);
+  g.fillStyle(0x000000, 1);
+  g.fillCircle(hx, hy, 5.5);
+  g.fillStyle(0x1a0a28, 1);
+  g.fillCircle(hx, hy, 4);
+  g.fillStyle(0x000000, 1);
+  g.fillCircle(hx, hy, 2.6);
+  g.lineStyle(1.2, 0xffc860, 0.75);
+  g.strokeCircle(hx, hy, 6.2);
+}
+
 /** Poisoned Crystal — toxic blank, drip crystals, vine wraps. */
 export function drawPoisonedRod(
   g: Phaser.GameObjects.Graphics,

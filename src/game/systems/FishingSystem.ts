@@ -190,7 +190,9 @@ export class FishingSystem {
 
   private applyTranquilBubble(fish: Fish): void {
     if (this.tranquilBubbleProc) {
-      fish.setTranquilBubble(true);
+      const blackhole =
+        this.inventory.getActiveRodSkinId("tranquil_rod") === "horizonbreaker";
+      fish.setTranquilBubble(true, blackhole ? "blackhole" : "glass");
     }
   }
 
@@ -789,6 +791,12 @@ export class FishingSystem {
           fish.resetIdle();
           continue;
         }
+        if (!added && fish.isOneShot()) {
+          const idx = this.fishList.indexOf(fish);
+          if (idx >= 0) this.fishList.splice(idx, 1);
+          fish.destroy();
+          continue;
+        }
         fish.markCaught();
         if (added) {
           this.lastCaughtFish.push({
@@ -853,6 +861,7 @@ export class FishingSystem {
         }
         this.scene.time.delayedCall(2500, () => {
           if (
+            fish.isOneShot() ||
             ITEMS[fish.speciesId].abundanceOnly ||
             ITEMS[fish.speciesId].persistOnFail
           ) {
@@ -874,6 +883,12 @@ export class FishingSystem {
         // Quest / persist floaters always stay in the water on a failed fight.
         if (ITEMS[fish.speciesId].persistOnFail) {
           fish.resetIdle();
+          continue;
+        }
+        if (fish.isOneShot()) {
+          const idx = this.fishList.indexOf(fish);
+          if (idx >= 0) this.fishList.splice(idx, 1);
+          fish.destroy();
           continue;
         }
         if (
@@ -943,7 +958,15 @@ export class FishingSystem {
     for (const fish of [this.targetFish, this.secondFish]) {
       if (!fish || fish.state === "caught") continue;
       if (fish.state === "approaching") fish.abortApproach();
-      else if (fish.state === "bitten") fish.resetIdle();
+      else if (fish.state === "bitten") {
+        if (fish.isOneShot()) {
+          const idx = this.fishList.indexOf(fish);
+          if (idx >= 0) this.fishList.splice(idx, 1);
+          fish.destroy();
+        } else {
+          fish.resetIdle();
+        }
+      }
     }
     this.approachingFish = [];
     this.targetFish = null;
