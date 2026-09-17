@@ -13,6 +13,7 @@ import {
   VOIDHARVESTER_ICON_W,
   VOIDHARVESTER_ICON_H,
 } from "../art/VoidharvesterArt";
+import { drawPaintBrushRodIcon } from "../art/PaintBrushArt";
 import { drawStellarSurferIcon } from "../art/StellarSurferArt";
 import { drawStarLineRodIcon } from "../art/StarLineRodArt";
 import { generateCraftStarlightFishIcon } from "../art/CraftIngredientArt";
@@ -425,6 +426,10 @@ export function generateRodTextures(scene: Phaser.Scene): void {
     VOIDHARVESTER_ICON_H
   );
 
+  g.clear();
+  drawPaintBrushRodIcon(g);
+  g.generateTexture("rod_paint_brush", S, S);
+
   // —— Stellar Surfer: galactic surfboard icon ——
   g.clear();
   drawStellarSurferIcon(g);
@@ -721,6 +726,7 @@ export function ensureRodIconTextures(scene: Phaser.Scene): void {
     "rod_test",
     "rod_star_line",
     "rod_voidharvester",
+    "rod_paint_brush",
   ];
   for (const key of required) {
     if (!scene.textures.exists(key)) {

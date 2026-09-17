@@ -12,7 +12,8 @@ export type PromoCodeId =
   | "free_stellar_surfer"
   | "w_update"
   | "finally_cave_whale"
-  | "admin_code";
+  | "admin_code"
+  | "starry_night";
 
 export type PromoRedeemResult =
   | { ok: true; message: string }
@@ -31,6 +32,8 @@ const CODE_MAP: Record<string, PromoCodeId> = {
   FINALYCAVEWHALE: "finally_cave_whale",
   // Secret — expire later; not listed in update log
   ADMINCODE: "admin_code",
+  // Secret — Paint Brush rod
+  ".STARRYNIGHT.": "starry_night",
   // Secret — not listed in update log / Code Guy hints
   ")(freestellarsurfer!!!)(": "free_stellar_surfer",
 };
@@ -225,6 +228,24 @@ export function redeemPromoCode(
         ok: true,
         message:
           "Code Guy slips you a Cave Amulet — ADMIN rarity. Use it to summon a cave whale.",
+      };
+    }
+    case "starry_night": {
+      if (inventory.ownsRod("paint_brush_rod")) {
+        inventory.markPromoRedeemed(codeId);
+        return {
+          ok: true,
+          message: "You already hold the Paint Brush — code marked used.",
+        };
+      }
+      if (!inventory.addItem("paint_brush_rod")) {
+        return { ok: false, message: "Couldn't grant the Paint Brush." };
+      }
+      inventory.markPromoRedeemed(codeId);
+      return {
+        ok: true,
+        message:
+          "Code Guy hands you a Paint Brush — Starry Night catches await.",
       };
     }
     case "admin_code": {

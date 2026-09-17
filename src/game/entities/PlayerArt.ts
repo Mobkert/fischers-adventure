@@ -23,6 +23,7 @@ import {
   drawHorizonbreakerRod,
 } from "../art/RodSkinHeldArt";
 import { drawVoidharvesterRod, voidharvesterBladeTip } from "../art/VoidharvesterArt";
+import { drawPaintBrushRod } from "../art/PaintBrushArt";
 
 /** Extra canvas around the 64×64 figure so long rods (greatsword) aren’t clipped. */
 export const PLAYER_FRAME_PAD_TOP = 52;
@@ -111,7 +112,8 @@ export type RodDrawStyle =
   | "hyperthermic"
   | "rubber_duck"
   | "horizonbreaker"
-  | "voidharvester";
+  | "voidharvester"
+  | "paint_brush";
 
 /** Every rod that gets carry + cast player frames and anims — keep in sync with new rods. */
 export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
@@ -148,6 +150,7 @@ export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
   "rubber_duck",
   "horizonbreaker",
   "voidharvester",
+  "paint_brush",
 ];
 
 export function rodAnimStyleReady(scene: Phaser.Scene, style: RodDrawStyle): boolean {
@@ -190,6 +193,7 @@ export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "test_rod") return "stellar_surfer";
   if (itemId === "star_line_rod") return "star_line";
   if (itemId === "voidharvester_rod") return "voidharvester";
+  if (itemId === "paint_brush_rod") return "paint_brush";
   return "starter";
 }
 
@@ -938,6 +942,10 @@ function drawHeldRod(
   if (style === "voidharvester") {
     const tip = voidharvesterBladeTip(handX, handY, tipX, tipY);
     drawVoidharvesterRod(g, handX, handY, tip.x, tip.y);
+    return;
+  }
+  if (style === "paint_brush") {
+    drawPaintBrushRod(g, handX, handY, tipX, tipY);
     return;
   }
 

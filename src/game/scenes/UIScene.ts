@@ -995,6 +995,9 @@ export class UIScene extends Phaser.Scene {
             ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
             "birthday_party",
           voidHarvest,
+          paintSplash:
+            ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+            "paint_splash",
           rodSkinId: (() => {
             const sid = this.inventory.getActiveRodSkinId(
               this.inventory.getEquippedRodId()

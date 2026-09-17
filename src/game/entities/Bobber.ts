@@ -17,6 +17,8 @@ export class Bobber {
   private castTween?: Phaser.Tweens.Tween;
   private sinking = false;
   private sinkBubbles?: { stop: () => void };
+  /** Paint Brush rod — wavy multicolor fishing line. */
+  private paintBrushLine = false;
 
   constructor(scene: Phaser.Scene) {
     this.sprite = scene.add
@@ -25,6 +27,10 @@ export class Bobber {
       .setDepth(8);
     this.fitDisplay();
     this.line = scene.add.graphics().setDepth(7);
+  }
+
+  setPaintBrushLine(on: boolean): void {
+    this.paintBrushLine = on;
   }
 
   setTexture(key: string): void {
@@ -165,11 +171,48 @@ export class Bobber {
 
   private drawLine(fromX: number, fromY: number): void {
     this.line.clear();
+    if (this.paintBrushLine) {
+      this.drawPaintBrushLine(fromX, fromY);
+      return;
+    }
     this.line.lineStyle(1.5, 0x333333, 0.85);
     this.line.beginPath();
     this.line.moveTo(fromX, fromY);
     this.line.lineTo(this.sprite.x, this.sprite.y);
     this.line.strokePath();
+  }
+
+  /** Wavy rainbow fishing line — Paint Brush only. */
+  private drawPaintBrushLine(fromX: number, fromY: number): void {
+    const toX = this.sprite.x;
+    const toY = this.sprite.y;
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const tNow = this.sprite.scene.time.now / 1000;
+    const segs = Math.max(12, Math.min(28, Math.floor(len / 14)));
+
+    let prevX = fromX;
+    let prevY = fromY;
+    for (let i = 1; i <= segs; i++) {
+      const u = i / segs;
+      const wave =
+        Math.sin(u * Math.PI * 3.2 + tNow * 4.2) * 7 +
+        Math.sin(u * Math.PI * 5.5 - tNow * 2.8) * 3.5;
+      const x = fromX + dx * u + nx * wave;
+      const y = fromY + dy * u + ny * wave;
+      const hue = (u * 300 + tNow * 140) % 360;
+      const color = Phaser.Display.Color.HSLToColor(hue / 360, 0.9, 0.55).color;
+      this.line.lineStyle(2.4, color, 0.95);
+      this.line.beginPath();
+      this.line.moveTo(prevX, prevY);
+      this.line.lineTo(x, y);
+      this.line.strokePath();
+      prevX = x;
+      prevY = y;
+    }
   }
 
   private stopBubbles(): void {

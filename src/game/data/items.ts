@@ -16,6 +16,7 @@ export type ItemId =
   | "test_rod"
   | "star_line_rod"
   | "voidharvester_rod"
+  | "paint_brush_rod"
   | "equipment_bag"
   | "bestiary"
   | "tide_compass"
@@ -148,7 +149,8 @@ export type FishMutationId =
   | "tranquil"
   | "starstruck"
   | "event_horizon"
-  | "gate";
+  | "gate"
+  | "painted";
 
 export type FishBodyTone = "black" | "orange" | "red";
 
@@ -396,6 +398,16 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     glowColor: 0x7a5cff,
     toastColor: "#a888ff",
     label: "Gate! ",
+  },
+  painted: {
+    id: "painted",
+    name: "Painted",
+    sellMult: 4,
+    tint: 0xff66aa,
+    tintFill: true,
+    glowColor: 0xffe066,
+    toastColor: "#ff88cc",
+    label: "Painted! ",
   },
 };
 
@@ -692,7 +704,8 @@ export interface ItemDef {
     | "birthday_party"
     | "star_rain"
     | "star_line"
-    | "void_harvest";
+    | "void_harvest"
+    | "paint_splash";
   /**
    * Limited / seasonal rod — blue badge in bag (and forge when craftable).
    * Tooltip shows when it was / is obtainable.
@@ -1237,6 +1250,28 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       control: 70,
       progressSpeed: 0,
       lineDepth: 5,
+    },
+  },
+  paint_brush_rod: {
+    id: "paint_brush_rod",
+    name: "Paint Brush",
+    description:
+      "A high-detail artist's brush. Catch bar is Starry Night. Every 3s a paint drop falls (max 3); splats mildly slow the fish. A vertical paint meter fills with each splat — at full it turns rainbow, the progress bar waves, you gain +75% progress speed, and Painted is guaranteed (4×, random color). Otherwise Painted 20%.",
+    stackable: false,
+    textureKey: "rod_paint_brush",
+    isRod: true,
+    rodMinigamePower: "paint_splash",
+    rodMutation: { mutation: "painted", chance: 0.2 },
+    limitedEdition: {
+      obtainableWindow: "Secret code .STARRYNIGHT.",
+      currentlyObtainable: true,
+    },
+    rodStats: {
+      luck: 60,
+      resilience: 50,
+      control: 30,
+      progressSpeed: 0,
+      lineDepth: 3,
     },
   },
   test_rod: {
@@ -3447,12 +3482,18 @@ export function mutationSellMult(mutation?: FishMutationId | null): number {
 /** Apply mutation body color (handles white/albino fill tints). */
 export function applyMutationTint(
   image: { clearTint(): void; setTint(tint: number): void; setTintFill(tint: number): void },
-  mutation?: FishMutationId | null
+  mutation?: FishMutationId | null,
+  /** Painted mutation — per-stack random color. */
+  paintTint?: number | null
 ): void {
   image.clearTint();
   if (!mutation) return;
   const mut = MUTATIONS[mutation];
   if (!mut) return;
+  if (mutation === "painted") {
+    image.setTintFill(paintTint ?? mut.tint);
+    return;
+  }
   if (mut.tintFill) {
     image.setTintFill(mut.tint);
   } else {
@@ -3512,6 +3553,7 @@ const ROD_ONLY_MUTATIONS = new Set<FishMutationId>([
   "starstruck",
   "event_horizon",
   "gate",
+  "painted",
 ]);
 
 /** Full moon catch odds (mutually exclusive; lunar checked first). */
@@ -3782,6 +3824,8 @@ export interface InventorySlot {
   size?: FishSizeId | null;
   /** Kept fish — yellow highlight, skipped when selling. */
   keep?: boolean;
+  /** Painted mutation body color (stacks only with the same tint). */
+  paintTint?: number | null;
 }
 
 export const HOTBAR_SIZE = 5;

@@ -31,7 +31,7 @@ import {
   ashencastPierCollisionBounds,
 } from "../world/AshencastIsland";
 import { applyDevInventoryBootstrap } from "../dev/DevGrants";
-import { applyOwnerDevGrant } from "../save/OwnerDevGrant";
+import { applyOwnerDevGrant, stripPaintBrushFreeGrant } from "../save/OwnerDevGrant";
 import { ensurePlayerRodArt } from "../entities/PlayerArt";
 import { ensureRodIconTextures } from "./BootScene";
 import { ForgeRodTipVfx } from "../fx/ForgeRodFx";
@@ -386,6 +386,7 @@ export class GameScene extends Phaser.Scene {
     const save = loadActiveSave();
     this.inventory = new InventorySystem(save);
     const ownerGranted = applyOwnerDevGrant(this.inventory);
+    stripPaintBrushFreeGrant(this.inventory);
     if (import.meta.env.DEV && typeof location !== "undefined") {
       const h = location.hostname;
       if (h === "localhost" || h === "127.0.0.1" || h === "[::1]") {

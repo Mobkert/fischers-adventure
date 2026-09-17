@@ -109,6 +109,13 @@ function sameMutation(
   return (a ?? null) === (b ?? null);
 }
 
+function samePaintTint(
+  a: number | null | undefined,
+  b: number | null | undefined
+): boolean {
+  return (a ?? null) === (b ?? null);
+}
+
 function sameSize(
   a: FishSizeId | null | undefined,
   b: FishSizeId | null | undefined
@@ -891,7 +898,7 @@ export class InventorySystem {
   /** Buy a shop rod if affordable and not already owned. */
   buyRod(rodId: ItemId): { ok: boolean; message: string } {
     const def = ITEMS[rodId];
-    if (!def?.isRod || def.buyPrice == null || rodId === "tranquil_rod" || rodId === "recoil_rod" || rodId === "portal_rod" || rodId === "forge_rod" || rodId === "starweaver_rod" || rodId === "birthday_rod" || rodId === "star_line_rod" || rodId === "voidharvester_rod") {
+    if (!def?.isRod || def.buyPrice == null || rodId === "tranquil_rod" || rodId === "recoil_rod" || rodId === "portal_rod" || rodId === "forge_rod" || rodId === "starweaver_rod" || rodId === "birthday_rod" || rodId === "star_line_rod" || rodId === "voidharvester_rod" || rodId === "paint_brush_rod") {
       return { ok: false, message: "That isn't for sale." };
     }
     if (this.ownsRod(rodId)) {
@@ -1287,6 +1294,7 @@ export class InventorySystem {
         slot.count = 0;
         slot.mutation = null;
         slot.size = null;
+        slot.paintTint = null;
         slot.keep = false;
       }
     }
@@ -1316,6 +1324,7 @@ export class InventorySystem {
         slot.count = 0;
         slot.mutation = null;
         slot.size = null;
+        slot.paintTint = null;
         slot.keep = false;
       }
     }
@@ -1461,7 +1470,8 @@ export class InventorySystem {
     itemId: ItemId,
     count = 1,
     mutation: FishMutationId | null = null,
-    size: FishSizeId | null = null
+    size: FishSizeId | null = null,
+    paintTint: number | null = null
   ): boolean {
     if (ITEMS[itemId].isRod) {
       if (this.ownsRod(itemId)) return false;
@@ -1473,8 +1483,17 @@ export class InventorySystem {
       return false;
     }
 
+    const resolvedPaint =
+      mutation === "painted"
+        ? paintTint ??
+          [
+            0xff3355, 0xff6633, 0xffcc33, 0x66cc44, 0x33aaff, 0x7755ff, 0xff66cc,
+            0xffffff, 0x00e5c0, 0xff2244,
+          ][Math.floor(Math.random() * 10)]!
+        : null;
+
     if (ITEMS[itemId].stackable) {
-      const stack = this.findStack(itemId, mutation, size);
+      const stack = this.findStack(itemId, mutation, size, resolvedPaint);
       if (stack) {
         stack.count += count;
         this.discoverFish(itemId);
@@ -1491,6 +1510,7 @@ export class InventorySystem {
     empty.mutation = mutation;
     empty.size = size;
     empty.keep = false;
+    empty.paintTint = resolvedPaint;
     this.discoverFish(itemId);
     return true;
   }
@@ -1518,6 +1538,7 @@ export class InventorySystem {
         slot.count = 0;
         slot.mutation = null;
         slot.size = null;
+        slot.paintTint = null;
         slot.keep = false;
       }
       return true;
@@ -2585,12 +2606,14 @@ export class InventorySystem {
   private findStack(
     itemId: ItemId,
     mutation: FishMutationId | null = null,
-    size: FishSizeId | null = null
+    size: FishSizeId | null = null,
+    paintTint: number | null = null
   ): InventorySlot | undefined {
     const match = (s: InventorySlot) =>
       s.itemId === itemId &&
       sameMutation(s.mutation, mutation) &&
-      sameSize(s.size, size);
+      sameSize(s.size, size) &&
+      samePaintTint(s.paintTint, paintTint);
     return this.bag.find(match) ?? this.hotbar.find(match);
   }
 
@@ -2670,6 +2693,7 @@ export class InventorySystem {
       slot.count = 0;
       slot.mutation = null;
       slot.size = null;
+      slot.paintTint = null;
       slot.keep = false;
     }
     this.coins += earned;
@@ -2721,6 +2745,7 @@ export class InventorySystem {
       slot.count = 0;
       slot.mutation = null;
       slot.size = null;
+      slot.paintTint = null;
       slot.keep = false;
     }
     earned = Math.round(earned);
@@ -2815,6 +2840,7 @@ export class InventorySystem {
       live.count = 0;
       live.mutation = null;
       live.size = null;
+      live.paintTint = null;
       live.keep = false;
     }
 
@@ -2921,6 +2947,7 @@ export class InventorySystem {
       live.count = 0;
       live.mutation = null;
       live.size = null;
+      live.paintTint = null;
       live.keep = false;
     }
     this.coins += Math.max(0, Math.round(earned));
@@ -3052,6 +3079,7 @@ export class InventorySystem {
       slot.count = 0;
       slot.mutation = null;
       slot.size = null;
+      slot.paintTint = null;
       slot.keep = false;
     }
     this.frostpeakQuestStage = 4;

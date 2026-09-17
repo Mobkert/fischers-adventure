@@ -13,6 +13,7 @@ import {
   rodStyleForSkin,
 } from "./PlayerArt";
 import { voidharvesterBladeTip } from "../art/VoidharvesterArt";
+import { paintBrushTip } from "../art/PaintBrushArt";
 import { ITEMS, ItemId } from "../data/items";
 import { ROD_SKINS, RodSkinLayout } from "../data/rodSkins";
 
@@ -364,9 +365,15 @@ export class Player {
       ? this.currentRodTipLocal()
       : { x: 18 + PLAYER_FRAME_PAD_LEFT, y: 2 + PLAYER_FRAME_PAD_TOP };
     const style = fishing ? this.fishingRodStyle : this.carriedRodStyle;
-    if (style !== "voidharvester") return base;
-    const hand = this.currentRodHandLocal();
-    return voidharvesterBladeTip(hand.x, hand.y, base.x, base.y);
+    if (style === "voidharvester") {
+      const hand = this.currentRodHandLocal();
+      return voidharvesterBladeTip(hand.x, hand.y, base.x, base.y);
+    }
+    if (style === "paint_brush") {
+      const hand = this.currentRodHandLocal();
+      return paintBrushTip(hand.x, hand.y, base.x, base.y);
+    }
+    return base;
   }
 
   /** Anim style for baked frames — hide rod art when overlay skin is on. */

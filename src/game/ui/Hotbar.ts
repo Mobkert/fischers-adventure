@@ -115,7 +115,11 @@ export class Hotbar {
           this.icons[i].setDisplaySize(28, 28);
         }
         if (slotData.mutation && MUTATIONS[slotData.mutation]) {
-          applyMutationTint(this.icons[i], slotData.mutation);
+          applyMutationTint(
+            this.icons[i],
+            slotData.mutation,
+            slotData.paintTint
+          );
         } else {
           this.icons[i].clearTint();
         }

@@ -164,7 +164,14 @@ const DEFAULT_PLAYER_X = 640 + 420;
 const DEFAULT_PLAYER_Y = 560 - 40;
 
 function emptySlot(): InventorySlot {
-  return { itemId: null, count: 0, mutation: null, size: null, keep: false };
+  return {
+    itemId: null,
+    count: 0,
+    mutation: null,
+    size: null,
+    keep: false,
+    paintTint: null,
+  };
 }
 
 function parseMutation(raw: unknown): FishMutationId | null {
@@ -191,6 +198,10 @@ function cloneSlot(raw: unknown): InventorySlot {
     mutation: itemId ? parseMutation(s.mutation) : null,
     size: itemId ? parseSize(s.size) : null,
     keep: itemId ? Boolean(s.keep) : false,
+    paintTint:
+      itemId && typeof s.paintTint === "number" && Number.isFinite(s.paintTint)
+        ? (s.paintTint as number)
+        : null,
   };
 }
 
@@ -392,6 +403,7 @@ function normalizePromoCodes(raw: unknown): PromoCodeId[] {
     "w_update",
     "finally_cave_whale",
     "admin_code",
+    "starry_night",
   ];
   if (!Array.isArray(raw)) return [];
   return raw.filter(

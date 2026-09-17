@@ -16,6 +16,24 @@ import {
   playStarLineExplosionSfx,
   playStarLineMeteorSfx,
 } from "../audio/StarLineSfx";
+import {
+  drawStarryNightBar,
+  drawStarryNightPanel,
+  rollPaintColor,
+} from "../art/PaintBrushArt";
+
+type PaintDrop = {
+  root: Phaser.GameObjects.Container;
+  color: number;
+  vy: number;
+};
+
+type PaintSplat = {
+  x: number;
+  w: number;
+  color: number;
+  age: number;
+};
 
 export type CatchMinigameResultMeta = {
   guaranteeThunder?: boolean;
@@ -23,6 +41,8 @@ export type CatchMinigameResultMeta = {
   guaranteeConfetti?: boolean;
   /** Star Line: all 7 stars hit the white bar zone → Lunar (4×). */
   guaranteeLunar?: boolean;
+  /** Paint Brush: vertical meter filled → Painted (4×). */
+  guaranteePainted?: boolean;
   /** How many Recoil shotgun kicks fired during this fight. */
   recoilKicks?: number;
   /** Tranquil bubble popped during this fight (75% Tranquil mutation). */
@@ -350,6 +370,26 @@ export class CatchMinigame {
   private readonly voidProgressPerSec = 10;
   /** False until fish leaves once — then normal in-bar progress fills while catching. */
   private voidHarvestFillEnabled = false;
+  /** Paint Brush — falling paint drops, splats, vertical meter, wavy boost. */
+  private paintSplash = false;
+  private paintSpawnTimer = 0;
+  private paintSpawnedCount = 0;
+  private paintSplatCount = 0;
+  private paintMeterVisual = 0;
+  private paintBoostActive = false;
+  private paintBoostSpeedAdd = 0;
+  private paintPhase = 0;
+  private paintDrops: PaintDrop[] = [];
+  private paintSplats: PaintSplat[] = [];
+  private paintLayer!: Phaser.GameObjects.Container;
+  private paintStarryGfx?: Phaser.GameObjects.Graphics;
+  private paintSplatGfx?: Phaser.GameObjects.Graphics;
+  private paintMeterGfx?: Phaser.GameObjects.Graphics;
+  private paintProgressGfx?: Phaser.GameObjects.Graphics;
+  private readonly paintMaxDrops = 3;
+  private readonly paintSpawnInterval = 3;
+  private readonly paintSplatSlowMult = 0.78;
+  private readonly paintBoostProgressSpeed = 75;
   private birthdayBalloons: BirthdayBalloon[] = [];
   private birthdayBalloonLayer!: Phaser.GameObjects.Container;
   private birthdaySpawnTimer = 0;
@@ -549,6 +589,12 @@ export class CatchMinigame {
       .setDepth(180)
       .setScrollFactor(0)
       .setVisible(false);
+
+    this.paintLayer = scene.add
+      .container(0, 0)
+      .setDepth(185)
+      .setScrollFactor(0)
+      .setVisible(false);
   }
 
   start(
@@ -601,6 +647,8 @@ export class CatchMinigame {
       starweaverWeave?: boolean;
       /** The Voidharvester — shrink zone while fish inside, blast progress on leave. */
       voidHarvest?: boolean;
+      /** Paint Brush — paint drops, Starry Night bar, vertical meter boost. */
+      paintSplash?: boolean;
       /** Test Rod accelerating star rain. */
       starRain?: boolean;
       /** Defined Surfer — stars only to 0.3s, no black hole. */
@@ -704,6 +752,16 @@ export class CatchMinigame {
     this.clearForgeWeapons();
     this.birthdayParty = !!options?.birthdayParty;
     this.voidHarvest = !!options?.voidHarvest;
+    this.paintSplash = !!options?.paintSplash;
+    this.clearPaintSplash();
+    this.paintSpawnTimer = this.paintSpawnInterval;
+    this.paintSpawnedCount = 0;
+    this.paintSplatCount = 0;
+    this.paintMeterVisual = 0;
+    this.paintBoostActive = false;
+    this.paintBoostSpeedAdd = 0;
+    this.paintPhase = 0;
+    this.paintLayer.setVisible(this.paintSplash);
     this.voidControlShare = this.voidControlMax;
     this.voidResilience = 100;
     this.voidWasOverlapping = false;
@@ -928,6 +986,7 @@ export class CatchMinigame {
       }
       // During ready pause the fish starts in-zone
       this.updateStarRain(dt, true);
+      this.updatePaintSplash(dt);
       this.syncVisuals();
       return;
     }
@@ -963,6 +1022,7 @@ export class CatchMinigame {
       pointerY
     );
     this.prevRightDown = pointerRightDown;
+    this.updatePaintSplash(dt);
 
     const halfWhite = this.whiteWidth / 2;
     const overlapping =
@@ -975,8 +1035,11 @@ export class CatchMinigame {
     if (this.electrified && overlapping) {
       this.guaranteeThunder = true;
       this.applyElectrifiedSlow(true);
+    } else if (this.paintSplash && this.isFishInPaintSplat()) {
+      this.applyPaintSplatSlow(true);
     } else {
       this.applyElectrifiedSlow(false);
+      this.applyPaintSplatSlow(false);
     }
 
     if (overlapping) {
@@ -2071,7 +2134,8 @@ export class CatchMinigame {
       this.birthdayZoneSpeedAdd +
       this.starRainSpeedPenalty +
       this.starLineSpeedAdd +
-      this.starweaverStunSpeedAdd
+      this.starweaverStunSpeedAdd +
+      this.paintBoostSpeedAdd
     );
   }
 
@@ -2711,10 +2775,308 @@ export class CatchMinigame {
       this.fishAccel = this.baseFishAccel * 0.85;
       this.fishVel *= 0.98;
       this.fishTargetVel *= 0.98;
-    } else {
+    } else if (!(this.paintSplash && this.isFishInPaintSplat())) {
       this.fishMaxSpeed = this.baseFishMaxSpeed;
       this.fishAccel = this.baseFishAccel;
     }
+  }
+
+  private applyPaintSplatSlow(on: boolean): void {
+    if (!this.paintSplash) return;
+    if (on) {
+      this.fishMaxSpeed = this.baseFishMaxSpeed * this.paintSplatSlowMult;
+      this.fishAccel = this.baseFishAccel * 0.92;
+    } else if (!this.electrified) {
+      this.fishMaxSpeed = this.baseFishMaxSpeed;
+      this.fishAccel = this.baseFishAccel;
+    }
+  }
+
+  private isFishInPaintSplat(): boolean {
+    for (const s of this.paintSplats) {
+      if (Math.abs(this.fishX - s.x) <= s.w * 0.5) return true;
+    }
+    return false;
+  }
+
+  private setupPaintSplashUi(): void {
+    const scene = this.root.scene;
+    this.clearPaintSplashGraphicsOnly();
+    this.paintStarryGfx = scene.add.graphics();
+    this.paintSplatGfx = scene.add.graphics();
+    this.paintProgressGfx = scene.add.graphics();
+    this.paintMeterGfx = scene.add
+      .graphics()
+      .setDepth(190)
+      .setScrollFactor(0);
+
+    // Full Starry Night painting sits behind the whole panel
+    this.root.addAt(this.paintStarryGfx, 0);
+    const whiteIdx = this.root.getIndex(this.whiteBar);
+    if (whiteIdx >= 0) this.root.addAt(this.paintSplatGfx, whiteIdx);
+    else this.root.add(this.paintSplatGfx);
+    const progIdx = this.root.getIndex(this.progressFill);
+    if (progIdx >= 0) this.root.addAt(this.paintProgressGfx, progIdx + 1);
+    else this.root.add(this.paintProgressGfx);
+
+    this.paintLayer.setVisible(true);
+    this.redrawPaintStarryNight();
+    this.redrawPaintMeter();
+  }
+
+  private clearPaintSplashGraphicsOnly(): void {
+    this.paintStarryGfx?.destroy();
+    this.paintStarryGfx = undefined;
+    this.paintSplatGfx?.destroy();
+    this.paintSplatGfx = undefined;
+    this.paintProgressGfx?.destroy();
+    this.paintProgressGfx = undefined;
+    this.paintMeterGfx?.destroy();
+    this.paintMeterGfx = undefined;
+  }
+
+  private clearPaintSplash(): void {
+    for (const d of this.paintDrops) d.root.destroy();
+    this.paintDrops = [];
+    this.paintSplats = [];
+    this.clearPaintSplashGraphicsOnly();
+    this.paintBoostActive = false;
+    this.paintBoostSpeedAdd = 0;
+    this.paintMeterVisual = 0;
+    this.paintSpawnedCount = 0;
+    this.paintSplatCount = 0;
+    this.progressFill.setVisible(true);
+  }
+
+  private updatePaintSplash(dt: number): void {
+    if (!this.paintSplash) return;
+    this.paintPhase += dt;
+
+    if (this.ready && this.paintSpawnedCount < this.paintMaxDrops) {
+      this.paintSpawnTimer += dt;
+      if (this.paintSpawnTimer >= this.paintSpawnInterval) {
+        this.paintSpawnTimer = 0;
+        this.spawnPaintDrop();
+      }
+    }
+
+    const groundY = this.root.y - 8 + this.barHeight * 0.35;
+    for (let i = this.paintDrops.length - 1; i >= 0; i--) {
+      const drop = this.paintDrops[i]!;
+      drop.vy += 520 * dt;
+      drop.root.y += drop.vy * dt;
+      drop.root.setAngle(Math.sin(this.paintPhase * 6 + i) * 12);
+      if (drop.root.y >= groundY) {
+        const localX = drop.root.x - this.root.x;
+        this.landPaintDrop(i, localX, drop.color);
+      }
+    }
+
+    const targetMeter = this.paintSplatCount / this.paintMaxDrops;
+    this.paintMeterVisual += (targetMeter - this.paintMeterVisual) * Math.min(1, 6 * dt);
+
+    if (!this.paintBoostActive && this.paintSplatCount >= this.paintMaxDrops) {
+      this.paintBoostActive = true;
+      this.paintBoostSpeedAdd = this.paintBoostProgressSpeed;
+      this.applyProgressSpeedFillRate();
+      this.progressFill.setVisible(false);
+    }
+
+    this.redrawPaintStarryNight();
+    this.redrawPaintSplats();
+    this.redrawPaintMeter();
+    if (this.paintBoostActive) this.redrawPaintWavyProgress();
+  }
+
+  private spawnPaintDrop(): void {
+    if (this.paintSpawnedCount >= this.paintMaxDrops) return;
+    const scene = this.root.scene;
+    const color = rollPaintColor();
+    const half = this.barWidth / 2 - 20;
+    const x = this.root.x + Phaser.Math.FloatBetween(-half, half);
+    const y = 18;
+    const blob = scene.add.circle(0, 0, 9, color, 0.95);
+    const shine = scene.add.circle(-2.5, -2.5, 3, 0xffffff, 0.75);
+    const drip = scene.add.ellipse(0, 8, 7, 11, color, 0.9);
+    const root = scene.add.container(x, y, [drip, blob, shine]).setDepth(186);
+    this.paintLayer.add(root);
+    this.paintDrops.push({ root, color, vy: 40 });
+    this.paintSpawnedCount += 1;
+  }
+
+  private landPaintDrop(index: number, localX: number, color: number): void {
+    const drop = this.paintDrops[index];
+    if (!drop) return;
+    this.paintDrops.splice(index, 1);
+    drop.root.destroy();
+    this.paintSplats.push({
+      x: localX,
+      w: Phaser.Math.FloatBetween(52, 78),
+      color,
+      age: 0,
+    });
+    this.paintSplatCount = Math.min(
+      this.paintMaxDrops,
+      this.paintSplatCount + 1
+    );
+    this.playPaintSplatFx(localX, color);
+  }
+
+  private playPaintSplatFx(localX: number, color: number): void {
+    const scene = this.root.scene;
+    const x = this.root.x + localX;
+    const y = this.root.y - 8;
+    const flash = scene.add
+      .circle(x, y, 10, color, 0.9)
+      .setDepth(200)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    scene.tweens.add({
+      targets: flash,
+      scale: 2.4,
+      alpha: 0,
+      duration: 280,
+      ease: "Quad.easeOut",
+      onComplete: () => flash.destroy(),
+    });
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      const spark = scene.add
+        .circle(x, y, 3.5, color, 0.95)
+        .setDepth(200)
+        .setScrollFactor(0);
+      scene.tweens.add({
+        targets: spark,
+        x: x + Math.cos(a) * 28,
+        y: y + Math.sin(a) * 16,
+        alpha: 0,
+        duration: 320,
+        ease: "Cubic.easeOut",
+        onComplete: () => spark.destroy(),
+      });
+    }
+  }
+
+  private redrawPaintStarryNight(): void {
+    const g = this.paintStarryGfx;
+    if (!g) return;
+    g.clear();
+    // Big panel painting first, then the control-bar track on top of it
+    drawStarryNightPanel(g, 580, 156, -10, this.paintPhase);
+    drawStarryNightBar(g, this.barWidth, this.barHeight, -8, this.paintPhase);
+  }
+
+  private redrawPaintSplats(): void {
+    const g = this.paintSplatGfx;
+    if (!g) return;
+    g.clear();
+    for (const s of this.paintSplats) {
+      g.fillStyle(s.color, 0.55);
+      g.fillEllipse(s.x, -8 + this.barHeight * 0.22, s.w, 14);
+      g.fillStyle(s.color, 0.35);
+      g.fillEllipse(s.x - s.w * 0.18, -8 + this.barHeight * 0.12, s.w * 0.45, 8);
+      g.fillStyle(0xffffff, 0.2);
+      g.fillEllipse(s.x + s.w * 0.12, -8 + this.barHeight * 0.08, s.w * 0.2, 4);
+    }
+  }
+
+  private redrawPaintMeter(): void {
+    const g = this.paintMeterGfx;
+    if (!g) return;
+    g.clear();
+    const scene = this.root.scene;
+    const x = scene.scale.width - 36;
+    const h = 160;
+    const y = scene.scale.height / 2 - h / 2;
+    const w = 18;
+
+    g.fillStyle(0x0a1430, 0.85);
+    g.fillRoundedRect(x - w / 2 - 3, y - 3, w + 6, h + 6, 8);
+    g.lineStyle(2, 0xffe066, 0.7);
+    g.strokeRoundedRect(x - w / 2 - 3, y - 3, w + 6, h + 6, 8);
+
+    const fillH = h * Phaser.Math.Clamp(this.paintMeterVisual, 0, 1);
+    if (fillH > 0.5) {
+      if (this.paintBoostActive) {
+        // Rainbow fill
+        const bands = 8;
+        for (let i = 0; i < bands; i++) {
+          const u0 = i / bands;
+          const u1 = (i + 1) / bands;
+          const y0 = y + h - fillH * u1;
+          const y1 = y + h - fillH * u0;
+          const hue = (this.paintPhase * 80 + i * 40) % 360;
+          const color = Phaser.Display.Color.HSLToColor(hue / 360, 0.85, 0.55)
+            .color;
+          g.fillStyle(color, 0.95);
+          g.fillRect(x - w / 2, y0, w, Math.max(1, y1 - y0));
+        }
+      } else {
+        g.fillStyle(0x66aaff, 0.95);
+        g.fillRect(x - w / 2, y + h - fillH, w, fillH);
+        g.fillStyle(0xffe066, 0.55);
+        g.fillRect(x - w / 2, y + h - fillH, w, Math.min(6, fillH));
+      }
+    }
+
+    // Droplet notches
+    for (let i = 1; i <= this.paintMaxDrops; i++) {
+      const ny = y + h - (h * i) / this.paintMaxDrops;
+      g.lineStyle(1, 0xffffff, 0.35);
+      g.lineBetween(x - w / 2 - 2, ny, x + w / 2 + 2, ny);
+    }
+  }
+
+  private redrawPaintWavyProgress(): void {
+    const g = this.paintProgressGfx;
+    if (!g) return;
+    g.clear();
+    const fillW = this.barWidth * this.progress;
+    if (fillW <= 0.5) return;
+    const left = -this.barWidth / 2;
+    const cy = 34;
+    const hh = 5;
+    const t = this.paintPhase;
+    const segs = Math.max(8, Math.floor(fillW / 6));
+
+    g.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      const u = i / segs;
+      const x = left + u * fillW;
+      const wave =
+        Math.sin(u * Math.PI * 4 + t * 4) * 2.8 +
+        Math.sin(u * Math.PI * 7 - t * 2.5) * 1.4;
+      const y = cy - hh + wave;
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    for (let i = segs; i >= 0; i--) {
+      const u = i / segs;
+      const x = left + u * fillW;
+      const wave =
+        Math.sin(u * Math.PI * 4 + t * 4 + 0.9) * 2.8 +
+        Math.sin(u * Math.PI * 7 - t * 2.5) * 1.4;
+      const y = cy + hh + wave;
+      g.lineTo(x, y);
+    }
+    g.closePath();
+    const hue = (t * 90) % 360;
+    const c = Phaser.Display.Color.HSLToColor(hue / 360, 0.8, 0.55).color;
+    g.fillStyle(c, 0.95);
+    g.fillPath();
+    g.lineStyle(1.5, 0xffffff, 0.65);
+    g.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      const u = i / segs;
+      const x = left + u * fillW;
+      const wave =
+        Math.sin(u * Math.PI * 4 + t * 4) * 2.8 +
+        Math.sin(u * Math.PI * 7 - t * 2.5) * 1.4;
+      const y = cy - hh + wave;
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.strokePath();
   }
 
   private playZeusLightningFx(): void {
@@ -3034,12 +3396,35 @@ export class CatchMinigame {
     if (this.rodSkinId === "horizonbreaker") {
       this.setupHorizonbreakerUi();
     }
+    if (this.paintSplash) {
+      this.setupPaintSplashUi();
+    }
 
     this.applyRodSkinThemeColors();
   }
 
   /** Progress / panel tints that must win over start() defaults. */
   private applyRodSkinThemeColors(): void {
+    if (this.paintSplash) {
+      this.panel
+        .setSize(580, 156)
+        .setPosition(0, -10)
+        .setFillStyle(0x0a1430, 0.08)
+        .setStrokeStyle(2, 0xffe066, 0.9);
+      this.title
+        .setText("Keep the fish in the painted night!")
+        .setColor("#ffe8a0")
+        .setY(-68);
+      this.greyBar.setFillStyle(0x0a1430, 0.05);
+      this.greyBar.setStrokeStyle(2, 0xffe066, 0.35);
+      this.whiteBar.setFillStyle(0xfff6c8, 0.9);
+      this.whiteBar.setStrokeStyle(1, 0xffe066);
+      this.progressBg.setFillStyle(0x0a1430, 0.65);
+      this.progressBg.setStrokeStyle(1, 0x3a6ab8);
+      this.progressFill.setFillStyle(0x66aaff);
+      this.hint.setColor("#c8dcff");
+      return;
+    }
     if (this.voidHarvest) {
       this.panel
         .setSize(560, 148)
@@ -4734,6 +5119,13 @@ export class CatchMinigame {
       this.fishGlow2.setAlpha(pulse);
     }
     this.progressFill.width = this.barWidth * this.progress;
+    if (this.paintSplash && this.paintBoostActive) {
+      this.progressFill.setVisible(false);
+      this.redrawPaintWavyProgress();
+    } else if (this.paintSplash) {
+      this.progressFill.setVisible(true);
+      this.paintProgressGfx?.clear();
+    }
     if (this.bubbleActive) {
       this.layoutFishBubble(this.fishIcon.x + offset, this.fishIcon.y);
       this.bubbleMarker
@@ -5033,6 +5425,10 @@ export class CatchMinigame {
     this.starLine = false;
     this.clearBirthdayBalloons();
     this.birthdayBalloonLayer.setVisible(false);
+    const guaranteePainted = this.paintSplash && this.paintBoostActive;
+    this.clearPaintSplash();
+    this.paintSplash = false;
+    this.paintLayer.setVisible(false);
     this.forgePhase = "idle";
     this.setElectrified(false);
     this.zeusPhase = "idle";
@@ -5049,6 +5445,7 @@ export class CatchMinigame {
       this.forgeHadEmberWeapon ||
       this.guaranteeConfetti ||
       guaranteeLunar ||
+      guaranteePainted ||
       this.recoilKickCount > 0 ||
       this.bubbleCatch ||
       blackHoleDuplicateChance > 0
@@ -5057,6 +5454,7 @@ export class CatchMinigame {
             ...(this.forgeHadEmberWeapon ? { guaranteeAshencast: true } : {}),
             ...(this.guaranteeConfetti ? { guaranteeConfetti: true } : {}),
             ...(guaranteeLunar ? { guaranteeLunar: true } : {}),
+            ...(guaranteePainted ? { guaranteePainted: true } : {}),
             ...(this.recoilKickCount > 0
               ? { recoilKicks: this.recoilKickCount }
               : {}),

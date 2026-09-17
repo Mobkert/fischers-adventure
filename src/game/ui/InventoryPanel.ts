@@ -399,7 +399,7 @@ export class InventoryPanel {
         const def = ITEMS[slot.itemId];
         this.hotbarIcons[i].setTexture(def.textureKey).setVisible(true);
         if (slot.mutation && MUTATIONS[slot.mutation]) {
-          applyMutationTint(this.hotbarIcons[i], slot.mutation);
+          applyMutationTint(this.hotbarIcons[i], slot.mutation, slot.paintTint);
         } else {
           this.hotbarIcons[i].clearTint();
         }
@@ -454,7 +454,7 @@ export class InventoryPanel {
           icon.setDisplaySize(28 * Math.min(s, 1.25), 28 * Math.min(s, 1.25));
         }
         if (slot.mutation && MUTATIONS[slot.mutation]) {
-          applyMutationTint(icon, slot.mutation);
+          applyMutationTint(icon, slot.mutation, slot.paintTint);
         } else {
           icon.clearTint();
         }

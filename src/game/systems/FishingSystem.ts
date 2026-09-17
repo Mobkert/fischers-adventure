@@ -304,6 +304,7 @@ export class FishingSystem {
     const bobberTex =
       ITEMS[this.inventory.getEquippedBobberId()]?.textureKey ?? "bobber_red";
     this.bobber.setTexture(bobberTex);
+    this.bobber.setPaintBrushLine(rodId === "paint_brush_rod");
 
     this.pendingCast = { castX, surfaceY, depthY, zone, lineDepth };
     this.bobberOnTip = true;
@@ -739,6 +740,7 @@ export class FishingSystem {
       guaranteeAshencast?: boolean;
       guaranteeConfetti?: boolean;
       guaranteeLunar?: boolean;
+      guaranteePainted?: boolean;
       recoilKicks?: number;
       bubbleCatch?: boolean;
       blackHoleDuplicateChance?: number;
@@ -777,7 +779,9 @@ export class FishingSystem {
                   ? ("confetti" as const)
                   : meta?.guaranteeLunar
                     ? ("lunar" as const)
-                    : this.resolveMutationFor(fish, meta);
+                    : meta?.guaranteePainted
+                      ? ("painted" as const)
+                      : this.resolveMutationFor(fish, meta);
         const size = fish.size;
         const added = this.inventory.addItem(
           fish.speciesId,
