@@ -280,13 +280,20 @@ export class MenuScene extends Phaser.Scene {
           "• SERPENTEELS — expired\n" +
           "• OREAREAWESOME — expired\n",
       },
+      { text: "CHANGES", accent: true },
+      {
+        text:
+          "\n" +
+          "• The Voidharvester is no longer obtainable — removed\n" +
+          "  from the Stellar Merchant shop (owners keep theirs)\n",
+      },
       { text: "FROM STELLAR SKY 1.0", accent: true },
       {
         text:
           "\n" +
           "• Stellar Sky pocket world, Astral Warden questline\n" +
-          "• Star Line, Stellar Surfer, Voidharvester &\n" +
-          "  Horizonbreaker at the Stellar Merchant\n" +
+          "• Star Line & Stellar Surfer rods, Surfer mastery\n" +
+          "• Horizonbreaker skin at the Stellar Merchant\n" +
           "• Resonated Hat travel via Cosmic Haberdasher",
       },
     ];

@@ -45,14 +45,6 @@ export const STELLAR_SHOP_OFFERS: readonly StellarShopOffer[] = [
     label: "Horizonbreaker",
     blurb: "Tranquil Rod — scattered stars & a black-hole tip",
   },
-  {
-    kind: "rod",
-    rodId: "voidharvester_rod",
-    price: 1_750_000,
-    label: "The Voidharvester",
-    blurb: "Limited astral greatsword — shrink & blast harvest",
-    requiresItem: "painite",
-  },
 ];
 
 /** @deprecated use STELLAR_SHOP_OFFERS */

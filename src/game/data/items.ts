@@ -1365,8 +1365,8 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     rodMinigamePower: "void_harvest",
     rodMutation: { mutation: "event_horizon", chance: 0.12 },
     limitedEdition: {
-      obtainableWindow: "Stellar Merchant — $1.75M + Painite",
-      currentlyObtainable: true,
+      obtainableWindow: "Stellar Merchant (retired)",
+      currentlyObtainable: false,
     },
     rodStats: {
       luck: 75,
