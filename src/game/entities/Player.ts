@@ -13,7 +13,7 @@ import {
   rodStyleForSkin,
 } from "./PlayerArt";
 import { voidharvesterBladeTip } from "../art/VoidharvesterArt";
-import { paintBrushTip } from "../art/PaintBrushArt";
+import { paintBrushTip, golfClubTip } from "../art/PaintBrushArt";
 import { ITEMS, ItemId } from "../data/items";
 import { ROD_SKINS, RodSkinLayout } from "../data/rodSkins";
 
@@ -42,6 +42,10 @@ export class Player {
   private fishingRodStyle: RodDrawStyle = "starter";
   /** Rod shown over the shoulder while selected on the hotbar. */
   private carriedRodStyle: RodDrawStyle | null = null;
+  private masteryGoldActive = false;
+  private masteryRainbowActive = false;
+  private fishingMasteryGold = false;
+  private fishingMasteryRainbow = false;
   /** Active cosmetic rod skin overlay (hides baked rod art). */
   private overlaySkinKey: string | null = null;
   private overlayLayout: RodSkinLayout | null = null;
@@ -102,6 +106,8 @@ export class Player {
       skinId?: string | null;
       skinTextureKey?: string | null;
       skinLayout?: RodSkinLayout | null;
+      masteryGold?: boolean;
+      masteryRainbow?: boolean;
     }
   ): void {
     const skinId = opts?.skinId ?? null;
@@ -116,14 +122,25 @@ export class Player {
       selectedItemId && ITEMS[selectedItemId]?.isRod
         ? rodStyleForSkin(selectedItemId, skinId)
         : null;
+    const wantRainbow = !!(opts?.masteryRainbow && next && !useOverlay);
+    const wantGold = !!(
+      opts?.masteryGold &&
+      next &&
+      !useOverlay &&
+      !wantRainbow
+    );
     if (
       next === this.carriedRodStyle &&
-      wantKey === this.overlaySkinKey
+      wantKey === this.overlaySkinKey &&
+      wantGold === this.masteryGoldActive &&
+      wantRainbow === this.masteryRainbowActive
     ) {
       this.updateSkinSprite();
       return;
     }
     this.carriedRodStyle = next;
+    this.masteryGoldActive = wantGold;
+    this.masteryRainbowActive = wantRainbow;
     this.overlaySkinKey = wantKey;
     this.overlayLayout = wantLayout;
     if (wantKey && this.skinSprite) {
@@ -373,6 +390,10 @@ export class Player {
       const hand = this.currentRodHandLocal();
       return paintBrushTip(hand.x, hand.y, base.x, base.y);
     }
+    if (style === "golf_club") {
+      const hand = this.currentRodHandLocal();
+      return golfClubTip(hand.x, hand.y, base.x, base.y);
+    }
     return base;
   }
 
@@ -387,7 +408,17 @@ export class Player {
   /** Fall back to starter if cast/carry anims were not baked (stale session). */
   private resolvedCastStyle(style: RodDrawStyle): RodDrawStyle {
     const animStyle = this.animRodStyle(style) ?? style;
-    const castKey = `player-fish-cast-${animStyle}`;
+    const rainbow = this.isFishingAnim()
+      ? this.fishingMasteryRainbow
+      : this.masteryRainbowActive;
+    const gold = this.isFishingAnim()
+      ? this.fishingMasteryGold
+      : this.masteryGoldActive;
+    const castKey = rainbow
+      ? `player-fish-cast-rb-${animStyle}`
+      : gold
+        ? `player-fish-cast-mg-${animStyle}`
+        : `player-fish-cast-${animStyle}`;
     if (this.sprite.scene.anims.exists(castKey)) return animStyle;
     ensurePlayerRodArt(this.sprite.scene);
     if (this.sprite.scene.anims.exists(castKey)) return animStyle;
@@ -396,7 +427,11 @@ export class Player {
 
   private resolvedCarryStyle(style: RodDrawStyle): RodDrawStyle {
     const animStyle = this.animRodStyle(style) ?? style;
-    const idleKey = `player-idle-rod-${animStyle}`;
+    const idleKey = this.masteryRainbowActive
+      ? `player-idle-rod-rb-${animStyle}`
+      : this.masteryGoldActive
+        ? `player-idle-rod-mg-${animStyle}`
+        : `player-idle-rod-${animStyle}`;
     if (this.sprite.scene.anims.exists(idleKey)) return animStyle;
     ensurePlayerRodArt(this.sprite.scene);
     if (this.sprite.scene.anims.exists(idleKey)) return animStyle;
@@ -407,6 +442,12 @@ export class Player {
     const style = this.animRodStyle();
     if (style) {
       const carryStyle = this.resolvedCarryStyle(style);
+      if (this.masteryRainbowActive) {
+        return `player-${kind}-rod-rb-${carryStyle}`;
+      }
+      if (this.masteryGoldActive) {
+        return `player-${kind}-rod-mg-${carryStyle}`;
+      }
       return `player-${kind}-rod-${carryStyle}`;
     }
     return `player-${kind}`;
@@ -423,7 +464,12 @@ export class Player {
     const style = this.animRodStyle();
     if (style) {
       const carryStyle = this.resolvedCarryStyle(style);
-      this.sprite.setTexture(`player_sit_rod_${carryStyle}`);
+      const key = this.masteryRainbowActive
+        ? `player_sit_rod_rb_${carryStyle}`
+        : this.masteryGoldActive
+          ? `player_sit_rod_mg_${carryStyle}`
+          : `player_sit_rod_${carryStyle}`;
+      this.sprite.setTexture(key);
     } else {
       this.sprite.setTexture("player_sit_0");
     }
@@ -530,14 +576,43 @@ export class Player {
     return this.localToWorld(this.currentRodHandLocal());
   }
 
+  /** Mastery Lv10+ golden default finish — sparkles along the shaft. */
+  isMasteryGoldInHand(): boolean {
+    if (this.isFishingAnim()) return this.fishingMasteryGold;
+    return this.masteryGoldActive;
+  }
+
+  /** Mastery Lv20 rainbow finish — prismatic shaft + tip trail. */
+  isMasteryRainbowInHand(): boolean {
+    if (this.isFishingAnim()) return this.fishingMasteryRainbow;
+    return this.masteryRainbowActive;
+  }
+
   playFishCast(
     rodItemId: ItemId = "starter_rod",
     onRelease?: () => void,
-    skinId?: string | null
+    skinId?: string | null,
+    masteryGold = false,
+    masteryRainbow = false
   ): void {
     this.fishingRodStyle = rodStyleForSkin(rodItemId, skinId);
+    this.fishingMasteryRainbow = !!(
+      masteryRainbow &&
+      this.fishingRodStyle &&
+      this.fishingRodStyle !== "hidden"
+    );
+    this.fishingMasteryGold = !!(
+      masteryGold &&
+      !this.fishingMasteryRainbow &&
+      this.fishingRodStyle &&
+      this.fishingRodStyle !== "hidden"
+    );
     const castStyle = this.resolvedCastStyle(this.fishingRodStyle);
-    const castKey = `player-fish-cast-${castStyle}`;
+    const castKey = this.fishingMasteryRainbow
+      ? `player-fish-cast-rb-${castStyle}`
+      : this.fishingMasteryGold
+        ? `player-fish-cast-mg-${castStyle}`
+        : `player-fish-cast-${castStyle}`;
     this.animMode = "fishing-cast";
     this.updateSkinSprite();
 
@@ -584,7 +659,11 @@ export class Player {
 
   playFishWait(): void {
     const waitStyle = this.resolvedCastStyle(this.fishingRodStyle);
-    const waitKey = `player-fish-wait-${waitStyle}`;
+    const waitKey = this.fishingMasteryRainbow
+      ? `player-fish-wait-rb-${waitStyle}`
+      : this.fishingMasteryGold
+        ? `player-fish-wait-mg-${waitStyle}`
+        : `player-fish-wait-${waitStyle}`;
     this.animMode = "fishing-wait";
     this.updateSkinSprite();
     if (this.sprite.anims.currentAnim?.key !== waitKey) {

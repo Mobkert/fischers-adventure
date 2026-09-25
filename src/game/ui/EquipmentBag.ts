@@ -19,6 +19,18 @@ import {
   createGradientWaveText,
   startGradientColorWave,
 } from "./GradientWaveText";
+import { RodXpHud } from "./RodXpHud";
+import {
+  ROD_MASTERY_ABILITY_LEVEL,
+  ROD_MASTERY_GOLD_LEVEL,
+  ROD_MASTERY_MAX_LEVEL,
+  ROD_MASTERY_RAINBOW_LEVEL,
+  rodLevelControlMult,
+  rodLevelStatMult,
+  rodMasteryAccent,
+  rodMasteryFill,
+  xpRequiredForLevel,
+} from "../systems/RodMastery";
 
 const PANEL_W = 460;
 const PANEL_H = 520;
@@ -556,8 +568,8 @@ export class EquipmentBag {
         ? "\nAfter 4 fish moves: warning → blast (+22.5% progress) · Ash 30% (black) · Blasted 50% (orange/red) · 4 blasts → always 25% Ash / 75% Blasted (any fish)" +
           (InventorySystem.RECOIL_MASTERY_ENABLED
             ? this.inventory.isRecoilBurstMasteryUnlocked()
-              ? "\nMastery: 3rd blast → rapid burst (+10% each)"
-              : "\nMastery locked — open Mastery to unlock rapid burst"
+              ? "\nLv15 Ability: 3rd blast → rapid burst (+10% each)"
+              : `\nAbility at Lv${ROD_MASTERY_ABILITY_LEVEL} — rapid burst on 3rd recoil`
             : "")
         : "";
     const portalLine =
@@ -565,8 +577,8 @@ export class EquipmentBag {
         ? "\n400px portal — rarest fish warps to your bobber" +
           (InventorySystem.PORTAL_MASTERY_ENABLED
             ? this.inventory.isPortalMasteryUnlocked()
-              ? "\nMastery: 30% Gate dupe (3.5×) · +25 Luck/Resilience/Progress · 4m depth"
-              : "\nMastery locked — open Mastery to unlock Gate duplicates & +25 stats"
+              ? "\nLv15 Ability: 30% Gate dupe (3.5×) · +25 Luck/Resilience/Progress · 4m depth"
+              : `\nAbility at Lv${ROD_MASTERY_ABILITY_LEVEL} — Gate duplicates & +25 stats`
             : "")
         : "";
     const forgeLine =
@@ -584,9 +596,9 @@ export class EquipmentBag {
           : "\nStars attack only in-bar (leave = explode + −11% progress speed until catch; black hole slowly shrinks / loses dupe chance; re-enter restarts cadence) · 0.5s→0.01 · +1% each · each hit grows the black hole (+3% dupe chance, max 55%) · dupes always Starstruck 0.9× · Event Horizon 35% (7×) · Q at port to ride (faster than Jet Ski)" +
             (InventorySystem.SURFER_MASTERY_ENABLED
               ? this.inventory.isStellarSurferMasteryUnlocked()
-                ? "\nMastery: follower black hole · every 30s area fish (80% Starstruck / 20% Event Horizon) · Rubber Duck skin"
+                ? "\nLv15 Ability: follower black hole · every 30s area fish (80% Starstruck / 20% Event Horizon) · Rubber Duck skin"
                 : this.inventory.isStellarSurferAscended()
-                  ? "\nMastery locked — open Mastery to unlock follower black hole & Rubber Duck skin"
+                  ? `\nAbility at Lv${ROD_MASTERY_ABILITY_LEVEL} — follower black hole & Rubber Duck skin`
                   : ""
               : "")
         : "";
@@ -632,83 +644,49 @@ export class EquipmentBag {
 
     row.add(statsText);
 
-    const comingSoonMastery =
-      rodId === "augment_rod" ||
-      rodId === "forge_rod" ||
-      rodId === "coral_rod";
-    const hasMasteryBtn =
-      (rodId === "recoil_rod" && InventorySystem.RECOIL_MASTERY_ENABLED) ||
-      (rodId === "portal_rod" && InventorySystem.PORTAL_MASTERY_ENABLED) ||
-      (rodId === "test_rod" &&
-        InventorySystem.SURFER_MASTERY_ENABLED &&
-        this.inventory.isStellarSurferAscended()) ||
-      comingSoonMastery;
+    const mastery = this.inventory.getRodMastery(rodId);
+
     const equipW = 100;
     const equipH = 36;
     const skinW = equipW / 2;
     const skinH = equipH / 2;
-    const masteryW = skinW;
-    const masteryH = skinH;
-    // Equip on the right; Skin (+ Mastery beside it) half-size above, right-aligned
+    const meterR = 16;
+    // Equip on the right; Skin + circular level meter above, right-aligned
     const equipX = 140;
     const equipY = y + rowH / 2 + 8;
-    const btnGap = 4;
-    const pairW = skinW + (hasMasteryBtn ? btnGap + masteryW : 0);
+    const btnGap = 8;
+    const meterSpan = meterR * 2 + 4;
+    const pairW = skinW + btnGap + meterSpan;
     const pairRight = equipX + equipW / 2;
     const pairLeft = pairRight - pairW;
-    const skinX = hasMasteryBtn
-      ? pairLeft + skinW / 2
-      : equipX + equipW / 2 - skinW / 2;
-    const masteryX = pairLeft + skinW + btnGap + masteryW / 2;
+    const skinX = pairLeft + skinW / 2;
+    const meterX = pairLeft + skinW + btnGap + meterSpan / 2;
     const skinY = equipY - equipH / 2 - skinH / 2 - 6;
-    const masteryY = skinY;
+    const meterY = skinY;
 
-    if (hasMasteryBtn) {
-      const unlocked = comingSoonMastery
-        ? false
-        : rodId === "portal_rod"
-          ? this.inventory.isPortalMasteryUnlocked()
-          : rodId === "test_rod"
-            ? this.inventory.isStellarSurferMasteryUnlocked()
-            : this.inventory.isRecoilBurstMasteryUnlocked();
-      const fill = comingSoonMastery
-        ? 0x3a3a42
-        : unlocked
-          ? 0x6b4a28
-          : 0x3a4a6b;
-      const stroke = comingSoonMastery
-        ? 0x6a6a72
-        : unlocked
-          ? 0xffc878
-          : 0x7aa0d0;
-      const hover = comingSoonMastery
-        ? 0x484850
-        : unlocked
-          ? 0x805830
-          : 0x4a5a7b;
-      const masteryBtn = this.scene.add
-        .rectangle(masteryX, masteryY, masteryW, masteryH, fill)
-        .setStrokeStyle(1, stroke)
+    {
+      const fill = rodMasteryFill(mastery);
+      // Container so hover scale is centered on the meter (Graphics scale from 0,0).
+      const meterRoot = this.scene.add.container(meterX, meterY);
+      const meterHit = this.scene.add
+        .circle(0, 0, meterR + 4, 0x000000, 0.001)
         .setInteractive({ useHandCursor: true });
-      const masteryLabel = this.scene.add
-        .text(masteryX, masteryY, "Mastery", {
-          fontFamily: "Arial",
-          fontSize: "10px",
-          color: comingSoonMastery ? "#a0a0a8" : "#ffffff",
+      const meterGfx = this.scene.add.graphics();
+      RodXpHud.drawMeter(meterGfx, 0, 0, meterR, fill, mastery.level, 4);
+      const meterLevel = this.scene.add
+        .text(0, 0, String(mastery.level), {
+          fontFamily: "Georgia, serif",
+          fontSize: "14px",
+          color: rodMasteryAccent(mastery.level).label,
+          stroke: "#000000",
+          strokeThickness: 3,
         })
         .setOrigin(0.5);
-      masteryBtn.on("pointerover", () => masteryBtn.setFillStyle(hover));
-      masteryBtn.on("pointerout", () => masteryBtn.setFillStyle(fill));
-      masteryBtn.on("pointerdown", () => {
-        if (comingSoonMastery) {
-          this.onChanged?.("Coming soon");
-          return;
-        }
-        if (rodId === "portal_rod") this.openPortalMasteryPanel();
-        else if (rodId === "test_rod") this.openSurferMasteryPanel();
-        else this.openRecoilMasteryPanel();
-      });
-      row.add([masteryBtn, masteryLabel]);
+      meterHit.on("pointerover", () => meterRoot.setScale(1.08));
+      meterHit.on("pointerout", () => meterRoot.setScale(1));
+      meterHit.on("pointerdown", () => this.openRodMasteryPanel(rodId));
+      meterRoot.add([meterHit, meterGfx, meterLevel]);
+      row.add(meterRoot);
     }
 
     {
@@ -979,17 +957,53 @@ export class EquipmentBag {
     this.masteryPanel = null;
   }
 
-  private openRecoilMasteryPanel(): void {
+  private openRodMasteryPanel(rodId: ItemId): void {
     this.closeMasteryPanel();
     this.closeSkinPanel();
 
-    const catches = this.inventory.recoilMasteryCatches;
-    const ashSold = this.inventory.recoilMasteryAshSold;
-    const catchGoal = InventorySystem.RECOIL_MASTERY_CATCH_GOAL;
-    const ashGoal = InventorySystem.RECOIL_MASTERY_BLASTED_SELL_GOAL;
-    const catchDone = catches >= catchGoal;
-    const ashDone = ashSold >= ashGoal;
-    const unlocked = catchDone && ashDone;
+    const def = ITEMS[rodId];
+    const progress = this.inventory.getRodMastery(rodId);
+    const need = xpRequiredForLevel(progress.level);
+    const fill = rodMasteryFill(progress);
+    const accent = rodMasteryAccent(progress.level);
+    const statPct = Math.round((rodLevelStatMult(progress.level) - 1) * 100);
+    const controlPct = Math.round((rodLevelControlMult(progress.level) - 1) * 10000) / 100;
+    const maxed = progress.level >= ROD_MASTERY_MAX_LEVEL;
+
+    let abilityLine = "Catch fish with this rod to earn XP.";
+    let abilityUnlocked = false;
+    if (rodId === "recoil_rod" && InventorySystem.RECOIL_MASTERY_ENABLED) {
+      abilityUnlocked = this.inventory.isRecoilBurstMasteryUnlocked();
+      abilityLine = abilityUnlocked
+        ? "Lv15 Ability unlocked — 3rd blast fires a rapid burst!"
+        : `Reach Lv${ROD_MASTERY_ABILITY_LEVEL} to unlock rapid burst (3rd recoil).`;
+    } else if (rodId === "portal_rod" && InventorySystem.PORTAL_MASTERY_ENABLED) {
+      abilityUnlocked = this.inventory.isPortalMasteryUnlocked();
+      abilityLine = abilityUnlocked
+        ? "Lv15 Ability unlocked — Gate dupes + +25 stats (4m depth)!"
+        : `Reach Lv${ROD_MASTERY_ABILITY_LEVEL} for Gate duplicates & +25 stats.`;
+    } else if (rodId === "test_rod" && InventorySystem.SURFER_MASTERY_ENABLED) {
+      if (this.inventory.isStellarSurferDefined()) {
+        abilityLine = "DEFINED form — cannot earn mastery XP or abilities.";
+      } else if (!this.inventory.isStellarSurferAscended()) {
+        abilityLine = "Ascend the Stellar Surfer to unlock its Lv15 ability.";
+      } else {
+        abilityUnlocked = this.inventory.isStellarSurferMasteryUnlocked();
+        abilityLine = abilityUnlocked
+          ? "Lv15 Ability unlocked — follower black hole · Rubber Duck skin!"
+          : `Reach Lv${ROD_MASTERY_ABILITY_LEVEL} for follower black hole & Rubber Duck skin.`;
+      }
+    } else {
+      abilityLine = `Every level: +1% stats, +0.25% Control. Max Lv${ROD_MASTERY_MAX_LEVEL}.`;
+    }
+    const goldUnlocked = progress.level >= ROD_MASTERY_GOLD_LEVEL;
+    const goldLine = goldUnlocked
+      ? `Lv${ROD_MASTERY_GOLD_LEVEL} Golden look unlocked — default finish gleams with sparkles.`
+      : `Reach Lv${ROD_MASTERY_GOLD_LEVEL} for a golden rod look + sparkles.`;
+    const rainbowUnlocked = progress.level >= ROD_MASTERY_RAINBOW_LEVEL;
+    const rainbowLine = rainbowUnlocked
+      ? `Lv${ROD_MASTERY_RAINBOW_LEVEL} Rainbow look unlocked — prismatic shaft + tip trail.`
+      : `Reach Lv${ROD_MASTERY_RAINBOW_LEVEL} for a rainbow rod look + tip trail.`;
 
     const panel = this.scene.add.container(0, 0).setDepth(20);
     const dim = this.scene.add
@@ -998,71 +1012,108 @@ export class EquipmentBag {
     dim.on("pointerdown", () => this.closeMasteryPanel());
 
     const box = this.scene.add
-      .rectangle(0, 0, 360, 280, 0x1c1e26, 0.98)
-      .setStrokeStyle(2, 0xc4a86a);
+      .rectangle(0, 0, 380, 410, 0x1c1e26, 0.98)
+      .setStrokeStyle(2, accent.ring);
 
     const title = this.scene.add
-      .text(0, -112, "Recoil Rod Mastery", {
+      .text(0, -138, `${def?.name ?? "Rod"} Mastery`, {
         fontFamily: "Georgia, serif",
         fontSize: "22px",
-        color: "#f0e6d2",
+        color: accent.label,
       })
       .setOrigin(0.5);
 
-    const subtitle = this.scene.add
+    const meterGfx = this.scene.add.graphics();
+    RodXpHud.drawMeter(meterGfx, 0, -58, 42, fill, progress.level, 7);
+    const levelNum = this.scene.add
+      .text(0, -58, String(progress.level), {
+        fontFamily: "Georgia, serif",
+        fontSize: "28px",
+        color: accent.label,
+        stroke: "#000000",
+        strokeThickness: 5,
+      })
+      .setOrigin(0.5);
+
+    const xpLine = this.scene.add
       .text(
         0,
-        -78,
-        unlocked
-          ? "Unlocked — 3rd blast fires a rapid burst!"
-          : "Complete both tasks to unlock rapid burst\n(3rd recoil → blasts every 0.2s for 2s)",
+        8,
+        maxed
+          ? `MAX LEVEL ${ROD_MASTERY_MAX_LEVEL}`
+          : `${progress.xp} / ${need} XP to Lv${progress.level + 1}`,
+        {
+          fontFamily: "Arial",
+          fontSize: "15px",
+          color: "#e8e0d0",
+        }
+      )
+      .setOrigin(0.5);
+
+    const statsLine = this.scene.add
+      .text(
+        0,
+        40,
+        `Stats +${statPct}% · Control +${controlPct}% · 600 XP +400/level`,
         {
           fontFamily: "Arial",
           fontSize: "13px",
-          color: unlocked ? "#7dff9a" : "#a8b0c0",
+          color: "#a8b0c0",
+        }
+      )
+      .setOrigin(0.5);
+
+    const ability = this.scene.add
+      .text(0, 72, abilityLine, {
+        fontFamily: "Arial",
+        fontSize: "13px",
+        color: abilityUnlocked ? "#7dff9a" : "#c9a0ff",
+        align: "center",
+        wordWrap: { width: 320 },
+      })
+      .setOrigin(0.5);
+
+    const goldInfo = this.scene.add
+      .text(0, 98, goldLine, {
+        fontFamily: "Arial",
+        fontSize: "12px",
+        color: goldUnlocked ? "#ffe066" : "#a8b0c0",
+        align: "center",
+        wordWrap: { width: 320 },
+      })
+      .setOrigin(0.5);
+
+    const rainbowInfo = this.scene.add
+      .text(0, 122, rainbowLine, {
+        fontFamily: "Arial",
+        fontSize: "12px",
+        color: rainbowUnlocked ? "#ff88dd" : "#a8b0c0",
+        align: "center",
+        wordWrap: { width: 320 },
+      })
+      .setOrigin(0.5);
+
+    const tip = this.scene.add
+      .text(
+        0,
+        152,
+        "Fish XP: Driftwood 10 · Salmon 20 · Flounder 60\nYellowfin 120 · Bluefin 245 · Eel 360 · Sunfish 570\nDolphin 4,000 · Whale 7,000",
+        {
+          fontFamily: "Arial",
+          fontSize: "11px",
+          color: "#888890",
           align: "center",
-        }
-      )
-      .setOrigin(0.5);
-
-    const catchColor = catchDone ? "#7dff9a" : "#e8e0d0";
-    const ashColor = ashDone ? "#7dff9a" : "#e8e0d0";
-    const task1 = this.scene.add
-      .text(
-        0,
-        -18,
-        `${catchDone ? "✓" : "○"}  Catch ${catchGoal} fish with Recoil Rod\n     ${Math.min(catches, catchGoal)} / ${catchGoal}`,
-        {
-          fontFamily: "Arial",
-          fontSize: "15px",
-          color: catchColor,
-          align: "left",
-          lineSpacing: 4,
-        }
-      )
-      .setOrigin(0.5);
-
-    const task2 = this.scene.add
-      .text(
-        0,
-        48,
-        `${ashDone ? "✓" : "○"}  Sell ${ashGoal} Blasted fish\n     ${Math.min(ashSold, ashGoal)} / ${ashGoal}`,
-        {
-          fontFamily: "Arial",
-          fontSize: "15px",
-          color: ashColor,
-          align: "left",
-          lineSpacing: 4,
+          lineSpacing: 2,
         }
       )
       .setOrigin(0.5);
 
     const closeBtn = this.scene.add
-      .rectangle(0, 108, 110, 34, 0x3d6b4f)
+      .rectangle(0, 188, 110, 34, 0x3d6b4f)
       .setStrokeStyle(1, 0x7dce7a)
       .setInteractive({ useHandCursor: true });
     const closeLabel = this.scene.add
-      .text(0, 108, "Close", {
+      .text(0, 188, "Close", {
         fontFamily: "Arial",
         fontSize: "15px",
         color: "#ffffff",
@@ -1076,251 +1127,14 @@ export class EquipmentBag {
       dim,
       box,
       title,
-      subtitle,
-      task1,
-      task2,
-      closeBtn,
-      closeLabel,
-    ]);
-    this.root.add(panel);
-    this.masteryPanel = panel;
-  }
-
-  private openPortalMasteryPanel(): void {
-    this.closeMasteryPanel();
-    this.closeSkinPanel();
-
-    const legends = this.inventory.portalMasteryLegendaries;
-    const tides = this.inventory.portalMasteryTideUses;
-    const legendGoal = InventorySystem.PORTAL_MASTERY_LEGENDARY_GOAL;
-    const tideGoal = InventorySystem.PORTAL_MASTERY_TIDE_GOAL;
-    const legendDone = legends >= legendGoal;
-    const tideDone = tides >= tideGoal;
-    const unlocked = legendDone && tideDone;
-
-    const panel = this.scene.add.container(0, 0).setDepth(20);
-    const dim = this.scene.add
-      .rectangle(0, 0, PANEL_W + 40, PANEL_H + 40, 0x000000, 0.55)
-      .setInteractive();
-    dim.on("pointerdown", () => this.closeMasteryPanel());
-
-    const box = this.scene.add
-      .rectangle(0, 0, 360, 280, 0x1c1e26, 0.98)
-      .setStrokeStyle(2, 0xa888ff);
-
-    const title = this.scene.add
-      .text(0, -112, "Portal Rod Mastery", {
-        fontFamily: "Georgia, serif",
-        fontSize: "22px",
-        color: "#e8d0ff",
-      })
-      .setOrigin(0.5);
-
-    const subtitle = this.scene.add
-      .text(
-        0,
-        -78,
-        unlocked
-          ? "Unlocked — Gate dupes + +25 stats (4m depth)!"
-          : "Complete both tasks to unlock Gate duplicates\n(+25 Luck/Resilience/Progress · 4m depth · 30% Gate)",
-        {
-          fontFamily: "Arial",
-          fontSize: "13px",
-          color: unlocked ? "#7dff9a" : "#a8b0c0",
-          align: "center",
-        }
-      )
-      .setOrigin(0.5);
-
-    const legendColor = legendDone ? "#7dff9a" : "#e8e0d0";
-    const tideColor = tideDone ? "#7dff9a" : "#e8e0d0";
-    const task1 = this.scene.add
-      .text(
-        0,
-        -18,
-        `${legendDone ? "✓" : "○"}  Catch ${legendGoal} Legendaries with Portal\n     ${Math.min(legends, legendGoal)} / ${legendGoal}`,
-        {
-          fontFamily: "Arial",
-          fontSize: "15px",
-          color: legendColor,
-          align: "left",
-          lineSpacing: 4,
-        }
-      )
-      .setOrigin(0.5);
-
-    const task2 = this.scene.add
-      .text(
-        0,
-        48,
-        `${tideDone ? "✓" : "○"}  Tide Compass ${tideGoal}× with Portal equipped\n     ${Math.min(tides, tideGoal)} / ${tideGoal}`,
-        {
-          fontFamily: "Arial",
-          fontSize: "15px",
-          color: tideColor,
-          align: "left",
-          lineSpacing: 4,
-        }
-      )
-      .setOrigin(0.5);
-
-    const closeBtn = this.scene.add
-      .rectangle(0, 108, 110, 34, 0x4a3d6b)
-      .setStrokeStyle(1, 0xa888ff)
-      .setInteractive({ useHandCursor: true });
-    const closeLabel = this.scene.add
-      .text(0, 108, "Close", {
-        fontFamily: "Arial",
-        fontSize: "15px",
-        color: "#ffffff",
-      })
-      .setOrigin(0.5);
-    closeBtn.on("pointerover", () => closeBtn.setFillStyle(0x5a4d7b));
-    closeBtn.on("pointerout", () => closeBtn.setFillStyle(0x4a3d6b));
-    closeBtn.on("pointerdown", () => this.closeMasteryPanel());
-
-    panel.add([
-      dim,
-      box,
-      title,
-      subtitle,
-      task1,
-      task2,
-      closeBtn,
-      closeLabel,
-    ]);
-    this.root.add(panel);
-    this.masteryPanel = panel;
-  }
-
-  private openSurferMasteryPanel(): void {
-    this.closeMasteryPanel();
-    this.closeSkinPanel();
-
-    const rideMs = this.inventory.surferMasteryRideMs;
-    const dupes = this.inventory.surferMasteryDupes;
-    const horizons = this.inventory.surferMasteryEventHorizon;
-    const rideGoal = InventorySystem.SURFER_MASTERY_RIDE_MS;
-    const dupeGoal = InventorySystem.SURFER_MASTERY_DUPE_GOAL;
-    const horizonGoal = InventorySystem.SURFER_MASTERY_EVENT_HORIZON_GOAL;
-    const rideDone = rideMs >= rideGoal;
-    const dupeDone = dupes >= dupeGoal;
-    const horizonDone = horizons >= horizonGoal;
-    const unlocked = rideDone && dupeDone && horizonDone;
-
-    const fmtRide = (ms: number) => {
-      const sec = Math.floor(ms / 1000);
-      const m = Math.floor(sec / 60);
-      const s = sec % 60;
-      return `${m}:${s.toString().padStart(2, "0")}`;
-    };
-
-    const panel = this.scene.add.container(0, 0).setDepth(20);
-    const dim = this.scene.add
-      .rectangle(0, 0, PANEL_W + 40, PANEL_H + 40, 0x000000, 0.55)
-      .setInteractive();
-    dim.on("pointerdown", () => this.closeMasteryPanel());
-
-    const box = this.scene.add
-      .rectangle(0, 0, 380, 340, 0x1c1e26, 0.98)
-      .setStrokeStyle(2, 0xc9a0ff);
-
-    const title = this.scene.add
-      .text(0, -138, "Stellar Surfer Mastery", {
-        fontFamily: "Georgia, serif",
-        fontSize: "22px",
-        color: "#e8d0ff",
-      })
-      .setOrigin(0.5);
-
-    const subtitle = this.scene.add
-      .text(
-        0,
-        -100,
-        unlocked
-          ? "Unlocked — follower black hole · 30s area fish\n(80% Starstruck / 20% Event Horizon) · Rubber Duck skin"
-          : "Ascended Surfer only — DEFINED cannot progress mastery.\nRide time is cumulative (keeps progress when you hop off).",
-        {
-          fontFamily: "Arial",
-          fontSize: "12px",
-          color: unlocked ? "#7dff9a" : "#a8b0c0",
-          align: "center",
-        }
-      )
-      .setOrigin(0.5);
-
-    const rideColor = rideDone ? "#7dff9a" : "#e8e0d0";
-    const dupeColor = dupeDone ? "#7dff9a" : "#e8e0d0";
-    const horizonColor = horizonDone ? "#7dff9a" : "#e8e0d0";
-
-    const task1 = this.scene.add
-      .text(
-        0,
-        -42,
-        `${rideDone ? "✓" : "○"}  Surf on the board for 5:00\n     ${fmtRide(Math.min(rideMs, rideGoal))} / 5:00`,
-        {
-          fontFamily: "Arial",
-          fontSize: "15px",
-          color: rideColor,
-          align: "left",
-          lineSpacing: 4,
-        }
-      )
-      .setOrigin(0.5);
-
-    const task2 = this.scene.add
-      .text(
-        0,
-        18,
-        `${dupeDone ? "✓" : "○"}  Duplicate ${dupeGoal} fish (black hole)\n     ${Math.min(dupes, dupeGoal)} / ${dupeGoal}`,
-        {
-          fontFamily: "Arial",
-          fontSize: "15px",
-          color: dupeColor,
-          align: "left",
-          lineSpacing: 4,
-        }
-      )
-      .setOrigin(0.5);
-
-    const task3 = this.scene.add
-      .text(
-        0,
-        78,
-        `${horizonDone ? "✓" : "○"}  Catch ${horizonGoal} Event Horizon fish\n     ${Math.min(horizons, horizonGoal)} / ${horizonGoal}`,
-        {
-          fontFamily: "Arial",
-          fontSize: "15px",
-          color: horizonColor,
-          align: "left",
-          lineSpacing: 4,
-        }
-      )
-      .setOrigin(0.5);
-
-    const closeBtn = this.scene.add
-      .rectangle(0, 138, 110, 34, 0x4a3d6b)
-      .setStrokeStyle(1, 0xa888ff)
-      .setInteractive({ useHandCursor: true });
-    const closeLabel = this.scene.add
-      .text(0, 138, "Close", {
-        fontFamily: "Arial",
-        fontSize: "15px",
-        color: "#ffffff",
-      })
-      .setOrigin(0.5);
-    closeBtn.on("pointerover", () => closeBtn.setFillStyle(0x5a4d7b));
-    closeBtn.on("pointerout", () => closeBtn.setFillStyle(0x4a3d6b));
-    closeBtn.on("pointerdown", () => this.closeMasteryPanel());
-
-    panel.add([
-      dim,
-      box,
-      title,
-      subtitle,
-      task1,
-      task2,
-      task3,
+      meterGfx,
+      levelNum,
+      xpLine,
+      statsLine,
+      ability,
+      goldInfo,
+      rainbowInfo,
+      tip,
       closeBtn,
       closeLabel,
     ]);

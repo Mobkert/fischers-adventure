@@ -30,6 +30,11 @@ import {
   placeAshencastIsland,
   ashencastPierCollisionBounds,
 } from "../world/AshencastIsland";
+import {
+  placeDustspireIsland,
+  generateDustspireFloorTexture,
+  type DustRiverPort,
+} from "../world/DustspireIsland";
 import { applyDevInventoryBootstrap } from "../dev/DevGrants";
 import { applyOwnerDevGrant, stripPaintBrushFreeGrant } from "../save/OwnerDevGrant";
 import { ensurePlayerRodArt } from "../entities/PlayerArt";
@@ -41,6 +46,10 @@ import { StellarSurferHeldVfx } from "../fx/StellarSurferHeldVfx";
 import { StarLineHeldVfx } from "../fx/StarLineHeldVfx";
 import { HorizonbreakerHeldVfx } from "../fx/HorizonbreakerHeldVfx";
 import { VoidharvesterHeldVfx } from "../fx/VoidharvesterHeldVfx";
+import { GoldenMasteryHeldVfx } from "../fx/GoldenMasteryHeldVfx";
+import { RainbowMasteryHeldVfx } from "../fx/RainbowMasteryHeldVfx";
+import { DesertSandWind } from "../fx/DesertSandWind";
+import { PaintBombZone } from "../fx/PaintBombZone";
 import { SurferMasteryBlackHole } from "../fx/SurferMasteryBlackHole";
 import { WorldZoneLoader } from "../world/WorldZoneLoader";
 import {
@@ -127,6 +136,7 @@ export class GameScene extends Phaser.Scene {
   sailboat: Sailboat | null = null;
   merchant!: FishMerchant;
   jungleMerchant?: FishMerchant;
+  dustMerchant?: FishMerchant;
   /** One fish buyer per Frostpeak Cave chamber. */
   private caveMerchants: FishMerchant[] = [];
   reefGuide!: TalkNpc;
@@ -160,6 +170,10 @@ export class GameScene extends Phaser.Scene {
   private stellarMerchant?: TalkNpc;
   /** Swamp — Resonated Hat quest NPC (between rope & east port). */
   private cosmicHaberdasher?: TalkNpc;
+  /** Dustspire east bank — Steven (quest TBD). */
+  private dustSteven?: TalkNpc;
+  /** Dustspire east of Steven — Den (golf club quest). */
+  private dustDen?: TalkNpc;
   private stellarAura?: Phaser.GameObjects.Arc;
   private stellarDestroy?: () => void;
   private stellarReturnX = 0;
@@ -169,6 +183,7 @@ export class GameScene extends Phaser.Scene {
   private caveLands: CaveLand[] = [];
   private caveWaters: CaveWater[] = [];
   private cavePorts: CavePort[] = [];
+  private dustRiverPorts: DustRiverPort[] = [];
   private lastCaveAreaId = "";
   /** World X of the Frostpeak cave mouth (near hermit). */
   get frostCaveX(): number {
@@ -206,13 +221,24 @@ export class GameScene extends Phaser.Scene {
   private starLineVfx: StarLineHeldVfx | null = null;
   private horizonbreakerVfx: HorizonbreakerHeldVfx | null = null;
   private voidharvesterVfx: VoidharvesterHeldVfx | null = null;
+  private goldenMasteryVfx: GoldenMasteryHeldVfx | null = null;
+  private rainbowMasteryVfx: RainbowMasteryHeldVfx | null = null;
+  private desertSandWind?: DesertSandWind;
+  private paintBombZone?: PaintBombZone;
   private surferMasteryBlackHole: SurferMasteryBlackHole | null = null;
   private surferMasteryGrantMs = 0;
   private surferMasteryGrantPending = false;
   private music!: AmbientMusic;
   private tutorialDone = false;
   private autosaveTimer?: Phaser.Time.TimerEvent;
-  private lastAreaZone: MusicZone | "reef" | "collectors" | "frostpeak" | "ashencast" | null = null;
+  private lastAreaZone:
+    | MusicZone
+    | "reef"
+    | "collectors"
+    | "frostpeak"
+    | "ashencast"
+    | "dustspire"
+    | null = null;
   private skyVisual?: {
     sky: Phaser.GameObjects.Graphics;
     sun: Phaser.GameObjects.Container;
@@ -261,13 +287,21 @@ export class GameScene extends Phaser.Scene {
   readonly farWaterLeft = 5800;
   readonly frostLeft = 7800;
   readonly frostRight = 10000;
-  /** Water east of Frostpeak Isle (world tip before void gap). */
-  readonly farWaterRight = 10800;
+  /** Dustspire Island — desert isle east of Frostpeak. */
+  readonly dustLeft = 11600;
+  readonly dustRight = 14800;
+  /** Long inland river cutting Dustspire. */
+  readonly dustRiverLeft = 12840;
+  readonly dustRiverRight = 13640;
+  readonly dustWestDock = 11440;
+  readonly dustEastDock = 14960;
+  /** Water tip east of Dustspire (before void gap to the cave). */
+  readonly farWaterRight = 15200;
   /**
-   * Frostpeak Cave — far east past a void gap so you can only reach it
-   * by teleporting through the boarded cave mouth.
+   * Frostpeak Cave — far east past Dustspire + a void gap so you can only
+   * reach it by teleporting through the boarded cave mouth.
    */
-  readonly caveOriginX = 14000;
+  readonly caveOriginX = 18500;
   get caveEndX(): number {
     return this.caveOriginX + CAVE_LOCAL_W;
   }
@@ -308,6 +342,12 @@ export class GameScene extends Phaser.Scene {
   private wildflowerProp?: Phaser.GameObjects.Image;
   private wildflowerLabel?: Phaser.GameObjects.Text;
   readonly wildflowerRodX = 4000 + 210;
+  private dustyRodProp?: Phaser.GameObjects.Image;
+  private dustyRodLabel?: Phaser.GameObjects.Text;
+  /** Dusty Rod lean — just west of the first Dustspire tent house. */
+  get dustyRodX(): number {
+    return this.dustLeft + 175;
+  }
   /** Tall cypress just east of the pond — silent fall-through secret. */
   readonly secretFallTreeX = 4980 + 70;
   private secretFallReadyAt = 0;
@@ -324,6 +364,8 @@ export class GameScene extends Phaser.Scene {
     this.sailboat = null;
     this.wildflowerProp = undefined;
     this.wildflowerLabel = undefined;
+    this.dustyRodProp = undefined;
+    this.dustyRodLabel = undefined;
     this.autosaveTimer = undefined;
     this.tutorialDone = false;
     this.lastAreaZone = null;
@@ -347,6 +389,7 @@ export class GameScene extends Phaser.Scene {
     this.caveLands = [];
     this.caveWaters = [];
     this.cavePorts = [];
+    this.dustRiverPorts = [];
     this.caveMerchants = [];
     this.frostCaveBoards = undefined;
     this.vaultKeeper = undefined;
@@ -363,11 +406,18 @@ export class GameScene extends Phaser.Scene {
     this.fishCollector = undefined;
     this.curioTrader = undefined;
     this.jungleMerchant = undefined;
+    this.dustMerchant = undefined;
     this.cosmicHaberdasher = undefined;
+    this.dustSteven = undefined;
+    this.dustDen = undefined;
     this.fishQuestNpcs = {};
     this.forgeRodVfx = null;
     this.laserRodVfx = null;
     this.frostRodVfx = null;
+    this.desertSandWind?.destroy();
+    this.desertSandWind = undefined;
+    this.paintBombZone?.destroy();
+    this.paintBombZone = undefined;
     this.vaultPedestalGems = [];
     this.worldGemRoots = {};
     this.redGemBob = 0;
@@ -417,7 +467,13 @@ export class GameScene extends Phaser.Scene {
     this.spawnStarterFish();
     this.initWorldZoneLoader();
 
+    // Load island terrain (incl. footbridges) before placing the player so
+    // saves / warps on Ashencast springs or the swamp pond don't fall through.
+    this.zoneLoader.refresh(save.playerX);
     const spawn = this.resolveSafeSpawn(save.playerX, save.playerY);
+    if (Math.abs(spawn.x - save.playerX) > 80) {
+      this.zoneLoader.refresh(spawn.x);
+    }
     this.player = new Player(this, spawn.x, spawn.y);
     this.player.sprite.setDepth(12);
     this.syncPlayerCarriedRod();
@@ -428,7 +484,6 @@ export class GameScene extends Phaser.Scene {
       this.player.sprite,
       this.ground
     );
-    this.zoneLoader.refresh(spawn.x);
 
     // Fish buyer between the red-roof and green houses (in front of market stand)
     this.merchant = new FishMerchant(this, this.islandLeft + 350, this.groundY);
@@ -469,7 +524,9 @@ export class GameScene extends Phaser.Scene {
       { left: this.reefBlendEnd, right: this.westWaterRight },
       { left: this.eastWaterLeft, right: this.eastWaterRight },
       { left: this.farWaterLeft, right: this.frostLeft },
-      { left: this.frostRight, right: this.farWaterRight },
+      { left: this.frostRight, right: this.dustLeft },
+      { left: this.dustRiverLeft, right: this.dustRiverRight },
+      { left: this.dustRight, right: this.farWaterRight },
       { left: this.pondLeft, right: this.pondRight },
     ];
 
@@ -564,6 +621,13 @@ export class GameScene extends Phaser.Scene {
       this.waterSurfaceY
     );
     this.fishing.setWeather(this.weather);
+    this.paintBombZone = new PaintBombZone(this);
+    this.paintBombZone.setOnExpire(() => {
+      const ui = this.scene.get("UIScene") as UIScene | undefined;
+      ui?.showToast("The paint splash fades…", "#c8a0b8");
+    });
+    this.weather.isInPaintBombZone = (x, y, r) =>
+      this.paintBombZone?.isInZone(x, y, r) ?? false;
     this.fishing.onCastCameraFollow = () => this.followBobberCamera();
     this.fishing.onCastCameraRelease = () => this.followPlayerCamera();
     this.fishing.onAbundanceFishRemoved = (fish) => {
@@ -593,6 +657,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setDeadzone(80, 60);
 
     this.music = new AmbientMusic(this);
+    this.desertSandWind = new DesertSandWind(this, this.groundY);
     this.music.setZone(
       musicZoneForX(this.player.sprite.x, {
         westDockEnd: this.westDockEnd,
@@ -632,6 +697,7 @@ export class GameScene extends Phaser.Scene {
       tryVaultGemInteract: () => this.tryVaultGemInteract(),
       declineMerchant: () => this.declineAnyMerchant(),
       tryBuyJungleRod: () => this.tryBuyWildflowerRod(),
+      tryBuyDustyRod: () => this.tryBuyDustyRod(),
       trySecretFallThrough: () => this.trySecretFallThrough(),
       tryOpenBargain: () => this.tryOpenBargain(),
       completeBargainDeal: (session: BargainSession, price: number) =>
@@ -757,6 +823,9 @@ export class GameScene extends Phaser.Scene {
       this.isPlayerOnAshenWestPort() ||
       this.isPlayerOnFrostWestPort() ||
       this.isPlayerOnFrostEastPort() ||
+      this.isPlayerOnDustWestPort() ||
+      this.isPlayerOnDustEastPort() ||
+      this.isPlayerOnDustRiverPort() ||
       this.isPlayerOnCavePort()
     );
   }
@@ -797,6 +866,18 @@ export class GameScene extends Phaser.Scene {
     return x >= this.frostRight - 50 && x <= this.frostEastDock;
   }
 
+  isPlayerOnDustWestPort(): boolean {
+    if (this.player.isOnBoat()) return false;
+    const x = this.player.sprite.x;
+    return x >= this.dustWestDock && x <= this.dustLeft + 50;
+  }
+
+  isPlayerOnDustEastPort(): boolean {
+    if (this.player.isOnBoat()) return false;
+    const x = this.player.sprite.x;
+    return x >= this.dustRight - 50 && x <= this.dustEastDock;
+  }
+
   private isOnJungleIsland(): boolean {
     const x = this.player.sprite.x;
     return x >= this.jungleWestDockEnd && x <= this.jungleEastDockEnd;
@@ -817,6 +898,11 @@ export class GameScene extends Phaser.Scene {
   private isOnFrostpeak(): boolean {
     const x = this.player.sprite.x;
     return x >= this.frostWestDock - 40 && x <= this.frostEastDock + 40;
+  }
+
+  private isOnDustspire(): boolean {
+    const x = this.player.sprite.x;
+    return x >= this.dustWestDock - 40 && x <= this.dustEastDock + 40;
   }
 
   private isBoatNearEastPort(): boolean {
@@ -879,6 +965,18 @@ export class GameScene extends Phaser.Scene {
     return x <= this.frostEastDock + 120 && x >= this.frostRight - 80;
   }
 
+  private isBoatNearDustWestPort(): boolean {
+    if (!this.sailboat) return false;
+    const x = this.sailboat.hull.x;
+    return x >= this.dustWestDock - 120 && x <= this.dustLeft + 80;
+  }
+
+  private isBoatNearDustEastPort(): boolean {
+    if (!this.sailboat) return false;
+    const x = this.sailboat.hull.x;
+    return x <= this.dustEastDock + 120 && x >= this.dustRight - 80;
+  }
+
   private isBoatNearAnyPort(): boolean {
     return (
       this.isBoatNearEastPort() ||
@@ -891,6 +989,9 @@ export class GameScene extends Phaser.Scene {
       this.isBoatNearAshenWestPort() ||
       this.isBoatNearFrostWestPort() ||
       this.isBoatNearFrostEastPort() ||
+      this.isBoatNearDustWestPort() ||
+      this.isBoatNearDustEastPort() ||
+      this.dustRiverPortNearBoat() != null ||
       this.cavePortNearBoat() != null
     );
   }
@@ -912,6 +1013,9 @@ export class GameScene extends Phaser.Scene {
     const onAshenWest = this.isPlayerOnAshenWestPort();
     const onFrostWest = this.isPlayerOnFrostWestPort();
     const onFrostEast = this.isPlayerOnFrostEastPort();
+    const onDustWest = this.isPlayerOnDustWestPort();
+    const onDustEast = this.isPlayerOnDustEastPort();
+    const dustRiverPort = this.dustRiverPortNearPlayer();
     const cavePort = this.cavePortNearPlayer();
 
     let x: number;
@@ -921,6 +1025,10 @@ export class GameScene extends Phaser.Scene {
       x = cavePort.boatX;
       waterL = cavePort.waterL;
       waterR = cavePort.waterR;
+    } else if (dustRiverPort) {
+      x = dustRiverPort.boatX;
+      waterL = dustRiverPort.waterL;
+      waterR = dustRiverPort.waterR;
     } else if (onWest) {
       x = this.westDockEnd - 28;
       waterL = this.westWaterLeft;
@@ -956,6 +1064,14 @@ export class GameScene extends Phaser.Scene {
     } else if (onFrostEast) {
       x = this.frostEastDock + 28;
       waterL = this.frostRight;
+      waterR = this.dustLeft;
+    } else if (onDustWest) {
+      x = this.dustWestDock - 28;
+      waterL = this.frostRight;
+      waterR = this.dustLeft;
+    } else if (onDustEast) {
+      x = this.dustEastDock + 28;
+      waterL = this.dustRight;
       waterR = this.farWaterRight;
     } else {
       x = this.dockEnd + 28;
@@ -999,9 +1115,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.spawnBoat("stellar_surfer");
     if (!this.sailboat) return true;
-    this.sailboat.setDuckCosmetic(
-      this.inventory.isRubberDuckSurferSkinActive()
-    );
+    this.sailboat.setSurferCosmetic(this.inventory.getSurferBoardCosmetic());
     this.sailboat.board(this.player);
     ui.showToast(
       "Stellar Surfer deployed! A/D to ride · LMB cast · F near port to dock",
@@ -1085,6 +1199,22 @@ export class GameScene extends Phaser.Scene {
       this.reefGuide.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
       return this.reefGuide.interact();
+    }
+
+    if (
+      this.dustSteven &&
+      (this.dustSteven.talking ||
+        this.dustSteven.isNear(this.player.sprite.x, this.player.sprite.y))
+    ) {
+      return this.handleStevenTalk();
+    }
+
+    if (
+      this.dustDen &&
+      (this.dustDen.talking ||
+        this.dustDen.isNear(this.player.sprite.x, this.player.sprite.y))
+    ) {
+      return this.handleDenTalk();
     }
 
     if (
@@ -1206,6 +1336,8 @@ export class GameScene extends Phaser.Scene {
     for (const m of this.allFishMerchants()) m.decline();
     this.reefGuide.decline();
     this.frostHermit?.decline();
+    this.dustSteven?.decline();
+    this.dustDen?.decline();
     this.vaultKeeper?.decline();
     this.galleryCurator?.decline();
     this.shellSeeker?.decline();
@@ -1225,6 +1357,7 @@ export class GameScene extends Phaser.Scene {
     return [
       this.merchant,
       ...(this.jungleMerchant ? [this.jungleMerchant] : []),
+      ...(this.dustMerchant ? [this.dustMerchant] : []),
       ...(this.ashenMerchant ? [this.ashenMerchant] : []),
       ...this.caveMerchants,
     ];
@@ -1827,6 +1960,10 @@ export class GameScene extends Phaser.Scene {
       farWaterLeft: this.farWaterLeft,
       frostLeft: this.frostLeft,
       frostRight: this.frostRight,
+      dustLeft: this.dustLeft,
+      dustRight: this.dustRight,
+      dustRiverLeft: this.dustRiverLeft,
+      dustRiverRight: this.dustRiverRight,
       farWaterRight: this.farWaterRight,
       pondLeft: this.pondLeft,
       pondRight: this.pondRight,
@@ -2282,6 +2419,251 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** Dustspire Steven — oasis questline + repeatable Paint Bomb trade. */
+  private handleStevenTalk(): boolean {
+    if (!this.dustSteven) return false;
+    if (this.dustSteven.talking) {
+      this.dustSteven.decline();
+      return true;
+    }
+
+    const inv = this.inventory;
+    if (inv.stevenPaintBombRecipe) {
+      this.dustSteven.speakWithMenu(
+        "Hot out here… what do you need?",
+        [
+          {
+            label: "Quests",
+            hotkey: "1",
+            fill: 0x6b5340,
+            stroke: 0xc4a878,
+            onClick: () => this.handleStevenQuestDialog(),
+          },
+          {
+            label: "Paint Bomb",
+            hotkey: "2",
+            fill: 0x5a2a48,
+            stroke: 0xff66cc,
+            onClick: () => this.handleStevenPaintBombDialog(),
+          },
+          {
+            label: "Bye",
+            hotkey: "X",
+            fill: 0x3a2a2a,
+            stroke: 0xffaa66,
+            onClick: () => {
+              this.dustSteven?.speak("Later, traveler.");
+            },
+          },
+        ]
+      );
+      return true;
+    }
+
+    this.handleStevenQuestDialog();
+    return true;
+  }
+
+  private handleStevenQuestDialog(): void {
+    if (!this.dustSteven) return;
+    const ui = this.scene.get("UIScene") as UIScene;
+    const inv = this.inventory;
+    let text = "";
+
+    if (inv.stevenQuestStage === 0) {
+      inv.startStevenQuest();
+      text =
+        "I need something refreshing…\n" +
+        "Could you bring me a Coconut?\n\n" +
+        "Quest 1: Bring 1 Coconut.";
+      ui.showToast("Steven quest 1: Bring a Coconut", "#e8c878");
+    } else if (inv.stevenQuestStage === 1) {
+      if (inv.turnInStevenCoconut()) {
+        text =
+          "Ahh — perfect. Here's a Tempest Amulet.\n\n" +
+          "Quest 2: Catch 3 Decayed Nautilus\n" +
+          "with the Dusty Rod.";
+        ui.showToast("Got Tempest Amulet! Quest 2 started", "#7ec8ff");
+      } else {
+        text = "Still thirsty. One Coconut, please.";
+      }
+    } else if (inv.stevenQuestStage === 2) {
+      if (inv.turnInStevenDecayedNautilus()) {
+        text =
+          "Those shells tell old stories…\n" +
+          "Take these 5 Dusky Amulets.\n\n" +
+          "Quest 3: Bring me a Sandy\n" +
+          "Skeletal Seahorse.";
+        ui.showToast("Got 5 Dusky Amulets! Quest 3 started", "#b8c0c8");
+      } else {
+        text =
+          `Quest 2: Decayed Nautilus with Dusty Rod\n` +
+          `${inv.stevenDecayedNautilusCaught}/${3}.\n` +
+          (inv.stevenQuest2Complete()
+            ? "Come talk to me when you're ready."
+            : "Keep fishing the oasis.");
+      }
+    } else if (inv.stevenQuestStage === 3) {
+      if (inv.turnInStevenSandySeahorse()) {
+        text =
+          "Sandy bones… nice find.\n" +
+          "I've unlocked a Paint Bomb recipe for you.\n" +
+          "Ask me about Paint Bomb anytime.\n\n" +
+          "Quest 4: Bring a Cactifin\n" +
+          "or a Sprout Dolphin.";
+        ui.showToast("Paint Bomb recipe unlocked! Quest 4 started", "#ff66cc");
+      } else {
+        text = "Need a Sandy Skeletal Seahorse.";
+      }
+    } else if (inv.stevenQuestStage === 4) {
+      if (inv.turnInStevenQuest4Fish()) {
+        text =
+          "Either works — here's a Moonlight Amulet.\n\n" +
+          "Quest 5: Bring a Leopard Shark\n" +
+          "with the Dusty mutation.";
+        ui.showToast("Got Moonlight Amulet! Quest 5 started", "#c8b0ff");
+      } else {
+        text = "Bring a Cactifin, or a Dolphin with Sprout.";
+      }
+    } else if (inv.stevenQuestStage === 5) {
+      if (inv.turnInStevenDustyLeopard()) {
+        text =
+          "That dusty shark seals it.\n" +
+          "Here's a Paint Bomb Amulet.\n\n" +
+          "One last deal: pay me $79,999\n" +
+          "and the Fossil Rod is yours.";
+        ui.showToast("Got Paint Bomb Amulet! Quest 6 started", "#ff66cc");
+      } else {
+        text = "Still need a Dusty Leopard Shark.";
+      }
+    } else if (inv.stevenQuestStage === 6) {
+      const pay = inv.turnInStevenFossilRodPayment();
+      if (pay.ok) {
+        text =
+          "Pleasure doing business.\n" +
+          "The Fossil Rod is yours — bone, curve, and cages.";
+        ui.showToast(pay.message, "#8ec0ff");
+        this.inventory.equipRod("fossil_rod");
+        this.syncPlayerCarriedRod();
+      } else {
+        text =
+          "Quest 6: Pay $79,999 for the Fossil Rod.\n\n" +
+          pay.message;
+      }
+    } else {
+      text =
+        "You've done enough for me.\n" +
+        "The oasis treats those who listen.";
+    }
+
+    this.dustSteven.speak(text);
+    this.persistSave();
+    ui.refreshQuestTracker?.();
+    ui.onCoinsChanged();
+  }
+
+  /** Dustspire Den — Golf Club paintbrush skin quest. */
+  private handleDenTalk(): boolean {
+    if (!this.dustDen) return false;
+    if (this.dustDen.talking) {
+      this.dustDen.decline();
+      return true;
+    }
+    const ui = this.scene.get("UIScene") as UIScene;
+    const inv = this.inventory;
+    let text = "";
+
+    if (inv.denQuestStage === 0) {
+      if (!inv.canStartDenQuest()) {
+        text =
+          "Name's Den. Nice swing… almost.\n\n" +
+          "Come back when you've got Composition VII\n" +
+          "mastered to level 10. Then we'll talk golf.";
+        this.dustDen.speak(text);
+        return true;
+      }
+      inv.startDenQuest();
+      text =
+        "Composition VII at ten — that's the spirit!\n\n" +
+        "Catch 20 Painted Coconuts with any Paint Brush.\n" +
+        "Do that and I'll kit both brushes out as Golf Clubs.";
+      ui.showToast("Den quest: 20 Painted Coconuts", "#6ec85a");
+      this.persistSave();
+      ui.refreshQuestTracker?.();
+    } else if (inv.denQuestStage === 1) {
+      const claim = inv.turnInDenGolfClub();
+      if (claim.ok) {
+        text =
+          "Perfect score!\n\n" +
+          "Golf Club skins are on both Paint Brushes.\n" +
+          "Fairways, flags, the works — limited kit.";
+        ui.showToast(claim.message, "#ffe066");
+        this.syncPlayerCarriedRod();
+        this.persistSave();
+        ui.refreshQuestTracker?.();
+      } else {
+        text =
+          `Painted Coconuts with a Paint Brush:\n` +
+          `${inv.denPaintedCoconutsCaught}/20.\n\n` +
+          (inv.denQuestCatchComplete()
+            ? "Talk to me again to claim the Golf Club."
+            : "Keep painting those oasis coconuts.");
+      }
+    } else {
+      text =
+        "Those Golf Clubs look sharp.\n" +
+        "Don't slice into the dunes.";
+    }
+
+    this.dustDen.speak(text);
+    return true;
+  }
+
+  private handleStevenPaintBombDialog(): void {
+    if (!this.dustSteven) return;
+    const ui = this.scene.get("UIScene") as UIScene;
+    const inv = this.inventory;
+
+    if (!inv.stevenPaintBombActive) {
+      const start = inv.startStevenPaintBombTrade();
+      this.dustSteven.speak(
+        start.ok
+          ? "Paint Bomb trade:\n" +
+              "1 Celestial Amulet, 1 Dusky Amulet,\n" +
+              "and 5 Coconuts.\n\n" +
+              "Come back when you have them.\n" +
+              "(You can't start another while this one's open.)"
+          : start.message
+      );
+      if (start.ok) {
+        ui.showToast("Paint Bomb trade started", "#ff66cc");
+        this.persistSave();
+        ui.refreshQuestTracker?.();
+      }
+      return;
+    }
+
+    const result = inv.turnInStevenPaintBomb();
+    if (result.ok) {
+      this.dustSteven.speak(
+        "Boom — one Paint Bomb Amulet.\n" +
+          "Talk to me again if you want another."
+      );
+      ui.showToast(result.message, "#ff66cc");
+      this.persistSave();
+      ui.refreshQuestTracker?.();
+      return;
+    }
+
+    this.dustSteven.speak(
+      "Still need:\n" +
+        "· 1 Celestial Amulet\n" +
+        "· 1 Dusky Amulet\n" +
+        "· 5 Coconuts\n\n" +
+        "Finish this trade before starting another."
+    );
+  }
+
   /** Frostpeak Hermit 3-stage cave quest. */
   private handleHermitTalk(): boolean {
     if (!this.frostHermit) return false;
@@ -2393,6 +2775,27 @@ export class GameScene extends Phaser.Scene {
       });
       if (astral.toast) {
         ui?.showToast(astral.toast, "#c9a0ff");
+        this.persistSave();
+      }
+
+      if (this.inventory.recordStevenDecayedNautilus(rodId, caught.speciesId)) {
+        const n = this.inventory.stevenDecayedNautilusCaught;
+        ui?.showToast(
+          `Steven quest: Decayed Nautilus ${n}/3`,
+          "#e8c878"
+        );
+        this.persistSave();
+      }
+
+      if (
+        this.inventory.recordDenPaintedCoconut(
+          rodId,
+          caught.speciesId,
+          caught.mutation ?? null
+        )
+      ) {
+        const n = this.inventory.denPaintedCoconutsCaught;
+        ui?.showToast(`Den quest: Painted Coconut ${n}/20`, "#6ec85a");
         this.persistSave();
       }
     }
@@ -2588,6 +2991,68 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
+  private placeDustyRodProp(): void {
+    const x = this.dustyRodX;
+    this.dustyRodProp = this.add
+      .image(x, this.groundY - 4, "rod_dusty")
+      .setOrigin(0.5, 1)
+      .setScale(1.15)
+      .setAngle(-28)
+      .setDepth(6);
+    this.dustyRodLabel = this.add
+      .text(x + 8, this.groundY - 78, "Dusty Rod\n$33000 · F to inspect", {
+        fontFamily: "Arial",
+        fontSize: "11px",
+        color: "#f5ecd8",
+        align: "center",
+        stroke: "#1a1814",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(12);
+    this.refreshDustyRodProp();
+  }
+
+  private refreshDustyRodProp(): void {
+    const owned = this.inventory.ownsRod("dusty_rod");
+    this.dustyRodProp?.setVisible(!owned);
+    this.dustyRodLabel?.setVisible(!owned);
+  }
+
+  isNearDustyRod(): boolean {
+    if (this.player.isOnBoat()) return false;
+    if (this.inventory.ownsRod("dusty_rod")) return false;
+    return Math.abs(this.player.sprite.x - this.dustyRodX) < 70;
+  }
+
+  tryBuyDustyRod(): boolean {
+    const ui = this.scene.get("UIScene") as UIScene;
+    if (this.fishing.isBusy()) return false;
+    if (this.anyFishMerchantTalking()) return false;
+
+    if (ui.isDustyRodBuyOpen()) {
+      if (!this.isNearDustyRod()) {
+        ui.closeDustyRodBuy();
+        return true;
+      }
+      const result = this.inventory.buyRod("dusty_rod");
+      ui.showToast(result.message, result.ok ? "#7CFC00" : "#ffaa66");
+      ui.onCoinsChanged();
+      ui.closeDustyRodBuy();
+      if (result.ok) {
+        this.refreshDustyRodProp();
+        this.inventory.equipRod("dusty_rod");
+        this.syncPlayerCarriedRod();
+        this.persistSave();
+      }
+      return true;
+    }
+
+    if (!this.isNearDustyRod()) return false;
+    ui.openDustyRodBuy();
+    return true;
+  }
+
   isNearCoralRodOnBoat(): boolean {
     if (!this.player.isOnBoat() || !this.sailboat) return false;
     if (this.inventory.ownsRod("coral_rod")) return false;
@@ -2660,10 +3125,16 @@ export class GameScene extends Phaser.Scene {
         landX = this.jungleRight - 50;
       } else if (this.isBoatNearFrostWestPort()) landX = this.frostLeft + 60;
       else if (this.isBoatNearFrostEastPort()) landX = this.frostRight - 60;
+      else if (this.isBoatNearDustWestPort()) landX = this.dustLeft + 60;
+      else if (this.isBoatNearDustEastPort()) landX = this.dustRight - 60;
       else if (this.isBoatNearEastPort()) landX = this.dockEnd - 40;
       else {
-        const cp = this.cavePortNearBoat();
-        if (cp) landX = cp.landX;
+        const dp = this.dustRiverPortNearBoat();
+        if (dp) landX = dp.landX;
+        else {
+          const cp = this.cavePortNearBoat();
+          if (cp) landX = cp.landX;
+        }
       }
 
       this.sailboat.disembark(this.player, landX, this.groundY);
@@ -3025,6 +3496,19 @@ export class GameScene extends Phaser.Scene {
     cEastLip.refreshBody();
   }
 
+  /**
+   * Invisible walkable footbridge — same collision as shore tiles so players
+   * don't fall through pond / hotspring crossings on spawn or while walking.
+   */
+  private addFootbridgeCollider(left: number, right: number): void {
+    const pad = 8;
+    for (let x = left - pad; x < right + pad; x += 32) {
+      const tile = this.ground.create(x + 16, this.groundY + 16, "shore");
+      tile.refreshBody();
+      tile.setVisible(false);
+    }
+  }
+
   private createSwampWaterVisual(): void {
     // Own approach + far ocean so sailing in isn't light-blue before frost loads.
     this.ensureWaterBody(this.eastWaterLeft, this.eastWaterRight);
@@ -3052,21 +3536,13 @@ export class GameScene extends Phaser.Scene {
     jEastLip.refreshBody();
     addDock(this.jungleWestDockEnd, this.jungleLeft);
     addDock(this.jungleRight, this.jungleEastDockEnd);
-    const pondW = this.pondRight - this.pondLeft;
-    const bridge = this.ground.create(
-      this.pondLeft + pondW / 2,
-      this.groundY + 6,
-      "dock"
-    );
-    bridge.setDisplaySize(pondW + 16, 14);
-    bridge.refreshBody();
-    bridge.setVisible(false);
+    this.addFootbridgeCollider(this.pondLeft, this.pondRight);
   }
 
   private createFrostpeakWaterVisual(): void {
     // Own both sides so spawning here isn't light-blue until swamp loads.
     this.ensureWaterBody(this.farWaterLeft, this.frostLeft);
-    this.ensureWaterBody(this.frostRight, this.farWaterRight, {
+    this.ensureWaterBody(this.frostRight, this.dustLeft, {
       sandTint: 0x7a6840,
     });
     const addDock = (left: number, right: number) => {
@@ -3092,6 +3568,75 @@ export class GameScene extends Phaser.Scene {
     );
     sEastLip.setDisplaySize(80, 32);
     sEastLip.refreshBody();
+  }
+
+  private createDustspireTerrain(): void {
+    const gy = this.groundY;
+    const river: [number, number] = [this.dustRiverLeft, this.dustRiverRight];
+    const inRiver = (x: number) => x >= river[0] && x < river[1];
+
+    for (let x = this.dustLeft; x < this.dustLeft + 110; x += 32) {
+      const tile = this.ground.create(x + 16, gy + 16, "shore");
+      tile.refreshBody();
+      tile.setTint(0xe8c890);
+    }
+    for (let x = this.dustLeft + 110; x < this.dustRight - 110; x += 32) {
+      if (inRiver(x)) continue;
+      const nearEdge =
+        Math.abs(x - river[0]) < 48 || Math.abs(x - river[1]) < 48;
+      const tile = this.ground.create(x + 16, gy + 16, "shore");
+      tile.refreshBody();
+      tile.setTint(nearEdge ? 0xd4b070 : 0xe0c078);
+    }
+    for (let x = this.dustRight - 110; x < this.dustRight; x += 32) {
+      const tile = this.ground.create(x + 16, gy + 16, "shore");
+      tile.refreshBody();
+      tile.setTint(0xe8c890);
+    }
+    this.addIslandBedrock(this.dustLeft, river[0], false, gy);
+    this.addIslandBedrock(river[1], this.dustRight, false, gy);
+  }
+
+  private createDustspireWaterVisual(): void {
+    this.ensureWaterBody(this.frostRight, this.dustLeft, {
+      sandTint: 0xc4a060,
+    });
+    this.ensureWaterBody(this.dustRight, this.farWaterRight, {
+      sandTint: 0xc4a060,
+    });
+    // Inland river is drawn by placeDustspireIsland; register for bait/fish.
+    const key = `${this.dustRiverLeft}:${this.dustRiverRight}`;
+    if (!this.drawnWaterKeys.has(key)) {
+      this.drawnWaterKeys.add(key);
+    }
+    const addDock = (left: number, right: number) => {
+      const w = right - left;
+      const dock = this.ground.create(left + w / 2, this.groundY + 8, "dock");
+      dock.setDisplaySize(w, 16);
+      dock.refreshBody();
+      dock.setVisible(false);
+    };
+    addDock(this.dustWestDock, this.dustLeft);
+    addDock(this.dustRight, this.dustEastDock);
+    // River bank docks
+    addDock(this.dustRiverLeft - 110, this.dustRiverLeft + 30);
+    addDock(this.dustRiverRight - 30, this.dustRiverRight + 110);
+    const wLip = this.ground.create(
+      this.dustLeft + 40,
+      this.groundY + 16,
+      "shore"
+    );
+    wLip.setDisplaySize(80, 32);
+    wLip.refreshBody();
+    wLip.setTint(0xe8c890);
+    const eLip = this.ground.create(
+      this.dustRight - 40,
+      this.groundY + 16,
+      "shore"
+    );
+    eLip.setDisplaySize(80, 32);
+    eLip.refreshBody();
+    eLip.setTint(0xe8c890);
   }
 
   isNearBlueHouse(): boolean {
@@ -3290,6 +3835,8 @@ export class GameScene extends Phaser.Scene {
         return "ashencast";
       case "frostpeak":
         return "frostpeak";
+      case "dustspire":
+        return "dustspire";
       default:
         return null;
     }
@@ -3351,8 +3898,14 @@ export class GameScene extends Phaser.Scene {
 
     const mid = (a: number, b: number) => (a + b) / 2;
     let x = mid(this.islandLeft, this.islandRight);
-    let zone: "swamp" | "collectors" | "reef" | "ashencast" | "frostpeak" | null =
-      null;
+    let zone:
+      | "swamp"
+      | "collectors"
+      | "reef"
+      | "ashencast"
+      | "frostpeak"
+      | "dustspire"
+      | null = null;
     let banner = "Starter Island";
 
     switch (destId) {
@@ -3361,7 +3914,8 @@ export class GameScene extends Phaser.Scene {
         banner = "Starter Island";
         break;
       case "swamp":
-        x = mid(this.jungleLeft, this.jungleRight);
+        // West of the pond — mid-island lands in open water and falls through
+        x = this.pondLeft - 140;
         zone = "swamp";
         banner = "Swamp Island";
         break;
@@ -3385,11 +3939,17 @@ export class GameScene extends Phaser.Scene {
         zone = "frostpeak";
         banner = "Frostpeak Isle";
         break;
+      case "dustspire":
+        x = mid(this.dustLeft, this.dustRiverLeft);
+        zone = "dustspire";
+        banner = "Dustspire Island";
+        break;
     }
 
     if (zone) this.zoneLoader.forceLoad(zone);
+    const spawn = this.resolveSafeSpawn(x, this.groundY - 40);
     this.player.sprite.setVelocity(0, 0);
-    this.player.sprite.setPosition(x, this.groundY - 40);
+    this.player.sprite.setPosition(spawn.x, spawn.y);
     this.cameras.main.centerOn(this.player.sprite.x, this.player.sprite.y);
     const ui = this.scene.get("UIScene") as UIScene | undefined;
     ui?.showAreaBanner(banner);
@@ -3900,8 +4460,31 @@ export class GameScene extends Phaser.Scene {
     return null;
   }
 
+  private dustRiverPortNearPlayer(): DustRiverPort | null {
+    if (this.inFrostpeakCave || this.inStellarSky) return null;
+    const x = this.player.sprite.x;
+    for (const p of this.dustRiverPorts) {
+      if (x >= p.dockLeft - 20 && x <= p.dockRight + 20) return p;
+    }
+    return null;
+  }
+
+  private dustRiverPortNearBoat(): DustRiverPort | null {
+    if (this.inFrostpeakCave || this.inStellarSky || !this.sailboat) return null;
+    const x = this.sailboat.hull.x;
+    for (const p of this.dustRiverPorts) {
+      if (x >= p.dockLeft - 40 && x <= p.dockRight + 40) return p;
+      if (Math.abs(x - p.boatX) < 90) return p;
+    }
+    return null;
+  }
+
   isPlayerOnCavePort(): boolean {
     return this.cavePortNearPlayer() != null;
+  }
+
+  isPlayerOnDustRiverPort(): boolean {
+    return this.dustRiverPortNearPlayer() != null;
   }
 
   tryUseAmulet(amuletId: ItemId): boolean {
@@ -3912,6 +4495,16 @@ export class GameScene extends Phaser.Scene {
     if (def?.amuletEffect === "cave") {
       if (this.whaleAbundance?.isActive()) {
         ui?.showToast("A cave whale is already in the mountain caves.", "#ffaa66");
+        return false;
+      }
+    }
+    if (def?.amuletEffect === "paint_bomb") {
+      if (this.paintBombZone?.isActive()) {
+        ui?.showToast("A paint bomb is already swirling nearby.", "#ffaa66");
+        return false;
+      }
+      if (!this.pickPaintBombWaterX()) {
+        ui?.showToast("No island water nearby to paint.", "#ffaa66");
         return false;
       }
     }
@@ -3943,10 +4536,84 @@ export class GameScene extends Phaser.Scene {
         }
         return ok;
       },
+      onPaintBomb: () => this.spawnPaintBombForCurrentIsland(),
       onDone: (message) => {
         ui?.showToast(message, "#7ad0ff");
       },
     });
+    return true;
+  }
+
+  /** Waters belonging to the island (or cave) the player is standing on. */
+  private paintBombCandidateWaters(): { left: number; right: number }[] {
+    if (this.inFrostpeakCave) {
+      return this.caveWaters.map((w) => ({ left: w.left, right: w.right }));
+    }
+
+    const area = this.getAreaId(this.player.sprite.x);
+    switch (area) {
+      case "jungle":
+        // Swamp — only the inland pond
+        return [{ left: this.pondLeft, right: this.pondRight }];
+      case "dustspire":
+        // Dustspire oasis river only
+        return [{ left: this.dustRiverLeft, right: this.dustRiverRight }];
+      case "ashencast":
+        // Hotspring lakes only
+        return [
+          { left: this.ashenSpringALeft, right: this.ashenSpringARight },
+          { left: this.ashenSpringBLeft, right: this.ashenSpringBRight },
+        ];
+      case "frostpeak":
+        // Shore waters hugging Frostpeak (not distant oceans)
+        return [
+          { left: this.farWaterLeft, right: this.frostLeft },
+          { left: this.frostRight, right: this.dustLeft },
+        ];
+      case "collectors":
+        // Waters off Collector's shores
+        return [
+          { left: this.ashenRight, right: this.collectorLeft },
+          { left: this.reefBlendEnd, right: this.westWaterRight },
+        ];
+      case "reef":
+        return [
+          { left: this.reefLeft, right: this.reefBlendEnd },
+          { left: this.reefBlendEnd, right: this.westWaterRight },
+        ];
+      case "island":
+        // Starter island nearshore ocean
+        return [
+          { left: this.eastWaterLeft, right: this.eastWaterRight },
+          { left: this.westWaterRight - 400, right: this.westWaterRight },
+        ];
+      default:
+        break;
+    }
+
+    // At sea: nearest water strip only
+    const x = this.player.sprite.x;
+    return this.waterZoneList.filter(
+      (z) => z.right >= x - 600 && z.left <= x + 600 && z.right - z.left > 48
+    );
+  }
+
+  private pickPaintBombWaterX(): number | null {
+    const zones = this.paintBombCandidateWaters().filter(
+      (z) => z.right - z.left > 48
+    );
+    if (zones.length === 0) return null;
+    const zone = zones[Math.floor(Math.random() * zones.length)]!;
+    const lo = zone.left + 28;
+    const hi = zone.right - 28;
+    if (hi <= lo) return Math.round((zone.left + zone.right) / 2);
+    return Phaser.Math.Between(Math.floor(lo), Math.floor(hi));
+  }
+
+  private spawnPaintBombForCurrentIsland(): boolean {
+    const x = this.pickPaintBombWaterX();
+    if (x == null || !this.paintBombZone) return false;
+    this.paintBombZone.spawn(x, this.waterSurfaceY + 26);
     return true;
   }
 
@@ -4016,6 +4683,9 @@ export class GameScene extends Phaser.Scene {
       ) {
         exclude.push("mushroom_cluster");
       }
+      if (this.fishList.some((f) => f !== self && f.speciesId === "coconut")) {
+        exclude.push("coconut");
+      }
       if (
         this.fishList.some((f) => f !== self && f.speciesId === "ore_cluster")
       ) {
@@ -4025,7 +4695,8 @@ export class GameScene extends Phaser.Scene {
     };
     const getIsRainy = () => this.weather?.isRainy() ?? false;
     const getIsSunny = () => this.weather?.weather === "sunny";
-    const narrow = habitat === "pond" || habitat === "hotspring";
+    const narrow =
+      habitat === "pond" || habitat === "hotspring" || habitat === "dustspire";
     for (let i = 0; i < count; i++) {
       const pad = narrow ? 30 : 60;
       const x = Phaser.Math.Between(left + pad, right - pad);
@@ -4125,6 +4796,12 @@ export class GameScene extends Phaser.Scene {
       centerX: (this.frostLeft + this.frostRight) / 2,
       loadRadius: loadR,
       onLoad: () => this.loadFrostpeakZone(),
+    });
+    this.zoneLoader.register({
+      id: "dustspire",
+      centerX: (this.dustLeft + this.dustRight) / 2,
+      loadRadius: loadR,
+      onLoad: () => this.loadDustspireZone(),
     });
     this.zoneLoader.register({
       id: "cave",
@@ -4369,16 +5046,12 @@ export class GameScene extends Phaser.Scene {
     eastLip.refreshBody();
     eastLip.setTint(0xd4a070);
 
-    // Walkable bridges over hotspring ponds
+    // Walkable bridges over hotspring ponds (shore-tile solid, not thin docks)
     for (const [pl, pr] of [
       [this.ashenSpringALeft, this.ashenSpringARight],
       [this.ashenSpringBLeft, this.ashenSpringBRight],
     ] as const) {
-      const pondW = pr - pl;
-      const bridge = this.ground.create(pl + pondW / 2, this.groundY + 6, "dock");
-      bridge.setDisplaySize(pondW + 16, 14);
-      bridge.refreshBody();
-      bridge.setVisible(false);
+      this.addFootbridgeCollider(pl, pr);
     }
   }
 
@@ -4644,7 +5317,72 @@ export class GameScene extends Phaser.Scene {
     this.spawnFishQuestNpc("frostpeak");
     this.spawnBaitCrate(this.frostRight - 220, "Frostpeak Isle");
     this.spawnSwampFrostpeakOceanFish();
-    this.spawnFishInZone(this.frostRight, this.farWaterRight, 4, "ocean");
+    this.spawnFishInZone(this.frostRight, this.dustLeft, 4, "ocean");
+  }
+
+  private loadDustspireZone(): void {
+    try {
+      generateDustspireFloorTexture(this);
+      this.createDustspireTerrain();
+      this.createDustspireWaterVisual();
+      const dust = placeDustspireIsland(
+        this,
+        this.groundY,
+        this.dustLeft,
+        this.dustRight,
+        this.dustRiverLeft,
+        this.dustRiverRight,
+        this.dustWestDock,
+        this.dustEastDock,
+        this.nightAmbient
+      );
+      this.dustRiverPorts = dust.riverPorts;
+      const dustMerchantX = this.dustLeft + 400;
+      if (this.textures.exists("market_stand")) {
+        this.add
+          .image(dustMerchantX, this.groundY, "market_stand")
+          .setOrigin(0.5, 1)
+          .setDepth(9)
+          .setTint(0xe8d4a8);
+      }
+      this.dustMerchant = new FishMerchant(
+        this,
+        dustMerchantX,
+        this.groundY,
+        "Dustspire Merchant"
+      );
+      this.dustMerchant.sprite.setTint(0xe8c890);
+      this.placeDustyRodProp();
+      // East bank across the oasis river — Steven + Den
+      this.dustSteven = new TalkNpc(
+        this,
+        this.dustRiverRight + 320,
+        this.groundY,
+        "Steven",
+        ""
+      );
+      this.dustSteven.sprite.clearTint();
+      this.dustSteven.sprite.setTexture("npc_blue_shirt");
+      this.dustDen = new TalkNpc(
+        this,
+        this.dustRiverRight + 420,
+        this.groundY,
+        "Den",
+        ""
+      );
+      this.dustDen.sprite.clearTint();
+      this.dustDen.sprite.setTexture("npc_den");
+      this.spawnBaitCrate(this.dustLeft + 560, "Dustspire Island");
+      this.spawnFishInZone(
+        this.dustRiverLeft,
+        this.dustRiverRight,
+        6,
+        "dustspire"
+      );
+      this.spawnFishInZone(this.dustRight, this.farWaterRight, 4, "ocean");
+    } catch (err) {
+      console.error("[Dustspire] zone load failed", err);
+    }
   }
 
   private loadFrostpeakCaveZone(): void {
@@ -4680,6 +5418,8 @@ export class GameScene extends Phaser.Scene {
     this.weather?.update(delta);
     this.applyStellarAtmosphereOverride();
     this.updateAshenSkyHeat();
+    this.updateDesertSandWind(delta);
+    this.paintBombZone?.update(this.time.now);
     if (this.dayNight && this.nightAmbient) {
       this.nightAmbient.update(this.dayNight.getNightFactor());
     }
@@ -4700,6 +5440,8 @@ export class GameScene extends Phaser.Scene {
     this.syncStarLineVfx();
     this.syncHorizonbreakerVfx();
     this.syncVoidharvesterVfx();
+    this.syncGoldenMasteryVfx();
+    this.syncRainbowMasteryVfx();
     this.updateSurferMastery(delta);
     this.updateMoonHover(delta);
     if (!this.inFrostpeakCave && !this.inStellarSky) {
@@ -4732,6 +5474,8 @@ export class GameScene extends Phaser.Scene {
       musicZone = "ashencast";
     } else if (areaId === "frostpeak") {
       musicZone = "frostpeak";
+    } else if (areaId === "dustspire") {
+      musicZone = "ashencast";
     } else {
       musicZone = areaId as MusicZone;
     }
@@ -4815,6 +5559,10 @@ export class GameScene extends Phaser.Scene {
       ui.setPrompt("F — Confirm    X — Decline");
     } else if (this.reefGuide.talking) {
       ui.setPrompt("F / X — Close");
+    } else if (this.dustSteven?.talking) {
+      ui.setPrompt("F / X — Close");
+    } else if (this.dustDen?.talking) {
+      ui.setPrompt("F / X — Close");
     } else if (
       FISH_QUEST_ISLAND_IDS.some((id) => this.fishQuestNpcs[id]?.talking)
     ) {
@@ -4831,6 +5579,14 @@ export class GameScene extends Phaser.Scene {
       this.reefGuide.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
       ui.setPrompt("F — Talk to Dock Guide");
+    } else if (
+      this.dustSteven?.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      ui.setPrompt("F — Talk to Steven");
+    } else if (
+      this.dustDen?.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      ui.setPrompt("F — Talk to Den");
     } else if (
       this.cosmicHaberdasher?.isNear(
         this.player.sprite.x,
@@ -4912,6 +5668,15 @@ export class GameScene extends Phaser.Scene {
             ? "F — Buy ($14500)    X — Cancel"
             : "F — Inspect Wildflower Rod"
         );
+      } else if (this.isNearDustyRod()) {
+        const uiOpen = (
+          this.scene.get("UIScene") as UIScene
+        ).isDustyRodBuyOpen();
+        ui.setPrompt(
+          uiOpen
+            ? "F — Buy ($33000)    X — Cancel"
+            : "F — Inspect Dusty Rod"
+        );
       } else if (
         this.weather?.isNearWhirlpool(
           this.player.sprite.x,
@@ -4919,6 +5684,14 @@ export class GameScene extends Phaser.Scene {
         )
       ) {
         ui.setPrompt("F — Enter · Cast into the whirlpool for Thunder");
+      } else if (
+        this.paintBombZone?.isNearPlayer(
+          this.player.sprite.x,
+          this.player.sprite.y
+        )
+      ) {
+        const sec = Math.ceil((this.paintBombZone.remainingMs || 0) / 1000);
+        ui.setPrompt(`Cast into the paint for Painted · ${sec}s left`);
       } else if (this.isNearFrostpeakCave()) {
         ui.setPrompt("F — Enter Frostpeak Cave");
       } else if (this.isNearCaveCrack()) {
@@ -4957,6 +5730,9 @@ export class GameScene extends Phaser.Scene {
     if (uiScene.isWildflowerBuyOpen() && !this.isNearWildflowerRod()) {
       uiScene.closeWildflowerBuy();
     }
+    if (uiScene.isDustyRodBuyOpen() && !this.isNearDustyRod()) {
+      uiScene.closeDustyRodBuy();
+    }
     if (uiScene.isOreVendorOpen()) {
       if (!this.orePeddler?.isNear(this.player.sprite.x, this.player.sprite.y)) {
         uiScene.closeOreVendor();
@@ -4981,6 +5757,18 @@ export class GameScene extends Phaser.Scene {
       !this.reefGuide.isNear(this.player.sprite.x, this.player.sprite.y)
     ) {
       this.reefGuide.decline();
+    }
+    if (
+      this.dustSteven?.talking &&
+      !this.dustSteven.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      this.dustSteven.decline();
+    }
+    if (
+      this.dustDen?.talking &&
+      !this.dustDen.isNear(this.player.sprite.x, this.player.sprite.y)
+    ) {
+      this.dustDen.decline();
     }
     if (
       this.stellarBeing?.talking &&
@@ -5046,7 +5834,35 @@ export class GameScene extends Phaser.Scene {
     this.weather.setAshenSkyHeat(heat);
   }
 
-  private getAreaId(x: number): MusicZone | "reef" | "collectors" | "frostpeak" | "ashencast" {
+  /** Sand wind on Dustspire + approach waters from Frostpeak / east sea. */
+  private updateDesertSandWind(delta: number): void {
+    const fx = this.desertSandWind;
+    if (!fx) return;
+    if (this.inFrostpeakCave || this.inStellarSky) {
+      fx.setIntensity(0);
+      return;
+    }
+    const x = this.player.sprite.x;
+    // Full on the isle (+ docks); soft fade across approach waters
+    const fullL = this.dustWestDock;
+    const fullR = this.dustEastDock;
+    const fadeL = this.frostRight - 200;
+    const fadeR = this.farWaterRight + 400;
+    let intensity = 0;
+    if (x >= fullL && x <= fullR) {
+      intensity = 1;
+    } else if (x >= fadeL && x < fullL) {
+      intensity = (x - fadeL) / (fullL - fadeL);
+    } else if (x > fullR && x <= fadeR) {
+      intensity = 1 - (x - fullR) / (fadeR - fullR);
+    }
+    fx.setIntensity(intensity);
+    fx.update(delta);
+  }
+
+  private getAreaId(
+    x: number
+  ): MusicZone | "reef" | "collectors" | "frostpeak" | "ashencast" | "dustspire" {
     if (this.inFrostpeakCave || x >= this.caveOriginX) return "frostpeak";
     if (x >= this.ashenWestDock && x <= this.ashenEastDock) {
       return "ashencast";
@@ -5056,6 +5872,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (x >= this.reefLeft && x < this.reefRight) return "reef";
     if (x >= this.frostWestDock && x <= this.frostEastDock) return "frostpeak";
+    if (x >= this.dustWestDock && x <= this.dustEastDock) return "dustspire";
     return musicZoneForX(x, {
       westDockEnd: this.westDockEnd,
       dockEnd: this.dockEnd,
@@ -5064,11 +5881,14 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private getAreaName(id: MusicZone | "reef" | "collectors" | "frostpeak" | "ashencast"): string {
+  private getAreaName(
+    id: MusicZone | "reef" | "collectors" | "frostpeak" | "ashencast" | "dustspire"
+  ): string {
     if (id === "reef") return "Coral Reef";
     if (id === "collectors") return "Collector's Island";
     if (id === "frostpeak") return "Frostpeak Isle";
     if (id === "ashencast") return "Ashencast Isle";
+    if (id === "dustspire") return "Dustspire Island";
     return areaNameForZone(id);
   }
 
@@ -5105,6 +5925,10 @@ export class GameScene extends Phaser.Scene {
         name: "Frostpeak Isle",
         x: (this.frostLeft + this.frostRight) / 2,
       },
+      {
+        name: "Dustspire Island",
+        x: (this.dustLeft + this.dustRight) / 2,
+      },
     ];
 
     const leftNames = landmarks
@@ -5139,6 +5963,13 @@ export class GameScene extends Phaser.Scene {
       return true;
     }
     if (x >= this.frostWestDock + 8 && x <= this.frostEastDock - 8) {
+      return true;
+    }
+    if (x >= this.dustWestDock + 8 && x <= this.dustEastDock - 8) {
+      // Inland river is not walkable (except dock planks handled by ground)
+      if (x > this.dustRiverLeft + 24 && x < this.dustRiverRight - 24) {
+        return false;
+      }
       return true;
     }
     return false;
@@ -5190,6 +6021,22 @@ export class GameScene extends Phaser.Scene {
         }
         return { x, y: landY };
       }
+      if (x >= this.dustWestDock + 8 && x <= this.dustEastDock - 8) {
+        if (x > this.dustRiverLeft + 24 && x < this.dustRiverRight - 24) {
+          const mid = (this.dustRiverLeft + this.dustRiverRight) / 2;
+          return {
+            x: x < mid ? this.dustRiverLeft - 60 : this.dustRiverRight + 60,
+            y: landY,
+          };
+        }
+        if (x < this.dustLeft + 40) {
+          return { x: this.dustLeft + 100, y: landY };
+        }
+        if (x > this.dustRight - 40) {
+          return { x: this.dustRight - 100, y: landY };
+        }
+        return { x, y: landY };
+      }
       if (x >= this.ashenWestDock + 8 && x <= this.ashenEastDock - 8) {
         if (x < this.ashenLeft + 40) {
           return { x: this.ashenLeft + 100, y: landY };
@@ -5234,8 +6081,15 @@ export class GameScene extends Phaser.Scene {
         ? { x: this.jungleRight - 100, y: landY }
         : { x: this.frostLeft + 100, y: landY };
     }
-    // Far ocean east of Frostpeak Isle
-    return { x: this.frostRight - 100, y: landY };
+    // Between Frostpeak and Dustspire
+    if (x < this.dustWestDock + 8) {
+      const mid = (this.frostEastDock + this.dustWestDock) / 2;
+      return x < mid
+        ? { x: this.frostRight - 100, y: landY }
+        : { x: this.dustLeft + 100, y: landY };
+    }
+    // Far ocean east of Dustspire
+    return { x: this.dustRight - 100, y: landY };
   }
 
   private clampPlayerToLand(): void {
@@ -5363,6 +6217,46 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (this.isOnDustspire()) {
+      const minX = this.dustWestDock + 8;
+      const maxX = this.dustEastDock - 8;
+      const zones = [
+        { min: minX, max: this.dustRiverLeft + 24 },
+        { min: this.dustRiverRight - 24, max: maxX },
+      ];
+      if (x < minX) {
+        this.player.sprite.x = minX;
+        this.player.sprite.setVelocityX(0);
+      } else if (x > maxX) {
+        this.player.sprite.x = maxX;
+        this.player.sprite.setVelocityX(0);
+      } else {
+        let inside = false;
+        for (const z of zones) {
+          if (x >= z.min && x <= z.max) {
+            inside = true;
+            break;
+          }
+        }
+        if (!inside) {
+          let best = zones[0].max;
+          let bestD = Math.abs(x - best);
+          for (const z of zones) {
+            for (const edge of [z.min, z.max]) {
+              const d = Math.abs(x - edge);
+              if (d < bestD) {
+                bestD = d;
+                best = edge;
+              }
+            }
+          }
+          this.player.sprite.x = best;
+          this.player.sprite.setVelocityX(0);
+        }
+      }
+      return;
+    }
+
     // Stranded on reef / between collectors and starter
     if (x > this.collectorEastDock + 40 && x < this.westDockEnd - 40) {
       const mid = (this.reefRight + this.westDockEnd) / 2;
@@ -5406,9 +6300,18 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Past Frostpeak Isle east tip (void before cave — never walk into gap)
-    if (x > this.frostEastDock + 40 && x < this.caveOriginX) {
-      this.player.sprite.x = this.frostEastDock - 8;
+    // Stranded between Frostpeak and Dustspire
+    if (x > this.frostEastDock + 80 && x < this.dustWestDock - 80) {
+      const mid = (this.frostEastDock + this.dustWestDock) / 2;
+      this.player.sprite.x =
+        x < mid ? this.frostEastDock - 8 : this.dustWestDock + 8;
+      this.player.sprite.setVelocityX(0);
+      return;
+    }
+
+    // Past Dustspire east tip (void before cave — never walk into gap)
+    if (x > this.dustEastDock + 40 && x < this.caveOriginX) {
+      this.player.sprite.x = this.dustEastDock - 8;
       this.player.sprite.setVelocityX(0);
       return;
     }
@@ -5554,12 +6457,48 @@ export class GameScene extends Phaser.Scene {
     this.voidharvesterVfx.update(hand.x, hand.y, tip.x, tip.y, this.time.now);
   }
 
+  /** Gold sparkles for mastery Lv10+ default rod finish. */
+  private syncGoldenMasteryVfx(): void {
+    const show =
+      this.player.isMasteryGoldInHand() &&
+      !this.player.isMasteryRainbowInHand();
+    if (!show) {
+      this.goldenMasteryVfx?.setActive(false);
+      return;
+    }
+    if (!this.goldenMasteryVfx) {
+      this.goldenMasteryVfx = new GoldenMasteryHeldVfx(this);
+    }
+    this.goldenMasteryVfx.setActive(true);
+    const hand = this.player.getRodHandWorld();
+    const tip = this.player.getRodTip();
+    this.goldenMasteryVfx.setDepth(this.player.sprite.depth + 2);
+    this.goldenMasteryVfx.update(hand.x, hand.y, tip.x, tip.y, this.time.now);
+  }
+
+  /** Rainbow shaft + tip trail for mastery Lv20 finish. */
+  private syncRainbowMasteryVfx(): void {
+    const show = this.player.isMasteryRainbowInHand();
+    if (!show) {
+      this.rainbowMasteryVfx?.setActive(false);
+      return;
+    }
+    if (!this.rainbowMasteryVfx) {
+      this.rainbowMasteryVfx = new RainbowMasteryHeldVfx(this);
+    }
+    this.rainbowMasteryVfx.setActive(true);
+    const hand = this.player.getRodHandWorld();
+    const tip = this.player.getRodTip();
+    this.rainbowMasteryVfx.setDepth(this.player.sprite.depth + 2);
+    this.rainbowMasteryVfx.update(hand.x, hand.y, tip.x, tip.y, this.time.now);
+  }
+
   /** Surfer mastery: ride time, follower black hole, periodic area fish. */
   private updateSurferMastery(delta: number): void {
     if (this.isRidingStellarSurfer()) {
       this.inventory.recordSurferMasteryRideMs(delta);
-      this.sailboat?.setDuckCosmetic(
-        this.inventory.isRubberDuckSurferSkinActive()
+      this.sailboat?.setSurferCosmetic(
+        this.inventory.getSurferBoardCosmetic()
       );
     }
 
@@ -5669,10 +6608,28 @@ export class GameScene extends Phaser.Scene {
         ? ROD_SKINS[skin.id as keyof typeof ROD_SKINS]
         : null;
     this.player.syncCarriedRod(selected, {
-      skinId: skinId === "default" ? null : skinId,
+      skinId:
+        skinId === "default" ||
+        skinId === "mastery_gold" ||
+        skinId === "mastery_rainbow"
+          ? null
+          : skinId,
       skinTextureKey: skinDef?.overlay ? skin?.textureKey ?? null : null,
       skinLayout: skinDef?.overlay ? skinDef.layout : null,
+      masteryGold: !!(
+        selected &&
+        ITEMS[selected]?.isRod &&
+        this.inventory.isMasteryGoldLookActive(selected)
+      ),
+      masteryRainbow: !!(
+        selected &&
+        ITEMS[selected]?.isRod &&
+        this.inventory.isMasteryRainbowLookActive(selected)
+      ),
     });
+    if (this.sailboat?.boatId === "stellar_surfer") {
+      this.sailboat.setSurferCosmetic(this.inventory.getSurferBoardCosmetic());
+    }
   }
 
   /** Cosmetic hat overlay from accessories. */

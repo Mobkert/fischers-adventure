@@ -128,19 +128,19 @@ export class MenuScene extends Phaser.Scene {
       .rectangle(0, 0, panelW, panelH, 0x1a241c, 0.97)
       .setStrokeStyle(2, 0xc4a86a);
 
-    const titleWave = this.createCosmicWaveText("Update 1.25", {
+    const titleWave = this.createCosmicWaveText("Dustspire 1.0", {
       fontFamily: "Georgia, serif",
       fontSize: "24px",
-      color: "#8ec0ff",
+      color: "#ffe066",
     });
     titleWave.root.setY(-panelH / 2 + 28 - titleWave.height / 2);
 
     const subtitleWave = this.createCosmicWaveText(
-      "What's New · Voidharvester & Stellar Shop",
+      "What's New · Desert Oasis & Steven's Trail",
       {
         fontFamily: "Arial",
         fontSize: "13px",
-        color: "#a090e8",
+        color: "#d4a820",
       }
     );
     subtitleWave.root.setY(-panelH / 2 + 56 - subtitleWave.height / 2);
@@ -172,78 +172,121 @@ export class MenuScene extends Phaser.Scene {
     const headerStyle = {
       fontFamily: "Arial",
       fontSize: "14px",
-      color: "#9ab8ff",
+      color: "#ffe066",
       fontStyle: "bold" as const,
     };
 
-    /** Accent = purple/blue multi-letter wave; plain = static body copy. */
+    /** Accent = yellow/dark-yellow multi-letter wave; plain = static body copy. */
     const blocks: Array<{ text: string; accent?: boolean }> = [
-      {
-        text:
-          "GENERAL\n\n" +
-          "Update 1.25 opens the Stellar Merchant shop with a new\n" +
-          "limited rod, a Tranquil skin, fishing sound polish, and\n" +
-          "a few important fixes.\n",
-      },
-      { text: "STELLAR MERCHANT SHOP", accent: true },
+      { text: "GENERAL", accent: true },
       {
         text:
           "\n" +
-          "• Shop is live in Stellar Sky (left of the Astral Warden)\n" +
-          "• Sell still buys Starstruck, Event Horizon, Lunar &\n" +
-          "  Moonlight fish at premium rates\n",
+          "Dustspire 1.0 adds a full desert oasis island east of\n" +
+          "Frostpeak — new fish, rods, quests, amulets, bestiary\n" +
+          "bobber rewards, and rod mastery polish.\n",
       },
-      { text: "THE VOIDHARVESTER", accent: true },
+      { text: "DUSTSPIRE ISLAND", accent: true },
       {
         text:
           "\n" +
-          "• Limited astral greatsword rod — $1,750,000 + 1 Painite\n" +
-          "• Stats: 75 luck · 100 resilience · 70 control · 5m depth\n" +
-          "• 12% Event Horizon chance\n" +
-          "• Void Harvest: while the fish is in the bar, the zone\n" +
-          "  shrinks toward 0% with no normal progress; when it\n" +
-          "  leaves, you blast progress from the shrink, then the\n" +
-          "  bar becomes 25% control / 15% resilience and fills\n" +
-          "  normally while the fish stays inside\n" +
-          "• Legendaries & mythicals move like Bluefin Tuna\n",
+          "• Sandstone adobe town, palms, cacti, and a long oasis\n" +
+          "  river cutting the isle\n" +
+          "• Tide Compass warp once the Dustspire bestiary is done\n" +
+          "• New oasis fish: Coconut, Coconut Crab, Skeletal\n" +
+          "  Seahorse, Decayed Nautilus, Cactifin, Leopard Shark\n" +
+          "  & more\n" +
+          "• Desert mutations: Oasis (5×), Sandy (2.5×),\n" +
+          "  Dusty (0.75×), Fossilized (5.5×)\n",
       },
-      { text: "HORIZONBREAKER", accent: true },
+      { text: "DUSTY ROD", accent: true },
       {
         text:
           "\n" +
-          "• New Tranquil Rod skin — $75,000 at the Stellar Merchant\n" +
-          "• Scattered star shaft, black-hole tip, cosmic catch UI\n",
+          "• $33,000 lean beside the first Dustspire tent — F to buy\n" +
+          "• Stats: 50 luck · 20 resilience · 20 control · 3m depth\n" +
+          "• 10% Oasis · 20% Sandy · 20% Dusty\n",
       },
+      { text: "STEVEN'S QUEST", accent: true },
       {
         text:
-          "FISHING & AUDIO\n\n" +
-          "• Cast swoosh, bobber splash, and sink bubble SFX\n",
+          "\n" +
+          "• Steven waits on the Dustspire east bank\n" +
+          "• Questline: Coconut → 3 Decayed Nautilus (Dusty Rod)\n" +
+          "  → Sandy Skeletal Seahorse → Cactifin or Sprout\n" +
+          "  Dolphin → Dusty Leopard Shark → pay $79,999\n" +
+          "• Rewards along the way: Tempest Amulet, 5 Dusky\n" +
+          "  Amulets, Paint Bomb recipe, Moonlight Amulet,\n" +
+          "  Paint Bomb Amulet, then the Fossil Rod\n",
+      },
+      { text: "FOSSIL ROD", accent: true },
+      {
+        text:
+          "\n" +
+          "• Steven's bone-curved desert prize\n" +
+          "• Stats: 70 luck · 20 resilience · 15 control · 4m depth\n" +
+          "• 10% Fossilized · fossil cage minigame power\n" +
+          "• 55% chance after a catch to gift a random fish from\n" +
+          "  that water (Oasis/Dusty possible on freeze gifts)\n",
+      },
+      { text: "DEN & GOLF CLUB", accent: true },
+      {
+        text:
+          "\n" +
+          "• Den stands east of Steven\n" +
+          "• Requires Composition VII at mastery Lv 10\n" +
+          "• Catch 20 Painted Coconuts with a Paint Brush\n" +
+          "• Rewards limited Golf Club skins on both brushes —\n" +
+          "  fairway catch UI, golf balls, green bar, white line\n",
+      },
+      { text: "PAINT BOMB", accent: true },
+      {
+        text:
+          "\n" +
+          "• Unlocked via Steven quest 3 — craftable anytime after\n" +
+          "• Trade: Celestial + Dusky Amulets + 5 Coconuts →\n" +
+          "  Paint Bomb Amulet\n" +
+          "• Drops a 3-minute paint column; catches in the splash\n" +
+          "  are Painted (4×)\n",
+      },
+      { text: "BESTIARY BOBBERS", accent: true },
+      {
+        text:
+          "\n" +
+          "• Finish & claim every entry in a bestiary tab for\n" +
+          "  $2,500 plus a unique bobber\n" +
+          "• Ocean Fish Head · Swamp EXP · Reef Starfish ·\n" +
+          "  Frostpeak Anchor · Ashencast Ruby · Dustspire Shell\n" +
+          "• Shell Bobber boosts Sandy, Dusty, Fossilized & Oasis\n",
+      },
+      { text: "ROD MASTERY", accent: true },
+      {
+        text:
+          "\n" +
+          "• Lv 10 gold look · Lv 20 rainbow look + tip trail\n" +
+          "• Surfer boards pick up gold/rainbow mastery cosmetics\n",
       },
       { text: "CODES (Code Guy)", accent: true },
       {
         text:
           "\n" +
+          "• DUSTY — Dusky Amulet and 1 Skin Crate (one-time)\n" +
+          "• OASIS — Sunlit Amulet, 1 Frostpeak Crate, and a\n" +
+          "  Cave Amulet (one-time)\n" +
           "• FINALYCAVEWHALE — Cave Amulet (ADMIN rarity).\n" +
           "  Use it to summon a Cave Whale abundance in\n" +
           "  Frostpeak Cave (one-time)\n" +
-          "• W_UPDATE — $10,000, Moonlight Amulet, Celestial\n" +
-          "  Amulet, and 1 Austinite (one-time)\n" +
-          "• SERPENTEELS — 15 Serpent Lure, 20 Bait Crates,\n" +
-          "  and a Blasted Serpent Eel (Worthless — $0 sell)\n" +
-          "  (one-time)\n" +
+          "• W_UPDATE — expired\n" +
+          "• SERPENTEELS — expired\n" +
           "• OREAREAWESOME — expired\n",
       },
+      { text: "FROM STELLAR SKY 1.0", accent: true },
       {
         text:
-          "FIXES\n\n" +
-          "• Cave whale abundance no longer fails after cave load\n" +
-          "  (banner includes the lake name)\n" +
-          "• Stellar Surfer mastery black hole follower shows again\n" +
-          "  beside the player while granting fish\n" +
-          "• Worthless size effect sells for $0 (no longer blocked)\n\n" +
-          "FROM STELLAR SKY 1.0\n\n" +
+          "\n" +
           "• Stellar Sky pocket world, Astral Warden questline\n" +
-          "• Star Line & Stellar Surfer rods, Surfer mastery\n" +
+          "• Star Line, Stellar Surfer, Voidharvester &\n" +
+          "  Horizonbreaker at the Stellar Merchant\n" +
           "• Resonated Hat travel via Cosmic Haberdasher",
       },
     ];
@@ -270,7 +313,7 @@ export class MenuScene extends Phaser.Scene {
     }
 
     const contentH = y + 8;
-    const stopAccentPulse = this.startPurpleBlueGradientWave(waveLetterGroups);
+    const stopAccentPulse = this.startYellowGradientWave(waveLetterGroups);
     let scrollY = 0;
     const maxScroll = () => Math.max(0, contentH - viewH);
 
@@ -384,29 +427,38 @@ export class MenuScene extends Phaser.Scene {
   }
 
   /**
-   * Slow purple/blue gradient that swipes across letters so multiple
-   * colors are visible on the same word at once.
+   * Slow yellow → dark-yellow → green gradient that swipes across letters
+   * so multiple tones are visible on the same headline at once.
    */
-  private startPurpleBlueGradientWave(
+  private startYellowGradientWave(
     letterGroups: Phaser.GameObjects.Text[][]
   ): () => void {
-    const blue = Phaser.Display.Color.ValueToColor(0x5aa8ff);
-    const purple = Phaser.Display.Color.ValueToColor(0xb878ff);
+    const colors = [0xffe066, 0xb8860b, 0x6ec85a].map((c) =>
+      Phaser.Display.Color.ValueToColor(c)
+    );
     let phase = 0;
+    const sample = (offset: number): string => {
+      const n = colors.length;
+      const cycle = ((phase - offset) / (Math.PI * 2)) % 1;
+      const u = cycle < 0 ? cycle + 1 : cycle;
+      const scaled = u * n;
+      const i0 = Math.floor(scaled) % n;
+      const i1 = (i0 + 1) % n;
+      const f = scaled - Math.floor(scaled);
+      const a = colors[i0]!;
+      const b = colors[i1]!;
+      const r = Math.round(Phaser.Math.Linear(a.red, b.red, f));
+      const g = Math.round(Phaser.Math.Linear(a.green, b.green, f));
+      const bl = Math.round(Phaser.Math.Linear(a.blue, b.blue, f));
+      return Phaser.Display.Color.RGBToString(r, g, bl, 0, "#");
+    };
     const onUpdate = (_time: number, delta: number) => {
       phase += delta * 0.0016;
       for (const letters of letterGroups) {
         for (let i = 0; i < letters.length; i++) {
           const letter = letters[i]!;
           if (!letter.active) continue;
-          // Spatial offset → blue and purple coexist across the word
-          const u = (Math.sin(phase - i * 0.55) + 1) * 0.5;
-          const r = Math.round(Phaser.Math.Linear(blue.red, purple.red, u));
-          const g = Math.round(Phaser.Math.Linear(blue.green, purple.green, u));
-          const b = Math.round(Phaser.Math.Linear(blue.blue, purple.blue, u));
-          letter.setColor(
-            Phaser.Display.Color.RGBToString(r, g, b, 0, "#")
-          );
+          letter.setColor(sample(i * 0.55));
         }
       }
     };

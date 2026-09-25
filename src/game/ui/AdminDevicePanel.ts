@@ -468,6 +468,12 @@ export class AdminDevicePanel {
       return;
     }
     if (this.tab === "rods") {
+      if (id === "test_rod") {
+        const result = this.inventory.grantAscendedStellarSurfer();
+        this.onGranted?.(result.message);
+        this.refresh();
+        return;
+      }
       if (this.inventory.ownsRod(id)) {
         this.onGranted?.(`You already own ${def.name}.`);
         return;

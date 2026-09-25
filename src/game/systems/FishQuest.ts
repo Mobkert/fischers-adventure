@@ -47,6 +47,7 @@ export const FISH_QUEST_HABITAT_LABEL: Record<FishHabitat, string> = {
   reef: "coral reef",
   cave: "cave",
   hotspring: "hotsprings",
+  dustspire: "Dustspire oasis",
 };
 
 const COIN_REWARD: Record<
@@ -104,7 +105,7 @@ export function standardAmuletPool(): ItemId[] {
     const def = ITEMS[id];
     if (!def?.isAmulet) return false;
     if (def.rarity === "admin") return false;
-    if (id === "amulet_thunder" || id === "amulet_cave") return false;
+    if (id === "amulet_thunder" || id === "amulet_cave" || id === "amulet_paint_bomb") return false;
     return true;
   });
 }

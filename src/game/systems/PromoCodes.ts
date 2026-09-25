@@ -13,7 +13,9 @@ export type PromoCodeId =
   | "w_update"
   | "finally_cave_whale"
   | "admin_code"
-  | "starry_night";
+  | "starry_night"
+  | "dusty"
+  | "oasis";
 
 export type PromoRedeemResult =
   | { ok: true; message: string }
@@ -30,7 +32,9 @@ const CODE_MAP: Record<string, PromoCodeId> = {
   SERPENTEELS: "serpent_eels",
   W_UPDATE: "w_update",
   FINALYCAVEWHALE: "finally_cave_whale",
-  // Secret — expire later; not listed in update log
+  DUSTY: "dusty",
+  OASIS: "oasis",
+  // Secret — not listed in update log
   ADMINCODE: "admin_code",
   // Secret — Paint Brush rod
   ".STARRYNIGHT.": "starry_night",
@@ -46,8 +50,10 @@ const EXPIRED_PROMO_CODES = new Set<PromoCodeId>([
   "sorry_for_bugs",
   "free_skin_crates",
   "new_stuff",
-  "admin_code",
   "ore_area_awesome",
+  "admin_code",
+  "w_update",
+  "serpent_eels",
 ]);
 
 export function normalizePromoCodeInput(raw: string): string {
@@ -142,56 +148,12 @@ export function redeemPromoCode(
       };
     }
     case "serpent_eels": {
-      const needCrateSlot = !inventory.hasItem("bait_crate");
-      const hasUnsellableBlastedEel = [...inventory.bag, ...inventory.hotbar].some(
-        (s) =>
-          s.itemId === "serpent_eel" &&
-          s.mutation === "blasted" &&
-          s.size === "unsellable" &&
-          s.count > 0
-      );
-      const slotsNeeded =
-        (needCrateSlot ? 1 : 0) + (hasUnsellableBlastedEel ? 0 : 1);
-      if (inventory.countEmptyBagSlots() < slotsNeeded) {
-        return {
-          ok: false,
-          message: `Need ${slotsNeeded} free bag slot${slotsNeeded > 1 ? "s" : ""} for the reward.`,
-        };
-      }
-      if (!inventory.addItem("bait_crate", 20)) {
-        return { ok: false, message: "Your bag is full!" };
-      }
-      if (!inventory.addBait("bait_serpent_lure", 15)) {
-        return { ok: false, message: "Couldn't add Serpent Lure bait." };
-      }
-      if (!inventory.addItem("serpent_eel", 1, "blasted", "unsellable")) {
-        return { ok: false, message: "Your bag is full!" };
-      }
-      inventory.markPromoRedeemed(codeId);
-      return {
-        ok: true,
-        message:
-          "Code Guy hands you 15 Serpent Lure, 20 Bait Crates, and a Blasted Serpent Eel (Worthless — $0 sell)!",
-      };
+      // Expired — kept for type exhaustiveness; EXPIRED_PROMO_CODES blocks first.
+      return { ok: false, message: "That code has expired. Sorry!" };
     }
     case "free_stellar_surfer": {
-      if (inventory.ownsRod("test_rod") && inventory.isStellarSurferAscended()) {
-        inventory.markPromoRedeemed(codeId);
-        return {
-          ok: true,
-          message: "You already ride the stars — code marked used.",
-        };
-      }
-      if (!inventory.ownsRod("test_rod") && !inventory.addItem("test_rod")) {
-        return { ok: false, message: "Couldn't grant the Stellar Surfer." };
-      }
-      inventory.stellarSurferAscended = true;
-      inventory.astralSurferQuestStage = 8;
-      inventory.astralStarlineDone = true;
-      if (!inventory.ownsBoat("stellar_surfer")) {
-        inventory.ownedBoats.push("stellar_surfer");
-      }
-      inventory.equipRod("test_rod");
+      const result = inventory.grantAscendedStellarSurfer();
+      if (!result.ok) return result;
       inventory.markPromoRedeemed(codeId);
       return {
         ok: true,
@@ -199,27 +161,8 @@ export function redeemPromoCode(
       };
     }
     case "w_update": {
-      if (
-        !inventory.hasItem("austinite") &&
-        inventory.countEmptyBagSlots() < 1
-      ) {
-        return {
-          ok: false,
-          message: "Need 1 free bag slot for Austinite.",
-        };
-      }
-      if (!inventory.addItem("austinite", 1)) {
-        return { ok: false, message: "Your bag is full!" };
-      }
-      inventory.coins += 10000;
-      inventory.grantAmulet("amulet_moonlight");
-      inventory.grantAmulet("amulet_celestial");
-      inventory.markPromoRedeemed(codeId);
-      return {
-        ok: true,
-        message:
-          "Code Guy hands you $10,000, a Moonlight Amulet, a Celestial Amulet, and 1 Austinite!",
-      };
+      // Expired — kept for type exhaustiveness; EXPIRED_PROMO_CODES blocks first.
+      return { ok: false, message: "That code has expired. Sorry!" };
     }
     case "finally_cave_whale": {
       inventory.grantAmulet("amulet_cave");
@@ -230,44 +173,73 @@ export function redeemPromoCode(
           "Code Guy slips you a Cave Amulet — ADMIN rarity. Use it to summon a cave whale.",
       };
     }
+    case "dusty": {
+      if (
+        !inventory.hasItem("skin_crate") &&
+        inventory.countEmptyBagSlots() < 1
+      ) {
+        return {
+          ok: false,
+          message: "Need 1 free bag slot for a Skin Crate.",
+        };
+      }
+      if (!inventory.addItem("skin_crate", 1)) {
+        return { ok: false, message: "Your bag is full!" };
+      }
+      inventory.grantAmulet("amulet_dusky");
+      inventory.markPromoRedeemed(codeId);
+      return {
+        ok: true,
+        message: "Code Guy hands you a Dusky Amulet and a Skin Crate!",
+      };
+    }
+    case "oasis": {
+      if (
+        !inventory.hasItem("frostpeak_crate") &&
+        inventory.countEmptyBagSlots() < 1
+      ) {
+        return {
+          ok: false,
+          message: "Need 1 free bag slot for a Frostpeak Crate.",
+        };
+      }
+      if (!inventory.addItem("frostpeak_crate", 1)) {
+        return { ok: false, message: "Your bag is full!" };
+      }
+      inventory.grantAmulet("amulet_sunlit");
+      inventory.grantAmulet("amulet_cave");
+      inventory.markPromoRedeemed(codeId);
+      return {
+        ok: true,
+        message:
+          "Code Guy hands you a Sunlit Amulet, a Frostpeak Crate, and a Cave Amulet!",
+      };
+    }
     case "starry_night": {
       if (inventory.ownsRod("paint_brush_rod")) {
         inventory.markPromoRedeemed(codeId);
         return {
           ok: true,
-          message: "You already hold the Paint Brush — code marked used.",
+          message:
+            "You already hold Paint Brush (Starry Night) — code marked used.",
         };
       }
       if (!inventory.addItem("paint_brush_rod")) {
-        return { ok: false, message: "Couldn't grant the Paint Brush." };
+        return {
+          ok: false,
+          message: "Couldn't grant Paint Brush (Starry Night).",
+        };
       }
       inventory.markPromoRedeemed(codeId);
       return {
         ok: true,
         message:
-          "Code Guy hands you a Paint Brush — Starry Night catches await.",
+          "Code Guy hands you Paint Brush (Starry Night) — Starry Night catches await.",
       };
     }
     case "admin_code": {
-      if (inventory.hasItem("admin_device")) {
-        inventory.markPromoRedeemed(codeId);
-        return {
-          ok: true,
-          message: "You already carry the Admin Device — code marked used.",
-        };
-      }
-      if (inventory.countEmptyBagSlots() < 1) {
-        return { ok: false, message: "Need 1 free bag slot for the Admin Device." };
-      }
-      if (!inventory.addItem("admin_device")) {
-        return { ok: false, message: "Couldn't grant the Admin Device." };
-      }
-      inventory.markPromoRedeemed(codeId);
-      return {
-        ok: true,
-        message:
-          "Code Guy presses a sealed tablet into your hands. Left-click it anytime.",
-      };
+      // Expired — kept for type exhaustiveness; EXPIRED_PROMO_CODES blocks first.
+      return { ok: false, message: "That code has expired. Sorry!" };
     }
     default:
       return { ok: false, message: "That code fizzled out." };

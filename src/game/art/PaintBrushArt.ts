@@ -637,6 +637,158 @@ export function drawStarryNightBar(
   g.strokeRoundedRect(-hw, barY - hh, barWidth, barHeight, 6);
 }
 
+/**
+ * Kandinsky-like Composition VII panel — colliding arcs, wedges, and color fields.
+ */
+export function drawCompositionViiPanel(
+  g: Phaser.GameObjects.Graphics,
+  panelW: number,
+  panelH: number,
+  panelY: number,
+  phase: number
+): void {
+  const hw = panelW / 2;
+  const hh = panelH / 2;
+  const top = panelY - hh;
+  const bot = panelY + hh;
+  const t = phase;
+
+  // Warm parchment / ochre ground
+  g.fillStyle(0xd8c090, 1);
+  g.fillRoundedRect(-hw, top, panelW, panelH, 14);
+  g.fillStyle(0xc4a878, 0.55);
+  g.fillEllipse(-60, top + 40, 280, 90);
+  g.fillStyle(0xb89868, 0.4);
+  g.fillEllipse(100, bot - 30, 320, 70);
+
+  // Large black crescent / outer circle
+  g.lineStyle(7, 0x1a1210, 0.92);
+  g.strokeCircle(-40 + Math.sin(t * 0.2) * 4, panelY + 4, 78);
+  g.lineStyle(3.5, 0x3a2a20, 0.55);
+  g.strokeCircle(-40, panelY + 4, 92);
+
+  // Red wedge / triangle clash
+  g.fillStyle(0xc42828, 0.88);
+  g.fillTriangle(-160, top + 18, -40, top + 70, -150, bot - 20);
+  g.fillStyle(0xe84828, 0.7);
+  g.fillTriangle(-140, top + 30, -55, top + 75, -130, bot - 35);
+
+  // Yellow sun disk
+  g.fillStyle(0xf0c020, 0.92);
+  g.fillCircle(90 + Math.cos(t * 0.35) * 3, top + 38, 34);
+  g.fillStyle(0xffe066, 0.55);
+  g.fillCircle(90, top + 38, 22);
+  g.lineStyle(2.5, 0x8a5010, 0.65);
+  g.strokeCircle(90, top + 38, 34);
+
+  // Blue / teal arcs
+  for (let i = 0; i < 4; i++) {
+    const cx = 40 + i * 28;
+    const cy = panelY + 8 + (i % 2) * 10;
+    g.lineStyle(4.5 - i * 0.6, i % 2 ? 0x2a6aaa : 0x1a8898, 0.75);
+    g.beginPath();
+    g.arc(cx, cy, 36 + i * 8, t * 0.4 + i, t * 0.4 + i + Math.PI * 1.2, false);
+    g.strokePath();
+  }
+
+  // Green / violet checker shards
+  const shards: [number, number, number, number, number][] = [
+    [120, bot - 28, 0x2a8a48, 38, 16],
+    [160, panelY + 20, 0x5a3a88, 28, 22],
+    [-100, bot - 18, 0x886028, 44, 14],
+    [20, top + 24, 0xc85888, 30, 12],
+    [-180, panelY, 0x3a78b8, 24, 28],
+  ];
+  for (const [sx, sy, col, w, h] of shards) {
+    g.fillStyle(col, 0.82);
+    g.fillTriangle(
+      sx,
+      sy - h,
+      sx + w,
+      sy,
+      sx - w * 0.35,
+      sy + h * 0.45
+    );
+  }
+
+  // Black lattice / grid strokes
+  for (let i = 0; i < 6; i++) {
+    const a0 = t * 0.15 + i * 0.9;
+    g.lineStyle(2.2, 0x1a1210, 0.55);
+    g.lineBetween(
+      -hw + 30 + Math.cos(a0) * 40,
+      top + 20 + i * 18,
+      hw - 40 + Math.sin(a0) * 30,
+      bot - 16 - i * 8
+    );
+  }
+
+  // Small accent circles
+  g.fillStyle(0xffffff, 0.9);
+  g.fillCircle(-20, top + 50, 6);
+  g.fillStyle(0x1a1210, 0.9);
+  g.fillCircle(50, bot - 40, 8);
+  g.fillStyle(0xe82848, 0.9);
+  g.fillCircle(150, panelY - 10, 5);
+  g.fillStyle(0xf0c020, 0.9);
+  g.fillCircle(-130, panelY + 25, 7);
+
+  // Frame
+  g.lineStyle(2.5, 0x4a3020, 0.9);
+  g.strokeRoundedRect(-hw, top, panelW, panelH, 14);
+  g.lineStyle(1.2, 0xc42828, 0.45);
+  g.strokeRoundedRect(-hw + 4, top + 4, panelW - 8, panelH - 8, 12);
+}
+
+export function drawCompositionViiBar(
+  g: Phaser.GameObjects.Graphics,
+  barWidth: number,
+  barHeight: number,
+  barY: number,
+  phase: number
+): void {
+  const hw = barWidth / 2;
+  const hh = barHeight / 2;
+  const t = phase;
+
+  g.fillStyle(0xc8b078, 0.92);
+  g.fillRoundedRect(-hw, barY - hh, barWidth, barHeight, 6);
+
+  // Abstract color bands along the track
+  for (let i = 0; i < 7; i++) {
+    const x = -hw + 14 + i * ((barWidth - 28) / 6);
+    const cols = [0xc42828, 0xf0c020, 0x2a6aaa, 0x1a1210, 0x2a8a48, 0x5a3a88, 0xe84828];
+    g.fillStyle(cols[i % cols.length]!, 0.35 + Math.sin(t * 2 + i) * 0.08);
+    g.fillRect(x - 10, barY - hh + 3, 18, barHeight - 6);
+  }
+
+  // Arc accents
+  g.lineStyle(2.2, 0x1a1210, 0.5);
+  g.beginPath();
+  g.arc(0, barY, 40, t * 0.5, t * 0.5 + Math.PI, false);
+  g.strokePath();
+
+  g.lineStyle(2, 0xc42828, 0.65);
+  g.strokeRoundedRect(-hw, barY - hh, barWidth, barHeight, 6);
+}
+
+/** Composition VII bag icon — same brush silhouette, Kandinsky tip colors. */
+export function drawPaintBrushCompositionRodIcon(
+  g: Phaser.GameObjects.Graphics
+): void {
+  drawPaintBrushRodIcon(g);
+  // Overpaint tip with Composition VII palette dashes
+  const IPY = 8;
+  g.fillStyle(0xc42828, 0.95);
+  g.fillCircle(50, 16 + IPY, 5);
+  g.fillStyle(0xf0c020, 0.95);
+  g.fillCircle(54, 12 + IPY, 3.5);
+  g.fillStyle(0x2a6aaa, 0.95);
+  g.fillCircle(47, 11 + IPY, 3);
+  g.fillStyle(0x1a1210, 0.9);
+  g.fillCircle(52, 20 + IPY, 2.5);
+}
+
 /** Vibrant paint colors for drops / Painted mutation. */
 export const PAINT_COLORS = [
   0xff3355, 0xff6633, 0xffcc33, 0x66cc44, 0x33aaff, 0x7755ff, 0xff66cc, 0xffffff,
@@ -646,3 +798,220 @@ export const PAINT_COLORS = [
 export function rollPaintColor(): number {
   return PAINT_COLORS[Phaser.Math.Between(0, PAINT_COLORS.length - 1)]!;
 }
+
+/** Tip past club head face — line attaches here. */
+export const GOLF_CLUB_TIP_T = 1.22;
+
+export function golfClubTip(
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number
+): { x: number; y: number } {
+  return {
+    x: handX + (tipX - handX) * GOLF_CLUB_TIP_T,
+    y: handY + (tipY - handY) * GOLF_CLUB_TIP_T,
+  };
+}
+
+/** Iron golf club — chrome shaft + angled blade head. */
+export function drawGolfClubRod(
+  g: Phaser.GameObjects.Graphics,
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number
+): void {
+  const dx = tipX - handX;
+  const dy = tipY - handY;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const px = -uy;
+  const py = ux;
+
+  const at = (t: number, off = 0) => ({
+    x: handX + dx * t + px * off,
+    y: handY + dy * t + py * off,
+  });
+
+  // Shadow
+  g.lineStyle(5, 0x000000, 0.14);
+  g.lineBetween(at(0, 1.2).x, at(0, 1.2).y, at(0.95, 1.2).x, at(0.95, 1.2).y);
+
+  // Grip
+  g.lineStyle(5.5, 0x1a1a1a, 1);
+  g.lineBetween(at(-0.02).x, at(-0.02).y, at(0.22).x, at(0.22).y);
+  g.lineStyle(4.2, 0x2e2e2e, 1);
+  g.lineBetween(at(0).x, at(0).y, at(0.2).x, at(0.2).y);
+  for (let i = 0; i < 5; i++) {
+    const t = 0.02 + i * 0.035;
+    g.lineStyle(1.2, 0x4a4a4a, 0.7);
+    const a = at(t, 2.2);
+    const b = at(t, -2.2);
+    g.lineBetween(a.x, a.y, b.x, b.y);
+  }
+
+  // Steel shaft
+  g.lineStyle(3.4, 0x6a7078, 1);
+  g.lineBetween(at(0.2).x, at(0.2).y, at(0.92).x, at(0.92).y);
+  g.lineStyle(2.2, 0xc0c8d0, 1);
+  g.lineBetween(at(0.2, 0.6).x, at(0.2, 0.6).y, at(0.92, 0.6).x, at(0.92, 0.6).y);
+  g.lineStyle(1.1, 0xe8eef4, 0.85);
+  g.lineBetween(at(0.22, 1.1).x, at(0.22, 1.1).y, at(0.9, 1.1).x, at(0.9, 1.1).y);
+
+  // Hosel
+  const hosel = at(0.92);
+  g.fillStyle(0x8a9098, 1);
+  g.fillCircle(hosel.x, hosel.y, 2.6);
+  g.fillStyle(0xd0d8e0, 1);
+  g.fillCircle(hosel.x - ux, hosel.y - uy, 1.4);
+
+  // Club head blade (angled iron face)
+  const hx = hosel.x + ux * 4;
+  const hy = hosel.y + uy * 4;
+  const faceNx = px;
+  const faceNy = py;
+  g.fillStyle(0x3a4048, 1);
+  g.beginPath();
+  g.moveTo(hx + faceNx * 2 - ux * 2, hy + faceNy * 2 - uy * 2);
+  g.lineTo(hx + faceNx * 9 + ux * 1, hy + faceNy * 9 + uy * 1);
+  g.lineTo(hx + faceNx * 10 + ux * 8, hy + faceNy * 10 + uy * 8);
+  g.lineTo(hx - faceNx * 1 + ux * 7, hy - faceNy * 1 + uy * 7);
+  g.lineTo(hx - faceNx * 2 + ux * 1, hy - faceNy * 2 + uy * 1);
+  g.closePath();
+  g.fillPath();
+  g.fillStyle(0xb8c0c8, 1);
+  g.beginPath();
+  g.moveTo(hx + faceNx * 1.5 - ux * 0.5, hy + faceNy * 1.5 - uy * 0.5);
+  g.lineTo(hx + faceNx * 8 + ux * 0.5, hy + faceNy * 8 + uy * 0.5);
+  g.lineTo(hx + faceNx * 8.5 + ux * 6.5, hy + faceNy * 8.5 + uy * 6.5);
+  g.lineTo(hx + faceNx * 0.5 + ux * 6, hy + faceNy * 0.5 + uy * 6);
+  g.closePath();
+  g.fillPath();
+  g.fillStyle(0xe8eef4, 0.9);
+  g.beginPath();
+  g.moveTo(hx + faceNx * 2 + ux * 1, hy + faceNy * 2 + uy * 1);
+  g.lineTo(hx + faceNx * 7 + ux * 1.5, hy + faceNy * 7 + uy * 1.5);
+  g.lineTo(hx + faceNx * 7.2 + ux * 5, hy + faceNy * 7.2 + uy * 5);
+  g.lineTo(hx + faceNx * 2.2 + ux * 4.5, hy + faceNy * 2.2 + uy * 4.5);
+  g.closePath();
+  g.fillPath();
+  // Score lines
+  for (let i = 0; i < 4; i++) {
+    const t0 = 0.15 + i * 0.18;
+    const a = {
+      x: hx + faceNx * (2 + t0 * 5) + ux * (1.5 + t0 * 3),
+      y: hy + faceNy * (2 + t0 * 5) + uy * (1.5 + t0 * 3),
+    };
+    const b = {
+      x: hx + faceNx * (7 + t0 * 0.5) + ux * (1.5 + t0 * 3),
+      y: hy + faceNy * (7 + t0 * 0.5) + uy * (1.5 + t0 * 3),
+    };
+    g.lineStyle(0.8, 0x5a6068, 0.85);
+    g.lineBetween(a.x, a.y, b.x, b.y);
+  }
+}
+
+/** High-quality golf course catch panel — fairway, sky, red pin flag. */
+export function drawGolfCoursePanel(
+  g: Phaser.GameObjects.Graphics,
+  panelW: number,
+  panelH: number,
+  panelY: number,
+  phase: number
+): void {
+  const hw = panelW / 2;
+  const hh = panelH / 2;
+  const top = panelY - hh;
+  const bot = panelY + hh;
+  const t = phase;
+
+  // Sky
+  g.fillStyle(0x7ec8f0, 1);
+  g.fillRoundedRect(-hw, top, panelW, panelH, 14);
+  g.fillStyle(0xa8dcff, 0.55);
+  g.fillEllipse(-60, top + 28, 220, 70);
+  g.fillStyle(0xffffff, 0.55);
+  g.fillEllipse(-90 + Math.sin(t) * 8, top + 22, 70, 22);
+  g.fillEllipse(-50 + Math.cos(t * 0.7) * 6, top + 28, 90, 26);
+  g.fillEllipse(100, top + 20, 80, 20);
+  g.fillStyle(0xfff6c8, 0.9);
+  g.fillCircle(hw - 48, top + 28, 16);
+  g.fillStyle(0xffffff, 0.45);
+  g.fillCircle(hw - 52, top + 24, 6);
+
+  // Distant hills
+  g.fillStyle(0x5aaa48, 1);
+  g.fillEllipse(-120, bot - 20, 260, 90);
+  g.fillStyle(0x4a9840, 1);
+  g.fillEllipse(80, bot - 14, 300, 100);
+
+  // Fairway bands
+  g.fillStyle(0x6ec85a, 1);
+  g.fillRoundedRect(-hw + 4, bot - 52, panelW - 8, 48, 10);
+  g.fillStyle(0x5ab848, 0.7);
+  for (let i = 0; i < 7; i++) {
+    const y = bot - 48 + i * 6;
+    g.fillRect(-hw + 8, y, panelW - 16, 3);
+  }
+  g.fillStyle(0x8ae070, 0.55);
+  g.fillEllipse(20, bot - 28, 180, 28);
+  g.fillStyle(0x3a8828, 0.35);
+  g.fillEllipse(-100, bot - 22, 100, 18);
+
+  // Green mound + hole
+  g.fillStyle(0x4aaa38, 1);
+  g.fillEllipse(hw - 90, bot - 36, 88, 36);
+  g.fillStyle(0x3a9028, 1);
+  g.fillEllipse(hw - 90, bot - 34, 60, 22);
+  g.fillStyle(0x1a1a1a, 0.85);
+  g.fillCircle(hw - 90, bot - 34, 4.5);
+  g.fillStyle(0x0a0a0a, 1);
+  g.fillCircle(hw - 90, bot - 34, 2.8);
+
+  // Flagstick + red pennant
+  const fx = hw - 90;
+  const fy = bot - 34;
+  g.lineStyle(2.2, 0xe8e0d0, 1);
+  g.lineBetween(fx, fy, fx, fy - 52);
+  g.fillStyle(0xe8e0d0, 1);
+  g.fillCircle(fx, fy - 52, 2);
+  const flap = Math.sin(t * 3.2) * 3;
+  g.fillStyle(0xe82828, 1);
+  g.beginPath();
+  g.moveTo(fx, fy - 50);
+  g.lineTo(fx + 22 + flap, fy - 42);
+  g.lineTo(fx, fy - 34);
+  g.closePath();
+  g.fillPath();
+  g.fillStyle(0xff6060, 0.9);
+  g.beginPath();
+  g.moveTo(fx, fy - 48);
+  g.lineTo(fx + 14 + flap * 0.6, fy - 42);
+  g.lineTo(fx, fy - 37);
+  g.closePath();
+  g.fillPath();
+
+  // Soft frame
+  g.lineStyle(2.5, 0x2a5a20, 0.55);
+  g.strokeRoundedRect(-hw, top, panelW, panelH, 14);
+}
+
+export function drawGolfCourseBar(
+  g: Phaser.GameObjects.Graphics,
+  barWidth: number,
+  barHeight: number,
+  barY: number,
+  _phase: number
+): void {
+  const hw = barWidth / 2;
+  const hh = barHeight / 2;
+  g.fillStyle(0x5aaa48, 0.55);
+  g.fillRoundedRect(-hw, barY - hh, barWidth, barHeight, 6);
+  g.fillStyle(0x6ec85a, 0.4);
+  g.fillRoundedRect(-hw + 2, barY - hh + 2, barWidth - 4, barHeight * 0.45, 4);
+  g.lineStyle(2, 0x2a6a20, 0.65);
+  g.strokeRoundedRect(-hw, barY - hh, barWidth, barHeight, 6);
+}
+

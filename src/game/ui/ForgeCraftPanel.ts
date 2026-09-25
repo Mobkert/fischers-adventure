@@ -19,6 +19,7 @@ const FORGE_ROD_IDS: ItemId[] = [
   "recoil_rod",
   "portal_rod",
   "forge_rod",
+  "paint_brush_composition_rod",
 ];
 
 const PANEL_W = 460;

@@ -23,7 +23,7 @@ import {
   drawHorizonbreakerRod,
 } from "../art/RodSkinHeldArt";
 import { drawVoidharvesterRod, voidharvesterBladeTip } from "../art/VoidharvesterArt";
-import { drawPaintBrushRod } from "../art/PaintBrushArt";
+import { drawPaintBrushRod, drawGolfClubRod } from "../art/PaintBrushArt";
 
 /** Extra canvas around the 64×64 figure so long rods (greatsword) aren’t clipped. */
 export const PLAYER_FRAME_PAD_TOP = 52;
@@ -84,6 +84,8 @@ export type RodDrawStyle =
   | "firm"
   | "amber"
   | "wildflower"
+  | "dusty"
+  | "fossil"
   | "zeus"
   | "coral"
   | "augment"
@@ -113,7 +115,8 @@ export type RodDrawStyle =
   | "rubber_duck"
   | "horizonbreaker"
   | "voidharvester"
-  | "paint_brush";
+  | "paint_brush"
+  | "golf_club";
 
 /** Every rod that gets carry + cast player frames and anims — keep in sync with new rods. */
 export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
@@ -122,6 +125,8 @@ export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
   "firm",
   "amber",
   "wildflower",
+  "dusty",
+  "fossil",
   "zeus",
   "coral",
   "augment",
@@ -151,7 +156,176 @@ export const ROD_ANIM_STYLES: readonly RodDrawStyle[] = [
   "horizonbreaker",
   "voidharvester",
   "paint_brush",
+  "golf_club",
 ];
+
+/** Base rod styles that get a mastery-gold bake (default finishes only). */
+export const MASTERY_GOLD_ROD_STYLES: readonly RodDrawStyle[] = [
+  "starter",
+  "lucky",
+  "firm",
+  "amber",
+  "wildflower",
+  "dusty",
+  "fossil",
+  "zeus",
+  "coral",
+  "augment",
+  "tranquil",
+  "crystal",
+  "recoil",
+  "portal",
+  "forge",
+  "starweaver",
+  "birthday",
+  "stellar_surfer",
+  "star_line",
+  "voidharvester",
+  "paint_brush",
+];
+
+/** Remap any rod color toward a warm gold palette (keeps luminance). */
+export function goldifyRodColor(color: number): number {
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const nr = Math.round(Math.min(255, 70 + lum * 185));
+  const ng = Math.round(Math.min(255, 48 + lum * 150));
+  const nb = Math.round(Math.min(255, 8 + lum * 55));
+  return (nr << 16) | (ng << 8) | nb;
+}
+
+/** Hotbar / bag icon key for a rod's mastery-gold finish. */
+export function masteryGoldIconKey(baseTextureKey: string): string {
+  return `${baseTextureKey}_mg`;
+}
+
+/** Hotbar / bag icon key for a rod's mastery-rainbow finish. */
+export function masteryRainbowIconKey(baseTextureKey: string): string {
+  return `${baseTextureKey}_rb`;
+}
+
+/** Remap rod colors to a saturated rainbow (luminance → hue). */
+export function rainbowifyRodColor(color: number, hueOffset = 0): number {
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const hue = (lum * 300 + hueOffset) % 360;
+  const sat = 0.85 + lum * 0.15;
+  const light = 0.35 + lum * 0.4;
+  // inline HSL→RGB to avoid circular imports
+  const c = (1 - Math.abs(2 * light - 1)) * sat;
+  const hp = ((hue % 360) + 360) % 360 / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  let rr = 0;
+  let gg = 0;
+  let bb = 0;
+  if (hp < 1) {
+    rr = c;
+    gg = x;
+  } else if (hp < 2) {
+    rr = x;
+    gg = c;
+  } else if (hp < 3) {
+    gg = c;
+    bb = x;
+  } else if (hp < 4) {
+    gg = x;
+    bb = c;
+  } else if (hp < 5) {
+    rr = x;
+    bb = c;
+  } else {
+    rr = c;
+    bb = x;
+  }
+  const m = light - c / 2;
+  return (
+    (Math.round(Math.min(255, (rr + m) * 255)) << 16) |
+    (Math.round(Math.min(255, (gg + m) * 255)) << 8) |
+    Math.round(Math.min(255, (bb + m) * 255))
+  );
+}
+
+/** Goldify RGB channels in-place (alpha unchanged). */
+export function goldifyRgbChannels(
+  r: number,
+  g: number,
+  b: number
+): { r: number; g: number; b: number } {
+  const c = goldifyRodColor((r << 16) | (g << 8) | b);
+  return {
+    r: (c >> 16) & 0xff,
+    g: (c >> 8) & 0xff,
+    b: c & 0xff,
+  };
+}
+
+export function rainbowifyRgbChannels(
+  r: number,
+  g: number,
+  b: number,
+  hueOffset = 0
+): { r: number; g: number; b: number } {
+  const c = rainbowifyRodColor((r << 16) | (g << 8) | b, hueOffset);
+  return {
+    r: (c >> 16) & 0xff,
+    g: (c >> 8) & 0xff,
+    b: c & 0xff,
+  };
+}
+
+/** Temporarily remap fill/line colors to gold while drawing a rod. */
+function withMasteryGoldRodDraw(
+  g: Phaser.GameObjects.Graphics,
+  draw: () => void
+): void {
+  const origFill = g.fillStyle.bind(g);
+  const origLine = g.lineStyle.bind(g);
+  g.fillStyle = ((color: number, alpha?: number) =>
+    origFill(goldifyRodColor(color), alpha ?? 1)) as typeof g.fillStyle;
+  g.lineStyle = ((
+    lineWidth: number,
+    color: number = 0,
+    alpha?: number
+  ) => origLine(lineWidth, goldifyRodColor(color), alpha ?? 1)) as typeof g.lineStyle;
+  try {
+    draw();
+  } finally {
+    g.fillStyle = origFill;
+    g.lineStyle = origLine;
+  }
+}
+
+/** Temporarily remap fill/line colors to rainbow while drawing a rod. */
+function withMasteryRainbowRodDraw(
+  g: Phaser.GameObjects.Graphics,
+  draw: () => void
+): void {
+  let n = 0;
+  const origFill = g.fillStyle.bind(g);
+  const origLine = g.lineStyle.bind(g);
+  g.fillStyle = ((color: number, alpha?: number) => {
+    n += 37;
+    return origFill(rainbowifyRodColor(color, n), alpha ?? 1);
+  }) as typeof g.fillStyle;
+  g.lineStyle = ((
+    lineWidth: number,
+    color: number = 0,
+    alpha?: number
+  ) => {
+    n += 41;
+    return origLine(lineWidth, rainbowifyRodColor(color, n), alpha ?? 1);
+  }) as typeof g.lineStyle;
+  try {
+    draw();
+  } finally {
+    g.fillStyle = origFill;
+    g.lineStyle = origLine;
+  }
+}
 
 export function rodAnimStyleReady(scene: Phaser.Scene, style: RodDrawStyle): boolean {
   return scene.textures.exists(`player_fish_${style}_0`);
@@ -173,6 +347,16 @@ export function ensurePlayerRodArt(scene: Phaser.Scene): void {
       return;
     }
   }
+  for (const style of MASTERY_GOLD_ROD_STYLES) {
+    if (!scene.textures.exists(`player_fish_mg_${style}_0`)) {
+      generatePlayerArt(scene);
+      return;
+    }
+    if (!scene.textures.exists(`player_fish_rb_${style}_0`)) {
+      generatePlayerArt(scene);
+      return;
+    }
+  }
 }
 
 export function rodStyleFromItemId(itemId: string): RodDrawStyle {
@@ -180,6 +364,8 @@ export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "firm_rod") return "firm";
   if (itemId === "amber_rod") return "amber";
   if (itemId === "wildflower_rod") return "wildflower";
+  if (itemId === "dusty_rod") return "dusty";
+  if (itemId === "fossil_rod") return "fossil";
   if (itemId === "zeus_rod") return "zeus";
   if (itemId === "coral_rod") return "coral";
   if (itemId === "augment_rod") return "augment";
@@ -194,6 +380,7 @@ export function rodStyleFromItemId(itemId: string): RodDrawStyle {
   if (itemId === "star_line_rod") return "star_line";
   if (itemId === "voidharvester_rod") return "voidharvester";
   if (itemId === "paint_brush_rod") return "paint_brush";
+  if (itemId === "paint_brush_composition_rod") return "paint_brush";
   return "starter";
 }
 
@@ -231,6 +418,9 @@ export function rodStyleForSkin(
       return "rubber_duck";
     case "horizonbreaker":
       return "horizonbreaker";
+    case "golf_club":
+    case "golf_club_composition":
+      return "golf_club";
     case "gallery":
       return "hidden";
     default:
@@ -258,6 +448,10 @@ export type PlayerPose = {
   tipY?: number;
   /** Draw rod behind the body (windup behind the back). */
   rodBehind?: boolean;
+  /** Bake mastery-gold palette remapping on the held rod. */
+  masteryGold?: boolean;
+  /** Bake mastery-rainbow palette remapping on the held rod. */
+  masteryRainbow?: boolean;
 };
 
 /** Higher-detail side-view cubic character frames + animations. */
@@ -468,6 +662,89 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
       put(`player_fish_${style}_${i}`);
     });
   }
+
+  // Mastery-gold variants — same silhouettes, gold-remapped rod colors
+  for (const style of MASTERY_GOLD_ROD_STYLES) {
+    idle.forEach((pose, i) => {
+      g.clear();
+      drawPlayerFrame(g, {
+        ...withCarry(pose),
+        rodStyle: style,
+        masteryGold: true,
+      });
+      put(`player_idle_rod_mg_${style}_${i}`);
+    });
+    walk.forEach((pose, i) => {
+      g.clear();
+      drawPlayerFrame(g, {
+        ...withCarry(pose),
+        rodStyle: style,
+        masteryGold: true,
+      });
+      put(`player_walk_rod_mg_${style}_${i}`);
+    });
+    jump.forEach((pose, i) => {
+      g.clear();
+      drawPlayerFrame(g, {
+        ...withCarry(pose),
+        rodStyle: style,
+        masteryGold: true,
+      });
+      put(`player_jump_rod_mg_${style}_${i}`);
+    });
+    fish.forEach((pose, i) => {
+      g.clear();
+      drawPlayerFrame(g, {
+        ...pose,
+        rodStyle: style,
+        rodPose: "cast",
+        masteryGold: true,
+      });
+      put(`player_fish_mg_${style}_${i}`);
+    });
+  }
+
+  // Mastery-rainbow variants — same silhouettes, prismatic remapped rod colors
+  for (const style of MASTERY_GOLD_ROD_STYLES) {
+    idle.forEach((pose, i) => {
+      g.clear();
+      drawPlayerFrame(g, {
+        ...withCarry(pose),
+        rodStyle: style,
+        masteryRainbow: true,
+      });
+      put(`player_idle_rod_rb_${style}_${i}`);
+    });
+    walk.forEach((pose, i) => {
+      g.clear();
+      drawPlayerFrame(g, {
+        ...withCarry(pose),
+        rodStyle: style,
+        masteryRainbow: true,
+      });
+      put(`player_walk_rod_rb_${style}_${i}`);
+    });
+    jump.forEach((pose, i) => {
+      g.clear();
+      drawPlayerFrame(g, {
+        ...withCarry(pose),
+        rodStyle: style,
+        masteryRainbow: true,
+      });
+      put(`player_jump_rod_rb_${style}_${i}`);
+    });
+    fish.forEach((pose, i) => {
+      g.clear();
+      drawPlayerFrame(g, {
+        ...pose,
+        rodStyle: style,
+        rodPose: "cast",
+        masteryRainbow: true,
+      });
+      put(`player_fish_rb_${style}_${i}`);
+    });
+  }
+
   // Legacy keys → starter (safety for any leftover refs)
   fish.forEach((pose, i) => {
     g.clear();
@@ -501,6 +778,32 @@ export function generatePlayerArt(scene: Phaser.Scene): void {
       armLen: 1,
     });
     put(`player_sit_rod_${style}`);
+  }
+  for (const style of MASTERY_GOLD_ROD_STYLES) {
+    g.clear();
+    drawPlayerFrame(g, {
+      ...sit,
+      rod: true,
+      rodPose: "carry",
+      rodStyle: style,
+      armY: 0,
+      armLen: 1,
+      masteryGold: true,
+    });
+    put(`player_sit_rod_mg_${style}`);
+  }
+  for (const style of MASTERY_GOLD_ROD_STYLES) {
+    g.clear();
+    drawPlayerFrame(g, {
+      ...sit,
+      rod: true,
+      rodPose: "carry",
+      rodStyle: style,
+      armY: 0,
+      armLen: 1,
+      masteryRainbow: true,
+    });
+    put(`player_sit_rod_rb_${style}`);
   }
 
   // Rowing strokes (seated + arm pull)
@@ -545,7 +848,7 @@ function drawPlayerFrame(g: Phaser.GameObjects.Graphics, pose: PlayerPose): void
   const handY = ay + 13;
 
   if (pose.rod && pose.rodBehind && !carrying) {
-    drawHeldRod(g, handX, handY, tipX, tipY, pose.rodStyle ?? "starter");
+    drawPoseRod(g, handX, handY, tipX, tipY, pose);
   }
 
   // Legs — flat blocks
@@ -574,7 +877,7 @@ function drawPlayerFrame(g: Phaser.GameObjects.Graphics, pose: PlayerPose): void
 
   // Cast rod in front of torso when not tucked behind the back
   if (pose.rod && !carrying && !pose.rodBehind) {
-    drawHeldRod(g, handX, handY, tipX, tipY, pose.rodStyle ?? "starter");
+    drawPoseRod(g, handX, handY, tipX, tipY, pose);
   }
 
   // Head — plain cube
@@ -595,14 +898,29 @@ function drawPlayerFrame(g: Phaser.GameObjects.Graphics, pose: PlayerPose): void
   if (carrying) {
     const carryTipX = pose.tipX ?? ox - 4;
     const carryTipY = pose.tipY ?? oy - 6;
-    drawHeldRod(
-      g,
-      handX,
-      handY,
-      carryTipX,
-      carryTipY,
-      pose.rodStyle ?? "starter"
+    drawPoseRod(g, handX, handY, carryTipX, carryTipY, pose);
+  }
+}
+
+function drawPoseRod(
+  g: Phaser.GameObjects.Graphics,
+  handX: number,
+  handY: number,
+  tipX: number,
+  tipY: number,
+  pose: PlayerPose
+): void {
+  const style = pose.rodStyle ?? "starter";
+  if (pose.masteryRainbow) {
+    withMasteryRainbowRodDraw(g, () =>
+      drawHeldRod(g, handX, handY, tipX, tipY, style)
     );
+  } else if (pose.masteryGold) {
+    withMasteryGoldRodDraw(g, () =>
+      drawHeldRod(g, handX, handY, tipX, tipY, style)
+    );
+  } else {
+    drawHeldRod(g, handX, handY, tipX, tipY, style);
   }
 }
 
@@ -747,6 +1065,87 @@ function drawHeldRod(
     g.fillCircle(fx, fy + 2.2, 2.2);
     g.fillStyle(0xffe066);
     g.fillCircle(fx, fy, 1.6);
+    return;
+  }
+
+  if (style === "dusty") {
+    // Fossil rib shaft — bone arcs along the rod
+    g.lineStyle(5, 0x8a6a4a, 1);
+    g.lineBetween(handX, handY, tipX, tipY);
+    g.lineStyle(3, 0xc4a878, 1);
+    g.lineBetween(handX, handY, tipX, tipY);
+    g.lineStyle(1.5, 0xe8d4a8, 0.75);
+    g.lineBetween(handX, handY - 1, tipX, tipY - 1);
+    const dx = tipX - handX;
+    const dy = tipY - handY;
+    for (let i = 1; i <= 5; i++) {
+      const t = i / 6;
+      const bx = handX + dx * t;
+      const by = handY + dy * t;
+      const side = i % 2 === 0 ? 1 : -1;
+      g.lineStyle(2.2, 0xd4c4a0, 1);
+      g.lineBetween(bx, by, bx + side * 5, by - 4);
+      g.lineStyle(1.4, 0xf0e6c8, 0.9);
+      g.lineBetween(bx, by, bx + side * 3.5, by - 2.5);
+    }
+    g.fillStyle(0x6b5340);
+    g.fillRect(handX - 3, handY - 2, 8, 8);
+    g.fillStyle(0xc4a878);
+    g.fillRect(handX - 3, handY + 5, 8, 3);
+    g.fillStyle(0xe8d4a8);
+    g.fillCircle(handX + 1, handY + 6, 3);
+    g.lineStyle(2, 0xd4c4a0);
+    g.strokeCircle(tipX, tipY, 2.8);
+    g.fillStyle(0xf0e6c8);
+    g.fillCircle(tipX, tipY, 1.4);
+    return;
+  }
+
+  if (style === "fossil") {
+    // Bone shaft curved downward with fossil chips
+    const midX = (handX + tipX) / 2 + 4;
+    const midY = (handY + tipY) / 2 + 6;
+    g.lineStyle(6, 0xd8c8a8, 1);
+    g.beginPath();
+    g.moveTo(handX, handY);
+    g.lineTo(midX, midY);
+    g.lineTo(tipX, tipY + 3);
+    g.strokePath();
+    g.lineStyle(3.5, 0xf0e6d0, 1);
+    g.beginPath();
+    g.moveTo(handX, handY);
+    g.lineTo(midX, midY);
+    g.lineTo(tipX, tipY + 3);
+    g.strokePath();
+    g.lineStyle(1.5, 0xfff8e8, 0.8);
+    g.beginPath();
+    g.moveTo(handX, handY - 1);
+    g.lineTo(midX, midY - 1);
+    g.lineTo(tipX, tipY + 2);
+    g.strokePath();
+    const pts = [
+      { x: handX * 0.7 + midX * 0.3, y: handY * 0.7 + midY * 0.3, s: -1 },
+      { x: midX, y: midY, s: 1 },
+      { x: midX * 0.4 + tipX * 0.6, y: midY * 0.4 + (tipY + 3) * 0.6, s: -1 },
+    ];
+    for (const p of pts) {
+      g.fillStyle(0xc4a878, 1);
+      g.fillEllipse(p.x + p.s * 5, p.y - 3, 6, 3.5);
+      g.fillStyle(0x8a7050, 0.9);
+      g.fillEllipse(p.x + p.s * 5, p.y - 3, 3, 1.8);
+      g.lineStyle(1.6, 0xe8dcc0, 1);
+      g.lineBetween(p.x, p.y, p.x + p.s * 6, p.y - 3);
+    }
+    g.fillStyle(0xe8dcc0);
+    g.fillRect(handX - 3, handY - 2, 8, 8);
+    g.fillStyle(0xb8a888);
+    g.fillRect(handX - 3, handY + 5, 8, 3);
+    g.fillStyle(0xa89068);
+    g.fillCircle(handX + 1, handY + 6, 3);
+    g.lineStyle(2, 0xd4c4a0);
+    g.strokeCircle(tipX, tipY + 3, 2.8);
+    g.fillStyle(0xfff8e8);
+    g.fillCircle(tipX, tipY + 3, 1.3);
     return;
   }
 
@@ -948,6 +1347,10 @@ function drawHeldRod(
     drawPaintBrushRod(g, handX, handY, tipX, tipY);
     return;
   }
+  if (style === "golf_club") {
+    drawGolfClubRod(g, handX, handY, tipX, tipY);
+    return;
+  }
 
   if (style === "birthday") {
     drawBirthdayRod(g, handX, handY, tipX, tipY);
@@ -1104,6 +1507,42 @@ function createPlayerAnimations(scene: Phaser.Scene): void {
     }
   }
 
+  for (const style of MASTERY_GOLD_ROD_STYLES) {
+    const idleKey = `player-idle-rod-mg-${style}`;
+    const walkKey = `player-walk-rod-mg-${style}`;
+    const jumpKey = `player-jump-rod-mg-${style}`;
+    if (!anims.exists(idleKey)) {
+      anims.create({
+        key: idleKey,
+        frames: [0, 1, 2, 3].map((i) => ({
+          key: `player_idle_rod_mg_${style}_${i}`,
+        })),
+        frameRate: 3,
+        repeat: -1,
+      });
+    }
+    if (!anims.exists(walkKey)) {
+      anims.create({
+        key: walkKey,
+        frames: [0, 1, 2, 3, 4, 5].map((i) => ({
+          key: `player_walk_rod_mg_${style}_${i}`,
+        })),
+        frameRate: 9,
+        repeat: -1,
+      });
+    }
+    if (!anims.exists(jumpKey)) {
+      anims.create({
+        key: jumpKey,
+        frames: [0, 1, 2].map((i) => ({
+          key: `player_jump_rod_mg_${style}_${i}`,
+        })),
+        frameRate: 8,
+        repeat: 0,
+      });
+    }
+  }
+
   for (const style of rodStyles) {
     const castKey = `player-fish-cast-${style}`;
     const waitKey = `player-fish-wait-${style}`;
@@ -1126,6 +1565,98 @@ function createPlayerAnimations(scene: Phaser.Scene): void {
       frames: [
         { key: `player_fish_${style}_6` },
         { key: `player_fish_${style}_7` },
+      ],
+      frameRate: 3,
+      repeat: -1,
+    });
+  }
+
+  for (const style of MASTERY_GOLD_ROD_STYLES) {
+    const castKey = `player-fish-cast-mg-${style}`;
+    const waitKey = `player-fish-wait-mg-${style}`;
+    if (anims.exists(castKey)) anims.remove(castKey);
+    if (anims.exists(waitKey)) anims.remove(waitKey);
+    anims.create({
+      key: castKey,
+      frames: [
+        { key: `player_fish_mg_${style}_0`, duration: 110 },
+        { key: `player_fish_mg_${style}_1`, duration: 130 },
+        { key: `player_fish_mg_${style}_2`, duration: 150 },
+        { key: `player_fish_mg_${style}_3`, duration: 320 },
+        { key: `player_fish_mg_${style}_4`, duration: 90 },
+        { key: `player_fish_mg_${style}_5`, duration: 160 },
+      ],
+      repeat: 0,
+    });
+    anims.create({
+      key: waitKey,
+      frames: [
+        { key: `player_fish_mg_${style}_6` },
+        { key: `player_fish_mg_${style}_7` },
+      ],
+      frameRate: 3,
+      repeat: -1,
+    });
+  }
+
+  for (const style of MASTERY_GOLD_ROD_STYLES) {
+    const idleKey = `player-idle-rod-rb-${style}`;
+    const walkKey = `player-walk-rod-rb-${style}`;
+    const jumpKey = `player-jump-rod-rb-${style}`;
+    if (!anims.exists(idleKey)) {
+      anims.create({
+        key: idleKey,
+        frames: [0, 1, 2, 3].map((i) => ({
+          key: `player_idle_rod_rb_${style}_${i}`,
+        })),
+        frameRate: 3,
+        repeat: -1,
+      });
+    }
+    if (!anims.exists(walkKey)) {
+      anims.create({
+        key: walkKey,
+        frames: [0, 1, 2, 3, 4, 5].map((i) => ({
+          key: `player_walk_rod_rb_${style}_${i}`,
+        })),
+        frameRate: 9,
+        repeat: -1,
+      });
+    }
+    if (!anims.exists(jumpKey)) {
+      anims.create({
+        key: jumpKey,
+        frames: [0, 1, 2].map((i) => ({
+          key: `player_jump_rod_rb_${style}_${i}`,
+        })),
+        frameRate: 8,
+        repeat: 0,
+      });
+    }
+  }
+
+  for (const style of MASTERY_GOLD_ROD_STYLES) {
+    const castKey = `player-fish-cast-rb-${style}`;
+    const waitKey = `player-fish-wait-rb-${style}`;
+    if (anims.exists(castKey)) anims.remove(castKey);
+    if (anims.exists(waitKey)) anims.remove(waitKey);
+    anims.create({
+      key: castKey,
+      frames: [
+        { key: `player_fish_rb_${style}_0`, duration: 110 },
+        { key: `player_fish_rb_${style}_1`, duration: 130 },
+        { key: `player_fish_rb_${style}_2`, duration: 150 },
+        { key: `player_fish_rb_${style}_3`, duration: 320 },
+        { key: `player_fish_rb_${style}_4`, duration: 90 },
+        { key: `player_fish_rb_${style}_5`, duration: 160 },
+      ],
+      repeat: 0,
+    });
+    anims.create({
+      key: waitKey,
+      frames: [
+        { key: `player_fish_rb_${style}_6` },
+        { key: `player_fish_rb_${style}_7` },
       ],
       frameRate: 3,
       repeat: -1,

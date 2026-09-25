@@ -40,4 +40,7 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, MenuScene, SavesScene, GameScene, UIScene, ShopScene, BobberShopScene, BackpackShopScene, SkinShopScene, CloudShopScene, AmuletCaveScene],
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+if (import.meta.env.DEV) {
+  (window as unknown as { __GAME?: Phaser.Game }).__GAME = game;
+}

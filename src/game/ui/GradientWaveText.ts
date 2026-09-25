@@ -34,44 +34,55 @@ export function createGradientWaveText(
   };
 }
 
-function lerpColor(
-  a: Phaser.Display.Color,
-  b: Phaser.Display.Color,
-  t: number
-): string {
-  const r = Math.round(Phaser.Math.Linear(a.red, b.red, t));
-  const g = Math.round(Phaser.Math.Linear(a.green, b.green, t));
-  const bl = Math.round(Phaser.Math.Linear(a.blue, b.blue, t));
-  return Phaser.Display.Color.RGBToString(r, g, bl, 0, "#");
-}
-
 /**
  * Swipe a multi-stop color wave across letter groups so several colors
- * show on the same word at once. Returns a stop function.
+ * show on the same word at once. Optionally wave rectangle stroke colors
+ * (e.g. bestiary mystical card outlines). Returns a stop function.
  */
 export function startGradientColorWave(
   scene: Phaser.Scene,
   letterGroups: Phaser.GameObjects.Text[][],
   colorHexes: number[],
-  speed = 0.0016
+  speed = 0.0016,
+  strokeTargets?: Phaser.GameObjects.Rectangle[]
 ): () => void {
   const colors = colorHexes.map((c) => Phaser.Display.Color.ValueToColor(c));
   if (colors.length === 0) return () => undefined;
   let phase = 0;
+
+  const sampleColor = (offset: number): { hex: string; num: number } => {
+    const n = colors.length;
+    const cycle = ((phase - offset) / (Math.PI * 2)) % 1;
+    const u = cycle < 0 ? cycle + 1 : cycle;
+    const scaled = u * n;
+    const i0 = Math.floor(scaled) % n;
+    const i1 = (i0 + 1) % n;
+    const f = scaled - Math.floor(scaled);
+    const a = colors[i0]!;
+    const b = colors[i1]!;
+    const r = Math.round(Phaser.Math.Linear(a.red, b.red, f));
+    const g = Math.round(Phaser.Math.Linear(a.green, b.green, f));
+    const bl = Math.round(Phaser.Math.Linear(a.blue, b.blue, f));
+    return {
+      hex: Phaser.Display.Color.RGBToString(r, g, bl, 0, "#"),
+      num: (r << 16) | (g << 8) | bl,
+    };
+  };
+
   const onUpdate = (_time: number, delta: number) => {
     phase += delta * speed;
-    const n = colors.length;
     for (const letters of letterGroups) {
       for (let i = 0; i < letters.length; i++) {
         const letter = letters[i]!;
         if (!letter.active) continue;
-        const cycle = ((phase - i * 0.55) / (Math.PI * 2)) % 1;
-        const u = cycle < 0 ? cycle + 1 : cycle;
-        const scaled = u * n;
-        const i0 = Math.floor(scaled) % n;
-        const i1 = (i0 + 1) % n;
-        const f = scaled - Math.floor(scaled);
-        letter.setColor(lerpColor(colors[i0]!, colors[i1]!, f));
+        letter.setColor(sampleColor(i * 0.55).hex);
+      }
+    }
+    if (strokeTargets) {
+      for (let i = 0; i < strokeTargets.length; i++) {
+        const card = strokeTargets[i]!;
+        if (!card.active) continue;
+        card.setStrokeStyle(2, sampleColor(i * 0.8).num);
       }
     }
   };

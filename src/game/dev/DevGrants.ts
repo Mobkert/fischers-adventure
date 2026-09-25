@@ -82,10 +82,7 @@ export function applyDevInventoryBootstrap(inventory: InventorySystem): void {
     }
     inventory.stellarSurferAscended = true;
     inventory.astralSurferQuestStage = 8;
-    inventory.surferMasteryRideMs = InventorySystem.SURFER_MASTERY_RIDE_MS;
-    inventory.surferMasteryDupes = InventorySystem.SURFER_MASTERY_DUPE_GOAL;
-    inventory.surferMasteryEventHorizon =
-      InventorySystem.SURFER_MASTERY_EVENT_HORIZON_GOAL;
+    inventory.grantRodMasteryXp("test_rod", 999999);
     inventory.equipRod("test_rod");
     inventory.ensureSurferMasteryRewards();
     localStorage.setItem(surferMasteryKey, "1");

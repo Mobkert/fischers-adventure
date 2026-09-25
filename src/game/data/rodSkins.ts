@@ -17,7 +17,9 @@ export type RodSkinId =
   | "hyperboreal"
   | "hyperthermic"
   | "rubber_duck"
-  | "horizonbreaker";
+  | "horizonbreaker"
+  | "golf_club"
+  | "golf_club_composition";
 
 export type SkinCrateKind = "collectors" | "frostpeak";
 
@@ -269,6 +271,40 @@ export const ROD_SKINS: Record<RodSkinId, RodSkinDef> = {
     layout: { ...ROD_ICON_LAYOUT },
     overlay: false,
     drawStyle: "horizonbreaker",
+  },
+  golf_club: {
+    id: "golf_club",
+    rodId: "paint_brush_rod",
+    label: "Golf Club",
+    description:
+      "Den's limited iron — fairway catch UI, golf-ball drops, green bar, white line.",
+    textureKey: "skin_golf_club",
+    crateWeight: 0,
+    cratePool: null,
+    layout: { ...ROD_ICON_LAYOUT },
+    overlay: false,
+    drawStyle: "golf_club",
+    limitedEdition: {
+      obtainableWindow: "Den's Dustspire quest — limited",
+      currentlyObtainable: true,
+    },
+  },
+  golf_club_composition: {
+    id: "golf_club_composition",
+    rodId: "paint_brush_composition_rod",
+    label: "Golf Club",
+    description:
+      "Den's limited iron for Composition VII — same fairway look as the Starry Night Golf Club.",
+    textureKey: "skin_golf_club",
+    crateWeight: 0,
+    cratePool: null,
+    layout: { ...ROD_ICON_LAYOUT },
+    overlay: false,
+    drawStyle: "golf_club",
+    limitedEdition: {
+      obtainableWindow: "Den's Dustspire quest — limited",
+      currentlyObtainable: true,
+    },
   },
 };
 

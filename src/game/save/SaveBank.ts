@@ -6,6 +6,8 @@ import {
   InventorySlot,
   FishMutationId,
   FishSizeId,
+  FishHabitat,
+  BESTIARY_AREAS,
   MUTATIONS,
   isBestiarySpecies,
   FISH_SIZES,
@@ -23,10 +25,16 @@ import {
   normalizeFrostpeakEpicRods,
   normalizeFrostpeakStage,
 } from "../systems/FrostpeakQuest";
+import { normalizeStevenQuestStage } from "../systems/StevenQuest";
+import { normalizeDenQuestStage } from "../systems/DenQuest";
 import { normalizeVaultGemsPlaced } from "../systems/VaultGemQuest";
 import { normalizeActiveFishQuest } from "../systems/FishQuest";
 import { normalizeAshencastQuestStage } from "../systems/AshencastQuest";
 import type { PromoCodeId } from "../systems/PromoCodes";
+import {
+  normalizeRodMasteryMap,
+  type RodMasteryProgress,
+} from "../systems/RodMastery";
 
 const SAVES_STORAGE_KEY = "fischers_adventure_saves_v1";
 export const SAVE_SLOT_COUNT = 5;
@@ -57,6 +65,8 @@ export interface SaveData {
   bestiaryFound: ItemId[];
   /** Discovered fish whose unlock reward was already claimed. */
   bestiaryClaimed: ItemId[];
+  /** Habitats whose tab-completion bobber reward was claimed. */
+  bestiaryAreaRewardsClaimed: import("../data/items").FishHabitat[];
   /** Augment Rod permanent upgrade counts. */
   augmentUpgrades: AugmentUpgrades;
   /** Boats owned forever once purchased. */
@@ -67,6 +77,18 @@ export interface SaveData {
   weatherId: WeatherId;
   /** Frostpeak Hermit quest: 0 not started … 4 cave open. */
   frostpeakQuestStage: import("../systems/FrostpeakQuest").FrostpeakQuestStage;
+  /** Dustspire Steven quest: 0 not started … 6 fossil rod claimed. */
+  stevenQuestStage: import("../systems/StevenQuest").StevenQuestStage;
+  /** Decayed Nautilus caught with Dusty Rod during Steven quest 2. */
+  stevenDecayedNautilusCaught: number;
+  /** Unlocked Paint Bomb trade after Steven quest 3. */
+  stevenPaintBombRecipe: boolean;
+  /** Paint Bomb trade in progress (can't start another until done). */
+  stevenPaintBombActive: boolean;
+  /** Dustspire Den quest: 0 locked · 1 catching · 2 golf club claimed. */
+  denQuestStage: import("../systems/DenQuest").DenQuestStage;
+  /** Painted coconuts caught with a Paint Brush during Den quest. */
+  denPaintedCoconutsCaught: number;
   /** Rods that have landed an epic during Frostpeak quest 2. */
   frostpeakEpicRods: ItemId[];
   /** Legendary caught with Wildflower during Frostpeak quest 2. */
@@ -127,20 +149,22 @@ export interface SaveData {
   curioStockSave: import("../systems/CurioTraderStock").CurioStockSave | null;
   /** One-time promo codes redeemed from Code Guy. */
   redeemedPromoCodes: import("../systems/PromoCodes").PromoCodeId[];
-  /** Recoil Rod mastery — fish caught while Recoil is equipped (archived feature). */
+  /** Recoil Rod mastery — fish caught while Recoil is equipped (legacy; unlocks now use rod levels). */
   recoilMasteryCatches: number;
-  /** Recoil Rod mastery — Blasted-mutation fish sold. */
+  /** Recoil Rod mastery — Blasted-mutation fish sold (legacy). */
   recoilMasteryAshSold: number;
-  /** Portal Rod mastery — Legendaries caught with Portal equipped. */
+  /** Portal Rod mastery — Legendaries caught with Portal equipped (legacy). */
   portalMasteryLegendaries: number;
-  /** Portal Rod mastery — Tide Compass warps while Portal equipped. */
+  /** Portal Rod mastery — Tide Compass warps while Portal equipped (legacy). */
   portalMasteryTideUses: number;
-  /** Stellar Surfer mastery — cumulative ms riding the board. */
+  /** Stellar Surfer mastery — cumulative ms riding the board (legacy). */
   surferMasteryRideMs: number;
-  /** Stellar Surfer mastery — black-hole duplicates landed. */
+  /** Stellar Surfer mastery — black-hole duplicates landed (legacy). */
   surferMasteryDupes: number;
-  /** Stellar Surfer mastery — Event Horizon catches. */
+  /** Stellar Surfer mastery — Event Horizon catches (legacy). */
   surferMasteryEventHorizon: number;
+  /** Per-rod XP mastery: level 1–20 + xp into current level. */
+  rodMastery: Record<string, { level: number; xp: number }>;
   updatedAt: number;
 }
 
@@ -221,6 +245,18 @@ function parseFishIdList(raw: unknown): ItemId[] {
   return [...new Set(out)];
 }
 
+function parseBestiaryAreaRewards(raw: unknown): FishHabitat[] {
+  if (!Array.isArray(raw)) return [];
+  const valid = new Set(BESTIARY_AREAS.map((a) => a.id));
+  const out: FishHabitat[] = [];
+  for (const id of raw) {
+    if (typeof id === "string" && valid.has(id as FishHabitat)) {
+      out.push(id as FishHabitat);
+    }
+  }
+  return [...new Set(out)];
+}
+
 export function defaultSave(): SaveData {
   const hotbar = Array.from({ length: HOTBAR_SIZE }, emptySlot);
   hotbar[0] = { itemId: "starter_rod", count: 1, mutation: null, size: null, keep: false };
@@ -245,11 +281,18 @@ export function defaultSave(): SaveData {
     tutorialDone: false,
     bestiaryFound: [],
     bestiaryClaimed: [],
+    bestiaryAreaRewardsClaimed: [],
     augmentUpgrades: { ...ZERO_AUGMENT_UPGRADES },
     ownedBoats: ["sailboat"],
     gameMinutes: 13 * 60, // 1:00 PM
     weatherId: "clear",
     frostpeakQuestStage: 0,
+    stevenQuestStage: 0,
+    stevenDecayedNautilusCaught: 0,
+    stevenPaintBombRecipe: false,
+    stevenPaintBombActive: false,
+    denQuestStage: 0,
+    denPaintedCoconutsCaught: 0,
     frostpeakEpicRods: [],
     frostpeakWildflowerLegendary: false,
     frostpeakCaveOpen: false,
@@ -287,6 +330,7 @@ export function defaultSave(): SaveData {
     surferMasteryRideMs: 0,
     surferMasteryDupes: 0,
     surferMasteryEventHorizon: 0,
+    rodMastery: {},
     updatedAt: Date.now(),
   };
 }
@@ -404,6 +448,8 @@ function normalizePromoCodes(raw: unknown): PromoCodeId[] {
     "finally_cave_whale",
     "admin_code",
     "starry_night",
+    "dusty",
+    "oasis",
   ];
   if (!Array.isArray(raw)) return [];
   return raw.filter(
@@ -513,6 +559,9 @@ export function cloneSave(raw: unknown): SaveData {
   }
   let bestiaryFound = parseFishIdList(s.bestiaryFound);
   const bestiaryClaimed = parseFishIdList(s.bestiaryClaimed);
+  const bestiaryAreaRewardsClaimed = parseBestiaryAreaRewards(
+    s.bestiaryAreaRewardsClaimed
+  );
   // Retroactively unlock any fish already in inventory (pre-bestiary saves)
   for (const slot of [...hotbar, ...bag]) {
     if (slot.itemId && isBestiarySpecies(slot.itemId)) {
@@ -569,11 +618,24 @@ export function cloneSave(raw: unknown): SaveData {
     tutorialDone: Boolean(s.tutorialDone),
     bestiaryFound,
     bestiaryClaimed,
+    bestiaryAreaRewardsClaimed,
     augmentUpgrades: clampAugmentUpgrades(s.augmentUpgrades),
     ownedBoats: normalizeOwnedBoats(s.ownedBoats),
     gameMinutes: normalizeGameMinutes(s.gameMinutes),
     weatherId: normalizeWeatherId(s.weatherId),
     frostpeakQuestStage: normalizeFrostpeakStage(s.frostpeakQuestStage),
+    stevenQuestStage: normalizeStevenQuestStage(s.stevenQuestStage),
+    stevenDecayedNautilusCaught: Math.max(
+      0,
+      Math.min(99, Math.floor(Number(s.stevenDecayedNautilusCaught) || 0))
+    ),
+    stevenPaintBombRecipe: Boolean(s.stevenPaintBombRecipe),
+    stevenPaintBombActive: Boolean(s.stevenPaintBombActive),
+    denQuestStage: normalizeDenQuestStage(s.denQuestStage),
+    denPaintedCoconutsCaught: Math.max(
+      0,
+      Math.min(99, Math.floor(Number(s.denPaintedCoconutsCaught) || 0))
+    ),
     frostpeakEpicRods: normalizeFrostpeakEpicRods(s.frostpeakEpicRods),
     frostpeakWildflowerLegendary: Boolean(s.frostpeakWildflowerLegendary),
     frostpeakCaveOpen: Boolean(s.frostpeakCaveOpen),
@@ -645,6 +707,10 @@ export function cloneSave(raw: unknown): SaveData {
       0,
       Math.floor(Number(s.surferMasteryEventHorizon) || 0)
     ),
+    rodMastery: normalizeRodMasteryMap(s.rodMastery) as Record<
+      string,
+      RodMasteryProgress
+    >,
     updatedAt: Number(s.updatedAt) || Date.now(),
   };
 }

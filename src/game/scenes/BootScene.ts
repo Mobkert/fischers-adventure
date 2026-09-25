@@ -13,7 +13,7 @@ import {
   VOIDHARVESTER_ICON_W,
   VOIDHARVESTER_ICON_H,
 } from "../art/VoidharvesterArt";
-import { drawPaintBrushRodIcon } from "../art/PaintBrushArt";
+import { drawPaintBrushRodIcon, drawPaintBrushCompositionRodIcon } from "../art/PaintBrushArt";
 import { drawStellarSurferIcon } from "../art/StellarSurferArt";
 import { drawStarLineRodIcon } from "../art/StarLineRodArt";
 import { generateCraftStarlightFishIcon } from "../art/CraftIngredientArt";
@@ -22,12 +22,25 @@ import {
   generateTerrainTextures,
 } from "../world/WorldDecor";
 import { generateAshencastTreeTextures, generateAshencastHouseTextures } from "../world/AshencastIsland";
-import { generatePlayerArt } from "../entities/PlayerArt";
+import {
+  generatePlayerArt,
+  goldifyRgbChannels,
+  masteryGoldIconKey,
+  masteryRainbowIconKey,
+  rainbowifyRgbChannels,
+} from "../entities/PlayerArt";
 import { generateBoatArt } from "../entities/BoatArt";
-import { generateMerchantTexture, generateCodeGuyTexture, generateGreenShirtNpcTexture } from "../entities/FishMerchant";
+import {
+  generateMerchantTexture,
+  generateCodeGuyTexture,
+  generateGreenShirtNpcTexture,
+  generateBlueShirtNpcTexture,
+  generateDenNpcTexture,
+} from "../entities/FishMerchant";
 import { generateHatTextures } from "./hatTextures";
 import { generateRodSkinTextures } from "../art/RodSkinArt";
 import { generateBaitTextures } from "../art/BaitArt";
+import { ITEMS, ROD_ITEM_IDS } from "../data/items";
 
 /** Detailed fishing-rod icons (handle bottom-left → tip top-right). */
 export function generateRodTextures(scene: Phaser.Scene): void {
@@ -214,6 +227,97 @@ export function generateRodTextures(scene: Phaser.Scene): void {
   g.fillStyle(0xfde68a);
   g.fillCircle(fx, fy, 2.2);
   g.generateTexture("rod_wildflower", S, S);
+
+  // —— Dusty rod: fossil-rib blank (sandstone + bone ribs) ——
+  g.clear();
+  g.fillStyle(0x000000, 0.18);
+  g.fillEllipse(22, 56 + IPY, 28, 8);
+  g.lineStyle(5, 0x8a6840);
+  g.lineBetween(12, 52, 50, 12);
+  g.lineStyle(3, 0xc4a878);
+  g.lineBetween(14, 50, 48, 14);
+  g.lineStyle(1.5, 0xe8d4a0, 0.8);
+  g.lineBetween(18, 46, 46, 16);
+  // fossil rib wraps
+  g.lineStyle(2.2, 0xf0e8d0);
+  g.lineBetween(18, 46, 26, 42);
+  g.lineBetween(26, 38, 34, 34);
+  g.lineBetween(34, 30, 42, 26);
+  g.lineStyle(1.6, 0xd8c8a0);
+  g.lineBetween(20, 44, 28, 40);
+  g.lineBetween(28, 36, 36, 32);
+  g.lineBetween(36, 28, 44, 24);
+  g.fillStyle(0xa88858);
+  g.fillRoundedRect(8, 44, 14, 12, 3);
+  g.fillStyle(0xe8dcc0);
+  g.fillRect(8, 54, 14, 3);
+  g.fillStyle(0xc4a060);
+  g.fillRect(18, 40, 5, 6);
+  g.lineStyle(2, 0xf5ecd8);
+  g.strokeCircle(50, 12, 3.5);
+  g.fillStyle(0xfff8e8);
+  g.fillCircle(50, 12, 1.2);
+  // rib tip cluster
+  g.lineStyle(2, 0xf0e6d0);
+  g.lineBetween(54, 8 + IPY, 60, 4 + IPY);
+  g.lineBetween(54, 10 + IPY, 61, 10 + IPY);
+  g.lineBetween(54, 12 + IPY, 60, 16 + IPY);
+  g.fillStyle(0xe8dcc8);
+  g.fillCircle(58, 10 + IPY, 2);
+  g.generateTexture("rod_dusty", S, S);
+
+  // —— Fossil rod: bone blank curved downward, fossil chips sticking out ——
+  g.clear();
+  g.fillStyle(0x000000, 0.18);
+  g.fillEllipse(22, 56 + IPY, 28, 8);
+  // curved downward shaft (quadratic-ish via segments)
+  g.lineStyle(6, 0xd8c8a8);
+  g.lineBetween(12, 50, 22, 38);
+  g.lineBetween(22, 38, 34, 30);
+  g.lineBetween(34, 30, 48, 28);
+  g.lineStyle(4, 0xf0e6d0);
+  g.lineBetween(13, 49, 23, 37);
+  g.lineBetween(23, 37, 35, 29);
+  g.lineBetween(35, 29, 47, 27);
+  g.lineStyle(1.8, 0xfff8e8, 0.85);
+  g.lineBetween(15, 47, 24, 36);
+  g.lineBetween(24, 36, 36, 28);
+  g.lineBetween(36, 28, 46, 26);
+  // fossil chips sticking out
+  const fossils: [number, number, number][] = [
+    [20, 42, -1],
+    [28, 34, 1],
+    [36, 30, -1],
+    [44, 28, 1],
+  ];
+  for (const [fx, fy, side] of fossils) {
+    g.fillStyle(0xc4a878);
+    g.fillEllipse(fx + side * 5, fy - 2, 7, 4);
+    g.fillStyle(0x8a7050);
+    g.fillEllipse(fx + side * 5, fy - 2, 3.5, 2);
+    g.lineStyle(1.5, 0xe8dcc0);
+    g.lineBetween(fx, fy, fx + side * 7, fy - 3);
+  }
+  // bone handle
+  g.fillStyle(0xe8dcc0);
+  g.fillRoundedRect(7, 44, 15, 13, 3);
+  g.fillStyle(0xb8a888);
+  g.fillRect(7, 54, 15, 3);
+  g.fillStyle(0xa89068);
+  g.fillRect(18, 40, 5, 6);
+  // tip eyelet lower (curved down)
+  g.lineStyle(2.2, 0xd4c4a0);
+  g.strokeCircle(50, 27, 3.5);
+  g.fillStyle(0xfff8e8);
+  g.fillCircle(50, 27, 1.2);
+  // tip fossil cluster
+  g.lineStyle(2, 0xe8dcc0);
+  g.lineBetween(54, 24 + IPY, 61, 20 + IPY);
+  g.lineBetween(54, 27 + IPY, 62, 27 + IPY);
+  g.lineBetween(54, 30 + IPY, 60, 34 + IPY);
+  g.fillStyle(0xc4a878);
+  g.fillCircle(59, 27 + IPY, 2.2);
+  g.generateTexture("rod_fossil", S, S);
 
   // —— Zeus rod: storm blue blank, gold lightning wraps ——
   g.clear();
@@ -430,6 +534,10 @@ export function generateRodTextures(scene: Phaser.Scene): void {
   drawPaintBrushRodIcon(g);
   g.generateTexture("rod_paint_brush", S, S);
 
+  g.clear();
+  drawPaintBrushCompositionRodIcon(g);
+  g.generateTexture("rod_paint_brush_composition", S, S);
+
   // —— Stellar Surfer: galactic surfboard icon ——
   g.clear();
   drawStellarSurferIcon(g);
@@ -451,7 +559,7 @@ function generateAmuletTextures(scene: Phaser.Scene): void {
     metalDark: number;
     glow: number;
     accent: number;
-    style: "celestial" | "moon" | "tempest" | "dusky" | "sun" | "thunder" | "cave";
+    style: "celestial" | "moon" | "tempest" | "dusky" | "sun" | "thunder" | "cave" | "paint";
   };
   const specs: Spec[] = [
     {
@@ -523,6 +631,16 @@ function generateAmuletTextures(scene: Phaser.Scene): void {
       glow: 0xa8e8ff,
       accent: 0xe8ffff,
       style: "cave",
+    },
+    {
+      key: "amulet_paint_bomb",
+      gem: 0xff66cc,
+      gemDark: 0xa02060,
+      metal: 0xe8c070,
+      metalDark: 0x8a6030,
+      glow: 0xffb0e0,
+      accent: 0xfff0a0,
+      style: "paint",
     },
   ];
 
@@ -696,6 +814,18 @@ function generateAmuletTextures(scene: Phaser.Scene): void {
       g.fillTriangle(cx + 5, cy + 2, cx + 8, cy, cx + 8, cy + 4);
       g.fillStyle(s.accent, 0.5);
       g.fillCircle(cx - 2, cy + 1.5, 0.7);
+    } else if (s.style === "paint") {
+      // Multicolor paint blobs on gem
+      g.fillStyle(0xff3355, 0.95);
+      g.fillCircle(cx - 3, cy - 2, 3.2);
+      g.fillStyle(0x33aaff, 0.95);
+      g.fillCircle(cx + 3, cy - 1, 3);
+      g.fillStyle(0xffcc33, 0.95);
+      g.fillCircle(cx, cy + 3, 3.4);
+      g.fillStyle(0x66cc44, 0.9);
+      g.fillCircle(cx + 2, cy + 4, 2);
+      g.fillStyle(s.accent, 0.7);
+      g.fillCircle(cx - 4, cy + 2, 1.4);
     }
 
     // Specular highlight
@@ -727,12 +857,109 @@ export function ensureRodIconTextures(scene: Phaser.Scene): void {
     "rod_star_line",
     "rod_voidharvester",
     "rod_paint_brush",
+    "rod_paint_brush_composition",
+    "rod_dusty",
+    "rod_fossil",
   ];
   for (const key of required) {
     if (!scene.textures.exists(key)) {
       generateRodTextures(scene);
+      generateMasteryGoldRodIcons(scene);
+      generateMasteryRainbowRodIcons(scene);
       return;
     }
+  }
+  if (!scene.textures.exists(masteryGoldIconKey("rod_portal"))) {
+    generateMasteryGoldRodIcons(scene);
+  }
+  if (!scene.textures.exists(masteryRainbowIconKey("rod_portal"))) {
+    generateMasteryRainbowRodIcons(scene);
+  }
+}
+
+/**
+ * Bake gold-remapped copies of every rod bag/hotbar icon (`{key}_mg`).
+ * Same silhouette as the stock icon — only colors shift to gold.
+ */
+export function generateMasteryGoldRodIcons(scene: Phaser.Scene): void {
+  const keys = new Set<string>();
+  for (const id of ROD_ITEM_IDS) {
+    const tex = ITEMS[id]?.textureKey;
+    if (tex) keys.add(tex);
+  }
+  for (const key of keys) {
+    if (!scene.textures.exists(key)) continue;
+    const outKey = masteryGoldIconKey(key);
+    const src = scene.textures.get(key).getSourceImage() as
+      | HTMLImageElement
+      | HTMLCanvasElement;
+    const w = src.width;
+    const h = src.height;
+    if (scene.textures.exists(outKey)) {
+      scene.textures.remove(outKey);
+    }
+    const canvasTex = scene.textures.createCanvas(outKey, w, h);
+    if (!canvasTex) continue;
+    const ctx = canvasTex.getContext();
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(src, 0, 0);
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const a = d[i + 3]!;
+      if (a < 8) continue;
+      const g = goldifyRgbChannels(d[i]!, d[i + 1]!, d[i + 2]!);
+      d[i] = g.r;
+      d[i + 1] = g.g;
+      d[i + 2] = g.b;
+    }
+    ctx.putImageData(img, 0, 0);
+    canvasTex.refresh();
+  }
+}
+
+/**
+ * Bake rainbow-remapped copies of every rod bag/hotbar icon (`{key}_rb`).
+ * Same silhouette — colors shift to a saturated prismatic palette.
+ */
+export function generateMasteryRainbowRodIcons(scene: Phaser.Scene): void {
+  const keys = new Set<string>();
+  for (const id of ROD_ITEM_IDS) {
+    const tex = ITEMS[id]?.textureKey;
+    if (tex) keys.add(tex);
+  }
+  for (const key of keys) {
+    if (!scene.textures.exists(key)) continue;
+    const outKey = masteryRainbowIconKey(key);
+    const src = scene.textures.get(key).getSourceImage() as
+      | HTMLImageElement
+      | HTMLCanvasElement;
+    const w = src.width;
+    const h = src.height;
+    if (scene.textures.exists(outKey)) {
+      scene.textures.remove(outKey);
+    }
+    const canvasTex = scene.textures.createCanvas(outKey, w, h);
+    if (!canvasTex) continue;
+    const ctx = canvasTex.getContext();
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(src, 0, 0);
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const a = d[i + 3]!;
+      if (a < 8) continue;
+      // Spread hue by pixel position so the icon reads as rainbow, not flat.
+      const px = (i / 4) % w;
+      const py = Math.floor(i / 4 / w);
+      const hueOff = ((px + py) / Math.max(1, w + h)) * 360;
+      const g = rainbowifyRgbChannels(d[i]!, d[i + 1]!, d[i + 2]!, hueOff);
+      d[i] = g.r;
+      d[i + 1] = g.g;
+      d[i + 2] = g.b;
+    }
+    ctx.putImageData(img, 0, 0);
+    canvasTex.refresh();
   }
 }
 
@@ -746,6 +973,8 @@ function makeTextures(scene: Phaser.Scene): void {
   generateMerchantTexture(scene);
   generateCodeGuyTexture(scene);
   generateGreenShirtNpcTexture(scene);
+  generateBlueShirtNpcTexture(scene);
+  generateDenNpcTexture(scene);
 
   // Bobber fallback only — real art is loaded in preload (do not overwrite keys)
   g.clear();
@@ -756,6 +985,8 @@ function makeTextures(scene: Phaser.Scene): void {
   g.generateTexture("bobber", 16, 16);
 
   generateRodTextures(scene);
+  generateMasteryGoldRodIcons(scene);
+  generateMasteryRainbowRodIcons(scene);
 
   // Vault quest gems
   const gemDefs: { key: string; color: number; highlight: number }[] = [
@@ -1018,6 +1249,12 @@ export class BootScene extends Phaser.Scene {
     this.load.image("nautilus", "images/nautilus.png");
     this.load.image("serpent_eel", "images/serpent_eel.png");
     this.load.image("cave_whale", "images/cave_whale.png");
+    this.load.image("coconut", "images/coconut.png");
+    this.load.image("coconut_crab", "images/coconut_crab.png");
+    this.load.image("skeletal_seahorse", "images/skeletal_seahorse.png");
+    this.load.image("decayed_nautilus", "images/decayed_nautilus.png");
+    this.load.image("cactifin", "images/cactifin.png");
+    this.load.image("leopard_shark", "images/leopard_shark.png");
     this.load.image("ashencast_trout", "images/ashencast_trout.png");
     this.load.image("driftwood", "images/driftwood.png");
     this.load.image("ore_cluster", "images/ore_cluster.png");
@@ -1041,6 +1278,12 @@ export class BootScene extends Phaser.Scene {
     this.load.image("bobber_yellow", "images/bobber_yellow.png");
     this.load.image("bobber_grey", "images/bobber_grey.png");
     this.load.image("bobber_inflated", "images/bobber_inflated.png");
+    this.load.image("bobber_fish_head", "images/bobber_fish_head.png");
+    this.load.image("bobber_exp", "images/bobber_exp.png");
+    this.load.image("bobber_starfish", "images/bobber_starfish.png");
+    this.load.image("bobber_anchor", "images/bobber_anchor.png");
+    this.load.image("bobber_ruby", "images/bobber_ruby.png");
+    this.load.image("bobber_shell", "images/bobber_shell.png");
     this.load.image("forge_sword", "images/forge_sword.png");
     this.load.image("forge_axe", "images/forge_axe.png");
     this.load.image("lure_green_fish", "images/lure_green_fish.png");

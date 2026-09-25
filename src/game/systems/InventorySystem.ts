@@ -17,6 +17,8 @@ import {
   sizeSellMult,
   BESTIARY_CLAIM_REWARD,
   BESTIARY_AREAS,
+  BESTIARY_AREA_COMPLETION_COINS,
+  BESTIARY_AREA_REWARD_BOBBER,
   FishHabitat,
   BASE_ATTRACT_RADIUS,
   backpackSlotCount,
@@ -31,6 +33,7 @@ import {
   formatCraftIngredientLabel,
   fishMeetsMinRarity,
   isMerchantSellable,
+  isBestiarySpecies,
   ORE_CLUSTER_VENDOR_PRICE,
   ORE_CLUSTER_VENDOR_STOCK_MAX,
   ORE_CLUSTER_VENDOR_RESTOCK_MS,
@@ -63,11 +66,37 @@ import {
   missingEpicRods,
   rodDisplayName,
 } from "./FrostpeakQuest";
+import type { StevenQuestStage } from "./StevenQuest";
+import {
+  STEVEN_DECAYED_NAUTILUS_GOAL,
+  STEVEN_FOSSIL_ROD_PRICE,
+} from "./StevenQuest";
+import {
+  DEN_PAINTED_COCONUT_GOAL,
+  DEN_QUEST_MASTERY_LEVEL,
+  DEN_QUEST_ROD,
+  isPaintBrushRod,
+  normalizeDenQuestStage,
+  type DenQuestStage,
+} from "./DenQuest";
 import {
   ANVIL_PIECE_IDS,
   AshencastQuestStage,
 } from "./AshencastQuest";
 import type { PromoCodeId } from "./PromoCodes";
+import {
+  applyRodLevelStats,
+  emptyRodMastery,
+  fishMasteryXp,
+  grantRodXp,
+  ROD_MASTERY_ABILITY_LEVEL,
+  ROD_MASTERY_GOLD_LEVEL,
+  ROD_MASTERY_RAINBOW_LEVEL,
+  ROD_MASTERY_MAX_LEVEL,
+  clampRodMastery,
+  type RodMasteryProgress,
+  type RodXpGrantResult,
+} from "./RodMastery";
 import {
   isRodSkinId,
   ROD_SKINS,
@@ -154,6 +183,12 @@ export class InventorySystem {
   frostpeakEpicRods: ItemId[] = [];
   frostpeakWildflowerLegendary = false;
   frostpeakCaveOpen = false;
+  stevenQuestStage: StevenQuestStage = 0;
+  stevenDecayedNautilusCaught = 0;
+  stevenPaintBombRecipe = false;
+  stevenPaintBombActive = false;
+  denQuestStage: DenQuestStage = 0;
+  denPaintedCoconutsCaught = 0;
   vaultGemQuestAccepted = false;
   vaultGemsPlaced: VaultGemId[] = [];
   caveMerchantEarned = 0;
@@ -183,7 +218,7 @@ export class InventorySystem {
   curioStockSave: import("./CurioTraderStock").CurioStockSave | null = null;
   redeemedPromoCodes: PromoCodeId[] = [];
   /**
-   * Recoil mastery progress (set RECOIL_MASTERY_ENABLED to ship).
+   * Legacy mastery counters (kept for save migration; unlocks use rod levels).
    * recoilMasteryAshSold stores Blasted fish sold count.
    */
   recoilMasteryCatches = 0;
@@ -193,12 +228,16 @@ export class InventorySystem {
   surferMasteryRideMs = 0;
   surferMasteryDupes = 0;
   surferMasteryEventHorizon = 0;
+  /** Per-rod XP mastery (level 1–20). */
+  rodMastery: Record<string, RodMasteryProgress> = {};
   backpackId: ItemId = "backpack_starter";
 
   selectedHotbarIndex = 0;
   coins = 0;
   bestiaryFound: ItemId[] = [];
   bestiaryClaimed: ItemId[] = [];
+  /** Habitats whose completion bobber + $2500 reward was claimed. */
+  bestiaryAreaRewardsClaimed: FishHabitat[] = [];
   augmentUpgrades: AugmentUpgrades = { ...ZERO_AUGMENT_UPGRADES };
 
   constructor(save?: SaveData) {
@@ -251,6 +290,22 @@ export class InventorySystem {
     this.frostpeakEpicRods = [...save.frostpeakEpicRods];
     this.frostpeakWildflowerLegendary = save.frostpeakWildflowerLegendary;
     this.frostpeakCaveOpen = save.frostpeakCaveOpen;
+    this.stevenQuestStage = save.stevenQuestStage;
+    this.stevenDecayedNautilusCaught = save.stevenDecayedNautilusCaught;
+    this.stevenPaintBombRecipe = save.stevenPaintBombRecipe;
+    this.stevenPaintBombActive = save.stevenPaintBombActive;
+    this.denQuestStage = normalizeDenQuestStage(save.denQuestStage);
+    this.denPaintedCoconutsCaught = Math.max(
+      0,
+      Math.min(
+        DEN_PAINTED_COCONUT_GOAL,
+        Math.floor(Number(save.denPaintedCoconutsCaught) || 0)
+      )
+    );
+    // Old saves: stage 6 meant fossil rod already claimed → bump to 7.
+    if (this.stevenQuestStage === 6 && this.ownsRod("fossil_rod")) {
+      this.stevenQuestStage = 7;
+    }
     this.vaultGemQuestAccepted = save.vaultGemQuestAccepted;
     this.vaultGemsPlaced = [...save.vaultGemsPlaced];
     this.caveMerchantEarned = save.caveMerchantEarned;
@@ -317,6 +372,8 @@ export class InventorySystem {
     this.surferMasteryRideMs = save.surferMasteryRideMs ?? 0;
     this.surferMasteryDupes = save.surferMasteryDupes ?? 0;
     this.surferMasteryEventHorizon = save.surferMasteryEventHorizon ?? 0;
+    this.rodMastery = { ...(save.rodMastery ?? {}) };
+    this.migrateLegacyMasteryToLevels();
     this.backpackId = save.backpackId;
     this.selectedHotbarIndex = save.selectedHotbarIndex;
     this.hotbar = save.hotbar.map((s) => ({ ...s }));
@@ -332,6 +389,9 @@ export class InventorySystem {
     }
     this.bestiaryFound = [...save.bestiaryFound];
     this.bestiaryClaimed = [...save.bestiaryClaimed];
+    this.bestiaryAreaRewardsClaimed = [
+      ...(save.bestiaryAreaRewardsClaimed ?? []),
+    ];
     this.augmentUpgrades = { ...save.augmentUpgrades };
     // Keep bag / equipment bag / bestiary / tide compass consistent
     this.hotbar[1] = {
@@ -369,6 +429,8 @@ export class InventorySystem {
       keep: false,
     };
     this.stripUnearnedAstralRods();
+    this.ensureMasteryGoldSkins();
+    this.ensureMasteryRainbowSkins();
     this.ensureSurferMasteryRewards();
   }
 
@@ -442,6 +504,7 @@ export class InventorySystem {
       tutorialDone: extra.tutorialDone,
       bestiaryFound: [...this.bestiaryFound],
       bestiaryClaimed: [...this.bestiaryClaimed],
+      bestiaryAreaRewardsClaimed: [...this.bestiaryAreaRewardsClaimed],
       augmentUpgrades: { ...this.augmentUpgrades },
       gameMinutes: extra.gameMinutes,
       weatherId: extra.weatherId,
@@ -449,6 +512,12 @@ export class InventorySystem {
       frostpeakEpicRods: [...this.frostpeakEpicRods],
       frostpeakWildflowerLegendary: this.frostpeakWildflowerLegendary,
       frostpeakCaveOpen: this.frostpeakCaveOpen,
+      stevenQuestStage: this.stevenQuestStage,
+      stevenDecayedNautilusCaught: this.stevenDecayedNautilusCaught,
+      stevenPaintBombRecipe: this.stevenPaintBombRecipe,
+      stevenPaintBombActive: this.stevenPaintBombActive,
+      denQuestStage: this.denQuestStage,
+      denPaintedCoconutsCaught: this.denPaintedCoconutsCaught,
       vaultGemQuestAccepted: this.vaultGemQuestAccepted,
       vaultGemsPlaced: [...this.vaultGemsPlaced],
       caveMerchantEarned: this.caveMerchantEarned,
@@ -493,6 +562,12 @@ export class InventorySystem {
       surferMasteryRideMs: this.surferMasteryRideMs,
       surferMasteryDupes: this.surferMasteryDupes,
       surferMasteryEventHorizon: this.surferMasteryEventHorizon,
+      rodMastery: Object.fromEntries(
+        Object.entries(this.rodMastery).map(([id, p]) => [
+          id,
+          { level: p.level, xp: p.xp },
+        ])
+      ),
       updatedAt: Date.now(),
     });
   }
@@ -504,65 +579,54 @@ export class InventorySystem {
   }
 
   /**
-   * Recoil Rod mastery (rapid 3rd-kick burst).
-   * Archived for now — flip to true when shipping the feature.
+   * Recoil Rod mastery ability (rapid 3rd-kick burst).
+   * Unlocks at rod level 15.
    */
   static readonly RECOIL_MASTERY_ENABLED = true;
+  /** @deprecated Legacy goal — unlocks use rod levels now. */
   static readonly RECOIL_MASTERY_CATCH_GOAL = 50;
+  /** @deprecated Legacy goal — unlocks use rod levels now. */
   static readonly RECOIL_MASTERY_BLASTED_SELL_GOAL = 30;
 
   isRecoilBurstMasteryUnlocked(): boolean {
     if (!InventorySystem.RECOIL_MASTERY_ENABLED) return false;
-    return (
-      this.recoilMasteryCatches >= InventorySystem.RECOIL_MASTERY_CATCH_GOAL &&
-      this.recoilMasteryAshSold >=
-        InventorySystem.RECOIL_MASTERY_BLASTED_SELL_GOAL
-    );
+    return this.getRodMasteryLevel("recoil_rod") >= ROD_MASTERY_ABILITY_LEVEL;
   }
 
-  recordRecoilMasteryCatch(count = 1): void {
-    if (!InventorySystem.RECOIL_MASTERY_ENABLED || count <= 0) return;
-    this.recoilMasteryCatches += count;
-  }
+  /** @deprecated No longer used for unlock progress. */
+  recordRecoilMasteryCatch(_count = 1): void {}
 
-  /** Count Blasted fish sold toward Recoil mastery (stored in recoilMasteryAshSold). */
-  recordBlastedFishSold(count = 1): void {
-    if (!InventorySystem.RECOIL_MASTERY_ENABLED || count <= 0) return;
-    this.recoilMasteryAshSold += count;
-  }
+  /** @deprecated No longer used for unlock progress. */
+  recordBlastedFishSold(_count = 1): void {}
 
   static readonly PORTAL_MASTERY_ENABLED = true;
+  /** @deprecated Legacy goal — unlocks use rod levels now. */
   static readonly PORTAL_MASTERY_LEGENDARY_GOAL = 15;
+  /** @deprecated Legacy goal — unlocks use rod levels now. */
   static readonly PORTAL_MASTERY_TIDE_GOAL = 10;
   static readonly PORTAL_MASTERY_GATE_DUPE_CHANCE = 0.3;
 
   isPortalMasteryUnlocked(): boolean {
     if (!InventorySystem.PORTAL_MASTERY_ENABLED) return false;
-    return (
-      this.portalMasteryLegendaries >=
-        InventorySystem.PORTAL_MASTERY_LEGENDARY_GOAL &&
-      this.portalMasteryTideUses >= InventorySystem.PORTAL_MASTERY_TIDE_GOAL
-    );
+    return this.getRodMasteryLevel("portal_rod") >= ROD_MASTERY_ABILITY_LEVEL;
   }
 
-  recordPortalMasteryLegendary(count = 1): void {
-    if (!InventorySystem.PORTAL_MASTERY_ENABLED || count <= 0) return;
-    this.portalMasteryLegendaries += count;
-  }
+  /** @deprecated No longer used for unlock progress. */
+  recordPortalMasteryLegendary(_count = 1): void {}
 
-  recordPortalMasteryTideUse(count = 1): void {
-    if (!InventorySystem.PORTAL_MASTERY_ENABLED || count <= 0) return;
-    if (this.getEquippedRodId() !== "portal_rod") return;
-    this.portalMasteryTideUses += count;
-  }
+  /** @deprecated No longer used for unlock progress. */
+  recordPortalMasteryTideUse(_count = 1): void {}
 
   static readonly SURFER_MASTERY_ENABLED = true;
+  /** @deprecated Legacy goal — unlocks use rod levels now. */
   static readonly SURFER_MASTERY_RIDE_MS = 5 * 60 * 1000;
+  /** @deprecated Legacy goal — unlocks use rod levels now. */
   static readonly SURFER_MASTERY_DUPE_GOAL = 50;
+  /** @deprecated Legacy goal — unlocks use rod levels now. */
   static readonly SURFER_MASTERY_EVENT_HORIZON_GOAL = 33;
   static readonly SURFER_MASTERY_GRANT_MS = 30_000;
 
-  /** Ascended Surfer only — DEFINED form cannot progress or claim mastery. */
+  /** Ascended Surfer only — DEFINED form cannot claim mastery abilities. */
   canProgressStellarSurferMastery(): boolean {
     return (
       InventorySystem.SURFER_MASTERY_ENABLED &&
@@ -574,23 +638,22 @@ export class InventorySystem {
 
   isStellarSurferMasteryUnlocked(): boolean {
     if (!this.canProgressStellarSurferMastery()) return false;
-    return (
-      this.surferMasteryRideMs >= InventorySystem.SURFER_MASTERY_RIDE_MS &&
-      this.surferMasteryDupes >= InventorySystem.SURFER_MASTERY_DUPE_GOAL &&
-      this.surferMasteryEventHorizon >=
-        InventorySystem.SURFER_MASTERY_EVENT_HORIZON_GOAL
-    );
+    return this.getRodMasteryLevel("test_rod") >= ROD_MASTERY_ABILITY_LEVEL;
   }
 
-  /** Grant Rubber Duck skin when Surfer mastery is complete. */
+  /** Grant Rubber Duck skin when Surfer mastery ability unlocks. */
   ensureSurferMasteryRewards(): void {
     if (!this.isStellarSurferMasteryUnlocked()) return;
     if (!this.ownsRodSkin("rubber_duck")) {
       this.ownedRodSkins.push("rubber_duck");
-      if (
-        !this.activeRodSkins["test_rod"] ||
-        this.activeRodSkins["test_rod"] === "default"
-      ) {
+    }
+    const active = this.activeRodSkins["test_rod"];
+    // Don't override Rainbow (Lv20) or an intentional crate/duck pick.
+    if (active === "mastery_rainbow" || active === "rubber_duck") return;
+    if (!active || active === "default" || active === "mastery_gold") {
+      if (this.ownsMasteryRainbowSkin("test_rod")) {
+        this.activeRodSkins["test_rod"] = "mastery_rainbow";
+      } else {
         this.activeRodSkins["test_rod"] = "rubber_duck";
       }
     }
@@ -603,27 +666,184 @@ export class InventorySystem {
     );
   }
 
-  recordSurferMasteryRideMs(ms: number): void {
-    if (!this.canProgressStellarSurferMastery() || ms <= 0) return;
-    if (this.surferMasteryRideMs >= InventorySystem.SURFER_MASTERY_RIDE_MS) {
+  /** Stellar Surfer board cosmetic from active mastery / duck skin. */
+  getSurferBoardCosmetic(): "default" | "duck" | "gold" | "rainbow" {
+    if (!this.ownsRod("test_rod")) return "default";
+    const skin = this.getActiveRodSkinId("test_rod");
+    if (skin === "mastery_rainbow") return "rainbow";
+    if (skin === "rubber_duck") return "duck";
+    if (skin === "mastery_gold") return "gold";
+    return "default";
+  }
+
+  /** @deprecated No longer used for unlock progress. */
+  recordSurferMasteryRideMs(_ms: number): void {}
+
+  /** @deprecated No longer used for unlock progress. */
+  recordSurferMasteryDupe(_count = 1): void {}
+
+  /** @deprecated No longer used for unlock progress. */
+  recordSurferMasteryEventHorizon(_count = 1): void {}
+
+  getRodMastery(rodId: ItemId): RodMasteryProgress {
+    const existing = this.rodMastery[rodId];
+    if (existing) return clampRodMastery(existing);
+    return emptyRodMastery();
+  }
+
+  getRodMasteryLevel(rodId: ItemId): number {
+    return this.getRodMastery(rodId).level;
+  }
+
+  /**
+   * Default finish glows gold at mastery Lv10+.
+   * Active skin id is "mastery_gold" (also auto-applied on unlock).
+   */
+  isMasteryGoldLookActive(rodId: ItemId): boolean {
+    if (!ITEMS[rodId]?.isRod) return false;
+    return this.getActiveRodSkinId(rodId) === "mastery_gold";
+  }
+
+  isMasteryRainbowLookActive(rodId: ItemId): boolean {
+    if (!ITEMS[rodId]?.isRod) return false;
+    return this.getActiveRodSkinId(rodId) === "mastery_rainbow";
+  }
+
+  /** True when this rod has unlocked the Golden mastery finish. */
+  ownsMasteryGoldSkin(rodId: ItemId): boolean {
+    return this.getRodMasteryLevel(rodId) >= ROD_MASTERY_GOLD_LEVEL;
+  }
+
+  ownsMasteryRainbowSkin(rodId: ItemId): boolean {
+    return this.getRodMasteryLevel(rodId) >= ROD_MASTERY_RAINBOW_LEVEL;
+  }
+
+  /**
+   * Grant catch XP to the equipped rod. Returns null if nothing granted.
+   * Overflow levels automatically; ability unlocks fire at level 15.
+   */
+  grantEquippedRodCatchXp(speciesId: ItemId): RodXpGrantResult | null {
+    const rodId = this.getEquippedRodId();
+    if (!ITEMS[rodId]?.isRod) return null;
+    const xp = fishMasteryXp(speciesId);
+    if (xp <= 0) return null;
+    return this.grantRodMasteryXp(rodId, xp);
+  }
+
+  grantRodMasteryXp(rodId: ItemId, amount: number): RodXpGrantResult {
+    const cur = this.getRodMastery(rodId);
+    // DEFINED Stellar Surfer cannot earn mastery XP.
+    if (rodId === "test_rod" && this.isStellarSurferDefined()) {
+      return {
+        rodId,
+        xpGained: 0,
+        fromLevel: cur.level,
+        fromXp: cur.xp,
+        toLevel: cur.level,
+        toXp: cur.xp,
+        levelsGained: 0,
+        abilityUnlocked: false,
+        maxed: cur.level >= ROD_MASTERY_MAX_LEVEL,
+      };
+    }
+    const progress: RodMasteryProgress = { level: cur.level, xp: cur.xp };
+    const fromLevel = progress.level;
+    const result = grantRodXp(progress, amount, rodId);
+    this.rodMastery[rodId] = progress;
+    if (
+      fromLevel < ROD_MASTERY_GOLD_LEVEL &&
+      progress.level >= ROD_MASTERY_GOLD_LEVEL
+    ) {
+      this.applyMasteryGoldIfDefault(rodId);
+    }
+    if (
+      fromLevel < ROD_MASTERY_RAINBOW_LEVEL &&
+      progress.level >= ROD_MASTERY_RAINBOW_LEVEL
+    ) {
+      this.applyMasteryRainbowUpgrade(rodId);
+    }
+    if (rodId === "test_rod" && progress.level >= ROD_MASTERY_ABILITY_LEVEL) {
+      this.ensureSurferMasteryRewards();
+    }
+    return result;
+  }
+
+  /** Equip Golden when unlocking Lv10 if still on the stock finish. */
+  private applyMasteryGoldIfDefault(rodId: ItemId): void {
+    if (!this.ownsMasteryGoldSkin(rodId)) return;
+    if (this.ownsMasteryRainbowSkin(rodId)) {
+      this.applyMasteryRainbowUpgrade(rodId);
       return;
     }
-    this.surferMasteryRideMs = Math.min(
-      InventorySystem.SURFER_MASTERY_RIDE_MS,
-      this.surferMasteryRideMs + Math.floor(ms)
+    const active = this.activeRodSkins[rodId];
+    if (!active || active === "default") {
+      this.activeRodSkins[rodId] = "mastery_gold";
+    }
+  }
+
+  /** Equip Rainbow at Lv20 over default / gold (max mastery finish). */
+  private applyMasteryRainbowUpgrade(rodId: ItemId): void {
+    if (!this.ownsMasteryRainbowSkin(rodId)) return;
+    const active = this.activeRodSkins[rodId];
+    if (
+      !active ||
+      active === "default" ||
+      active === "mastery_gold"
+    ) {
+      this.activeRodSkins[rodId] = "mastery_rainbow";
+    }
+  }
+
+  /** On load: grant Golden to any rod already at Lv10+ still on default. */
+  private ensureMasteryGoldSkins(): void {
+    for (const rodId of this.ownedRods) {
+      this.applyMasteryGoldIfDefault(rodId);
+    }
+  }
+
+  private ensureMasteryRainbowSkins(): void {
+    for (const rodId of this.ownedRods) {
+      this.applyMasteryRainbowUpgrade(rodId);
+    }
+  }
+
+  /**
+   * Old task-based mastery → seed level 15 so ability unlocks are preserved.
+   */
+  private migrateLegacyMasteryToLevels(): void {
+    const bump = (rodId: ItemId, unlocked: boolean) => {
+      if (!unlocked) return;
+      const cur = this.getRodMastery(rodId);
+      if (cur.level < ROD_MASTERY_ABILITY_LEVEL) {
+        this.rodMastery[rodId] = {
+          level: ROD_MASTERY_ABILITY_LEVEL,
+          xp: 0,
+        };
+      }
+    };
+    bump(
+      "recoil_rod",
+      this.recoilMasteryCatches >= InventorySystem.RECOIL_MASTERY_CATCH_GOAL &&
+        this.recoilMasteryAshSold >=
+          InventorySystem.RECOIL_MASTERY_BLASTED_SELL_GOAL
     );
-    this.ensureSurferMasteryRewards();
-  }
-
-  recordSurferMasteryDupe(count = 1): void {
-    if (!this.canProgressStellarSurferMastery() || count <= 0) return;
-    this.surferMasteryDupes += count;
-    this.ensureSurferMasteryRewards();
-  }
-
-  recordSurferMasteryEventHorizon(count = 1): void {
-    if (!this.canProgressStellarSurferMastery() || count <= 0) return;
-    this.surferMasteryEventHorizon += count;
+    bump(
+      "portal_rod",
+      this.portalMasteryLegendaries >=
+        InventorySystem.PORTAL_MASTERY_LEGENDARY_GOAL &&
+        this.portalMasteryTideUses >= InventorySystem.PORTAL_MASTERY_TIDE_GOAL
+    );
+    bump(
+      "test_rod",
+      this.stellarSurferAscended &&
+        !this.isStellarSurferDefined() &&
+        this.surferMasteryRideMs >= InventorySystem.SURFER_MASTERY_RIDE_MS &&
+        this.surferMasteryDupes >= InventorySystem.SURFER_MASTERY_DUPE_GOAL &&
+        this.surferMasteryEventHorizon >=
+          InventorySystem.SURFER_MASTERY_EVENT_HORIZON_GOAL
+    );
+    this.ensureMasteryGoldSkins();
+    this.ensureMasteryRainbowSkins();
     this.ensureSurferMasteryRewards();
   }
 
@@ -692,6 +912,7 @@ export class InventorySystem {
         lineDepth: 4,
       };
     }
+    rod = applyRodLevelStats(rod, this.getRodMasteryLevel(this.equippedRodId));
     const bob = ITEMS[this.equippedBobberId]?.bobberStats ?? {};
     const lineDepth =
       bob.lineDepthOverride != null
@@ -699,7 +920,7 @@ export class InventorySystem {
         : rod.lineDepth + (bob.lineDepth ?? 0);
     return {
       luck: rod.luck + (bob.luck ?? 0),
-      resilience: rod.resilience,
+      resilience: rod.resilience + (bob.resilience ?? 0),
       control: rod.control + (bob.control ?? 0),
       progressSpeed: rod.progressSpeed + (bob.progressSpeed ?? 0),
       lineDepth,
@@ -709,28 +930,29 @@ export class InventorySystem {
   /** Display stats for a rod (includes Augment upgrades when relevant). */
   getRodDisplayStats(rodId: ItemId): RodStats {
     const base = ITEMS[rodId]?.rodStats ?? { ...ZERO_ROD_STATS };
+    let rod: RodStats;
     if (rodId === "augment_rod") {
-      return applyAugmentUpgrades(base, this.augmentUpgrades);
-    }
-    if (rodId === "test_rod" && this.isStellarSurferDefined()) {
-      return {
+      rod = applyAugmentUpgrades(base, this.augmentUpgrades);
+    } else if (rodId === "test_rod" && this.isStellarSurferDefined()) {
+      rod = {
         luck: Math.floor(base.luck / 2),
         resilience: Math.floor(base.resilience / 2),
         control: base.control,
         progressSpeed: Math.floor(base.progressSpeed / 2),
         lineDepth: Math.max(1, Math.floor(base.lineDepth / 2)),
       };
-    }
-    if (rodId === "portal_rod" && this.isPortalMasteryUnlocked()) {
-      return {
+    } else if (rodId === "portal_rod" && this.isPortalMasteryUnlocked()) {
+      rod = {
         luck: base.luck + 25,
         resilience: base.resilience + 25,
         control: base.control,
         progressSpeed: base.progressSpeed + 25,
         lineDepth: 4,
       };
+    } else {
+      rod = { ...base };
     }
-    return { ...base };
+    return applyRodLevelStats(rod, this.getRodMasteryLevel(rodId));
   }
 
   getAugmentUpgrades(): AugmentUpgrades {
@@ -863,6 +1085,20 @@ export class InventorySystem {
     return bobberMult * rodMult;
   }
 
+  getBobberMasteryXpMult(): number {
+    return ITEMS[this.equippedBobberId]?.bobberStats?.masteryXpMult ?? 1;
+  }
+
+  attractsMutatedOnly(): boolean {
+    return !!ITEMS[this.equippedBobberId]?.bobberStats?.attractMutatedOnly;
+  }
+
+  getBobberRodMutationBonuses(): Partial<Record<FishMutationId, number>> {
+    return (
+      ITEMS[this.equippedBobberId]?.bobberStats?.rodMutationBonuses ?? {}
+    );
+  }
+
   ownsRod(rodId: ItemId): boolean {
     return this.ownedRods.includes(rodId);
   }
@@ -898,7 +1134,7 @@ export class InventorySystem {
   /** Buy a shop rod if affordable and not already owned. */
   buyRod(rodId: ItemId): { ok: boolean; message: string } {
     const def = ITEMS[rodId];
-    if (!def?.isRod || def.buyPrice == null || rodId === "tranquil_rod" || rodId === "recoil_rod" || rodId === "portal_rod" || rodId === "forge_rod" || rodId === "starweaver_rod" || rodId === "birthday_rod" || rodId === "star_line_rod" || rodId === "voidharvester_rod" || rodId === "paint_brush_rod") {
+    if (!def?.isRod || def.buyPrice == null || rodId === "tranquil_rod" || rodId === "recoil_rod" || rodId === "portal_rod" || rodId === "forge_rod" || rodId === "starweaver_rod" || rodId === "birthday_rod" || rodId === "star_line_rod" || rodId === "voidharvester_rod" || rodId === "paint_brush_rod" || rodId === "paint_brush_composition_rod" || rodId === "fossil_rod") {
       return { ok: false, message: "That isn't for sale." };
     }
     if (this.ownsRod(rodId)) {
@@ -1726,6 +1962,17 @@ export class InventorySystem {
     return ITEMS[rodId]?.textureKey ?? "rod";
   }
 
+  /** Bag/hotbar texture for the Golden mastery finish. */
+  getMasteryGoldTextureKey(rodId: ItemId): string {
+    const base = ITEMS[rodId]?.textureKey ?? "rod";
+    return `${base}_mg`;
+  }
+
+  getMasteryRainbowTextureKey(rodId: ItemId): string {
+    const base = ITEMS[rodId]?.textureKey ?? "rod";
+    return `${base}_rb`;
+  }
+
   ownsRodSkin(skinId: string): boolean {
     if (skinId === "gallery") {
       return this.crystalRodSkinOwned || this.ownedRodSkins.includes("gallery");
@@ -1917,12 +2164,40 @@ export class InventorySystem {
         limitedEdition: skin.limitedEdition,
       });
     }
+    if (this.ownsMasteryGoldSkin(rodId)) {
+      options.push({
+        id: "mastery_gold",
+        label: "Golden",
+        textureKey: this.getMasteryGoldTextureKey(rodId),
+        owned: true,
+      });
+    }
+    if (this.ownsMasteryRainbowSkin(rodId)) {
+      options.push({
+        id: "mastery_rainbow",
+        label: "Rainbow",
+        textureKey: this.getMasteryRainbowTextureKey(rodId),
+        owned: true,
+      });
+    }
     return options;
   }
 
   getActiveRodSkinId(rodId: ItemId): string {
     const active = this.activeRodSkins[rodId];
-    if (active && active !== "default" && this.ownsRodSkin(active)) {
+    if (active === "mastery_rainbow" && this.ownsMasteryRainbowSkin(rodId)) {
+      return "mastery_rainbow";
+    }
+    if (active === "mastery_gold" && this.ownsMasteryGoldSkin(rodId)) {
+      return "mastery_gold";
+    }
+    if (
+      active &&
+      active !== "default" &&
+      active !== "mastery_gold" &&
+      active !== "mastery_rainbow" &&
+      this.ownsRodSkin(active)
+    ) {
       return active;
     }
     // Legacy crystal gallery
@@ -1964,6 +2239,18 @@ export class InventorySystem {
 
     if (skinId === "default") {
       delete this.activeRodSkins[rodId];
+      if (rodId === "crystal_rod") this.crystalRodSkinActive = false;
+    } else if (skinId === "mastery_gold") {
+      if (!this.ownsMasteryGoldSkin(rodId)) {
+        return { ok: false, message: "Reach mastery Lv10 for Golden." };
+      }
+      this.activeRodSkins[rodId] = "mastery_gold";
+      if (rodId === "crystal_rod") this.crystalRodSkinActive = false;
+    } else if (skinId === "mastery_rainbow") {
+      if (!this.ownsMasteryRainbowSkin(rodId)) {
+        return { ok: false, message: "Reach mastery Lv20 for Rainbow." };
+      }
+      this.activeRodSkins[rodId] = "mastery_rainbow";
       if (rodId === "crystal_rod") this.crystalRodSkinActive = false;
     } else {
       this.activeRodSkins[rodId] = skinId;
@@ -2140,6 +2427,65 @@ export class InventorySystem {
     return this.bestiaryClaimed.includes(itemId);
   }
 
+  isBestiaryAreaFullyClaimed(habitat: FishHabitat): boolean {
+    const area = BESTIARY_AREAS.find((a) => a.id === habitat);
+    if (!area) return false;
+    return area.fishIds.every((id) => this.isBestiaryClaimed(id));
+  }
+
+  isBestiaryAreaRewardClaimed(habitat: FishHabitat): boolean {
+    return this.bestiaryAreaRewardsClaimed.includes(habitat);
+  }
+
+  canClaimBestiaryAreaReward(habitat: FishHabitat): boolean {
+    return (
+      !!BESTIARY_AREA_REWARD_BOBBER[habitat] &&
+      this.isBestiaryAreaFullyClaimed(habitat) &&
+      !this.isBestiaryAreaRewardClaimed(habitat)
+    );
+  }
+
+  claimBestiaryAreaReward(habitat: FishHabitat): {
+    ok: boolean;
+    coins: number;
+    bobberId: ItemId | null;
+    message: string;
+  } {
+    const bobberId = BESTIARY_AREA_REWARD_BOBBER[habitat] ?? null;
+    const area = BESTIARY_AREAS.find((a) => a.id === habitat);
+    if (!bobberId || !area) {
+      return { ok: false, coins: 0, bobberId: null, message: "Unknown area." };
+    }
+    if (!this.isBestiaryAreaFullyClaimed(habitat)) {
+      return {
+        ok: false,
+        coins: 0,
+        bobberId: null,
+        message: "Claim every discovery in this tab first.",
+      };
+    }
+    if (this.isBestiaryAreaRewardClaimed(habitat)) {
+      return {
+        ok: false,
+        coins: 0,
+        bobberId: null,
+        message: "Area reward already claimed.",
+      };
+    }
+    if (!this.ownsBobber(bobberId)) {
+      this.ownedBobbers.push(bobberId);
+    }
+    this.coins += BESTIARY_AREA_COMPLETION_COINS;
+    this.bestiaryAreaRewardsClaimed.push(habitat);
+    const bobberName = ITEMS[bobberId]?.name ?? "bobber";
+    return {
+      ok: true,
+      coins: BESTIARY_AREA_COMPLETION_COINS,
+      bobberId,
+      message: `${area.name} complete! +$${BESTIARY_AREA_COMPLETION_COINS} and ${bobberName}.`,
+    };
+  }
+
   /** Every fish species discovered in the bestiary. */
   isBestiaryComplete(): boolean {
     return FISH_ITEM_IDS.every((id) => this.bestiaryFound.includes(id));
@@ -2175,7 +2521,7 @@ export class InventorySystem {
 
   /** Returns true if this is a newly discovered species. */
   discoverFish(itemId: ItemId): boolean {
-    if (!FISH_ITEM_IDS.includes(itemId) || ITEMS[itemId].isQuestItem) return false;
+    if (!isBestiarySpecies(itemId) || ITEMS[itemId].isQuestItem) return false;
     if (this.bestiaryFound.includes(itemId)) return false;
     this.bestiaryFound.push(itemId);
     return true;
@@ -2295,6 +2641,34 @@ export class InventorySystem {
 
   canDeployStellarSurferBoat(): boolean {
     return this.ownsRod("test_rod") && this.stellarSurferAscended;
+  }
+
+  /**
+   * Full UNDEFINED Surfer + boat (admin / secret codes). Skips the Astral Warden path.
+   * Safe to call if already owned — upgrades DEFINED → UNDEFINED.
+   */
+  grantAscendedStellarSurfer(): { ok: boolean; message: string } {
+    if (!this.ownsRod("test_rod") && !this.addItem("test_rod")) {
+      return { ok: false, message: "Couldn't grant the Stellar Surfer." };
+    }
+    const wasAscended = this.stellarSurferAscended;
+    this.stellarSurferAscended = true;
+    this.astralSurferQuestStage = 8;
+    this.astralStarlineDone = true;
+    if (!this.ownedBoats.includes("stellar_surfer")) {
+      this.ownedBoats.push("stellar_surfer");
+    }
+    this.equipRod("test_rod");
+    if (wasAscended) {
+      return {
+        ok: true,
+        message: "Stellar Surfer already ascended — boat ready.",
+      };
+    }
+    return {
+      ok: true,
+      message: "Unlocked ascended Stellar Surfer — Q at a port to ride!",
+    };
   }
 
   tryTurnInAstralStarline(): { ok: boolean; message: string } {
@@ -3138,5 +3512,278 @@ export class InventorySystem {
         : "Need an Ashencast Trout";
     }
     return "";
+  }
+
+  // —— Dustspire Steven quest ——
+
+  startStevenQuest(): boolean {
+    if (this.stevenQuestStage !== 0) return false;
+    this.stevenQuestStage = 1;
+    return true;
+  }
+
+  hasStevenCoconut(): boolean {
+    return this.countFishMatching("coconut", null) >= 1;
+  }
+
+  /** Quest 1: coconut → Tempest Amulet. */
+  turnInStevenCoconut(): boolean {
+    if (this.stevenQuestStage !== 1) return false;
+    if (!this.removeFishMatching("coconut", 1)) return false;
+    this.grantAmulet("amulet_tempest");
+    this.stevenQuestStage = 2;
+    this.stevenDecayedNautilusCaught = 0;
+    return true;
+  }
+
+  recordStevenDecayedNautilus(rodId: ItemId, speciesId: ItemId): boolean {
+    if (this.stevenQuestStage !== 2) return false;
+    if (rodId !== "dusty_rod" || speciesId !== "decayed_nautilus") return false;
+    if (this.stevenDecayedNautilusCaught >= STEVEN_DECAYED_NAUTILUS_GOAL) {
+      return false;
+    }
+    this.stevenDecayedNautilusCaught += 1;
+    return true;
+  }
+
+  stevenQuest2Complete(): boolean {
+    return this.stevenDecayedNautilusCaught >= STEVEN_DECAYED_NAUTILUS_GOAL;
+  }
+
+  /** Quest 2 done → 5 Dusky Amulets. */
+  turnInStevenDecayedNautilus(): boolean {
+    if (this.stevenQuestStage !== 2) return false;
+    if (!this.stevenQuest2Complete()) return false;
+    for (let i = 0; i < 5; i++) this.grantAmulet("amulet_dusky");
+    this.stevenQuestStage = 3;
+    return true;
+  }
+
+  hasStevenSandySeahorse(): boolean {
+    return this.countFishMatching("skeletal_seahorse", "sandy") >= 1;
+  }
+
+  /** Quest 3: sandy skeletal seahorse → unlock paint bomb recipe. */
+  turnInStevenSandySeahorse(): boolean {
+    if (this.stevenQuestStage !== 3) return false;
+    if (!this.removeFishMatching("skeletal_seahorse", 1, "sandy")) return false;
+    this.stevenPaintBombRecipe = true;
+    this.stevenQuestStage = 4;
+    return true;
+  }
+
+  hasStevenQuest4Fish(): boolean {
+    return (
+      this.countFishMatching("cactifin", null) >= 1 ||
+      this.countFishMatching("dolphin", "sprout") >= 1
+    );
+  }
+
+  /** Quest 4: cactifin OR sprout dolphin → Moonlight Amulet. */
+  turnInStevenQuest4Fish(): boolean {
+    if (this.stevenQuestStage !== 4) return false;
+    if (this.countFishMatching("cactifin", null) >= 1) {
+      if (!this.removeFishMatching("cactifin", 1)) return false;
+    } else if (this.countFishMatching("dolphin", "sprout") >= 1) {
+      if (!this.removeFishMatching("dolphin", 1, "sprout")) return false;
+    } else {
+      return false;
+    }
+    this.grantAmulet("amulet_moonlight");
+    this.stevenQuestStage = 5;
+    return true;
+  }
+
+  hasStevenDustyLeopard(): boolean {
+    return this.countFishMatching("leopard_shark", "dusty") >= 1;
+  }
+
+  /** Quest 5: dusty leopard shark → Paint Bomb Amulet. */
+  turnInStevenDustyLeopard(): boolean {
+    if (this.stevenQuestStage !== 5) return false;
+    if (!this.removeFishMatching("leopard_shark", 1, "dusty")) return false;
+    this.grantAmulet("amulet_paint_bomb");
+    this.stevenQuestStage = 6;
+    return true;
+  }
+
+  canPayStevenFossilRod(): boolean {
+    return this.stevenQuestStage === 6 && this.coins >= STEVEN_FOSSIL_ROD_PRICE;
+  }
+
+  /** Quest 6: pay $79,999 → Fossil Rod. */
+  turnInStevenFossilRodPayment(): { ok: boolean; message: string } {
+    if (this.stevenQuestStage !== 6) {
+      return { ok: false, message: "That deal isn't open." };
+    }
+    if (this.coins < STEVEN_FOSSIL_ROD_PRICE) {
+      return {
+        ok: false,
+        message: `Need $${STEVEN_FOSSIL_ROD_PRICE.toLocaleString("en-US")} — you have $${this.coins.toLocaleString("en-US")}.`,
+      };
+    }
+    this.coins -= STEVEN_FOSSIL_ROD_PRICE;
+    if (!this.ownsRod("fossil_rod")) this.registerOwnedRod("fossil_rod");
+    this.stevenQuestStage = 7;
+    return { ok: true, message: "Received the Fossil Rod!" };
+  }
+
+  startStevenPaintBombTrade(): { ok: boolean; message: string } {
+    if (!this.stevenPaintBombRecipe) {
+      return { ok: false, message: "Steven hasn't shared that recipe yet." };
+    }
+    if (this.stevenPaintBombActive) {
+      return { ok: false, message: "Finish the paint bomb trade first." };
+    }
+    this.stevenPaintBombActive = true;
+    return {
+      ok: true,
+      message: "Bring 1 Celestial, 1 Dusky, and 5 Coconuts.",
+    };
+  }
+
+  canTurnInStevenPaintBomb(): boolean {
+    return (
+      this.stevenPaintBombActive &&
+      this.getAmuletCount("amulet_celestial") >= 1 &&
+      this.getAmuletCount("amulet_dusky") >= 1 &&
+      this.countFishMatching("coconut", null) >= 5
+    );
+  }
+
+  consumeAmulet(amuletId: ItemId, count = 1): boolean {
+    if (this.getAmuletCount(amuletId) < count) return false;
+    const next = this.getAmuletCount(amuletId) - count;
+    if (next <= 0) delete this.ownedAmulets[amuletId];
+    else this.ownedAmulets[amuletId] = next;
+    return true;
+  }
+
+  /** Repeatable paint bomb craft with Steven. */
+  turnInStevenPaintBomb(): { ok: boolean; message: string } {
+    if (!this.stevenPaintBombActive) {
+      return { ok: false, message: "No paint bomb trade is open." };
+    }
+    if (!this.canTurnInStevenPaintBomb()) {
+      return {
+        ok: false,
+        message: "Need 1 Celestial Amulet, 1 Dusky Amulet, and 5 Coconuts.",
+      };
+    }
+    if (!this.consumeAmulet("amulet_celestial", 1)) {
+      return { ok: false, message: "Need a Celestial Amulet." };
+    }
+    if (!this.consumeAmulet("amulet_dusky", 1)) {
+      this.grantAmulet("amulet_celestial");
+      return { ok: false, message: "Need a Dusky Amulet." };
+    }
+    if (!this.removeFishMatching("coconut", 5)) {
+      this.grantAmulet("amulet_celestial");
+      this.grantAmulet("amulet_dusky");
+      return { ok: false, message: "Need 5 Coconuts." };
+    }
+    this.grantAmulet("amulet_paint_bomb");
+    this.stevenPaintBombActive = false;
+    return { ok: true, message: "Paint Bomb Amulet crafted!" };
+  }
+
+  stevenQuestProgressLabel(): string {
+    const s = this.stevenQuestStage;
+    if (s === 1) {
+      return this.hasStevenCoconut()
+        ? "Coconut ready — talk to Steven"
+        : "Bring Steven a Coconut";
+    }
+    if (s === 2) {
+      const n = this.stevenDecayedNautilusCaught;
+      const g = STEVEN_DECAYED_NAUTILUS_GOAL;
+      return this.stevenQuest2Complete()
+        ? "Done — return to Steven"
+        : `Decayed Nautilus with Dusty Rod  ${n}/${g}`;
+    }
+    if (s === 3) {
+      return this.hasStevenSandySeahorse()
+        ? "Sandy Seahorse ready — talk to Steven"
+        : "Bring a Sandy Skeletal Seahorse";
+    }
+    if (s === 4) {
+      return this.hasStevenQuest4Fish()
+        ? "Ready — talk to Steven"
+        : "Bring a Cactifin or Sprout Dolphin";
+    }
+    if (s === 5) {
+      return this.hasStevenDustyLeopard()
+        ? "Dusty Leopard Shark ready — talk to Steven"
+        : "Bring a Dusty Leopard Shark";
+    }
+    if (s === 6) {
+      return this.canPayStevenFossilRod()
+        ? `$${STEVEN_FOSSIL_ROD_PRICE.toLocaleString("en-US")} ready — talk to Steven`
+        : `Pay Steven $${STEVEN_FOSSIL_ROD_PRICE.toLocaleString("en-US")} for the Fossil Rod`;
+    }
+    return "";
+  }
+
+  // —— Dustspire Den quest (Golf Club skin) ——
+
+  canStartDenQuest(): boolean {
+    return (
+      this.ownsRod(DEN_QUEST_ROD) &&
+      this.getRodMasteryLevel(DEN_QUEST_ROD) >= DEN_QUEST_MASTERY_LEVEL
+    );
+  }
+
+  startDenQuest(): boolean {
+    if (this.denQuestStage !== 0) return false;
+    if (!this.canStartDenQuest()) return false;
+    this.denQuestStage = 1;
+    this.denPaintedCoconutsCaught = 0;
+    return true;
+  }
+
+  recordDenPaintedCoconut(
+    rodId: ItemId,
+    speciesId: ItemId,
+    mutation: FishMutationId | null
+  ): boolean {
+    if (this.denQuestStage !== 1) return false;
+    if (!isPaintBrushRod(rodId)) return false;
+    if (speciesId !== "coconut" || mutation !== "painted") return false;
+    if (this.denPaintedCoconutsCaught >= DEN_PAINTED_COCONUT_GOAL) return false;
+    this.denPaintedCoconutsCaught += 1;
+    return true;
+  }
+
+  denQuestCatchComplete(): boolean {
+    return this.denPaintedCoconutsCaught >= DEN_PAINTED_COCONUT_GOAL;
+  }
+
+  /** Finish quest — grant Golf Club skin for both paintbrushes. */
+  turnInDenGolfClub(): { ok: boolean; message: string } {
+    if (this.denQuestStage !== 1) {
+      return { ok: false, message: "Nothing to claim." };
+    }
+    if (!this.denQuestCatchComplete()) {
+      return {
+        ok: false,
+        message: `Painted Coconuts ${this.denPaintedCoconutsCaught}/${DEN_PAINTED_COCONUT_GOAL}.`,
+      };
+    }
+    this.unlockRodSkin("golf_club", 0);
+    this.unlockRodSkin("golf_club_composition", 0);
+    this.denQuestStage = 2;
+    return {
+      ok: true,
+      message: "Golf Club skin unlocked for both Paint Brushes!",
+    };
+  }
+
+  denQuestProgressLabel(): string {
+    if (this.denQuestStage !== 1) return "";
+    const n = this.denPaintedCoconutsCaught;
+    const g = DEN_PAINTED_COCONUT_GOAL;
+    return this.denQuestCatchComplete()
+      ? "Done — talk to Den for the Golf Club"
+      : `Painted Coconuts with Paint Brush  ${n}/${g}`;
   }
 }

@@ -2,14 +2,22 @@ import Phaser from "phaser";
 import {
   BESTIARY_AREAS,
   BESTIARY_CLAIM_REWARD,
+  BESTIARY_AREA_COMPLETION_COINS,
+  BESTIARY_AREA_REWARD_BOBBER,
   ITEMS,
   ItemId,
   RARITY_COLOR,
+  RARITY_NAME,
+  MYSTICAL_RARITY_WAVE_COLORS,
   FishHabitat,
   formatFishSpawnChanceLabel,
   formatFishBaitPreferenceLabel,
 } from "../data/items";
 import { InventorySystem } from "../systems/InventorySystem";
+import {
+  createGradientWaveText,
+  startGradientColorWave,
+} from "./GradientWaveText";
 
 const PANEL_W = 520;
 const PANEL_H = 540;
@@ -30,6 +38,7 @@ export class BestiaryPanel {
   private scrollThumb: Phaser.GameObjects.Rectangle;
   private tabButtons: Phaser.GameObjects.Container[] = [];
   private progressText: Phaser.GameObjects.Text;
+  private areaClaimLayer?: Phaser.GameObjects.Container;
   private inventory: InventorySystem;
   private scene: Phaser.Scene;
   private panelCx: number;
@@ -40,6 +49,9 @@ export class BestiaryPanel {
   private scrollY = 0;
   private contentH = 0;
   private inspectLayer?: Phaser.GameObjects.Container;
+  private stopMysticalWave?: () => void;
+  private mysticalLetterGroups: Phaser.GameObjects.Text[][] = [];
+  private mysticalStrokeCards: Phaser.GameObjects.Rectangle[] = [];
   private wheelHandler: (
     pointer: Phaser.Input.Pointer,
     _gos: unknown,
@@ -134,9 +146,11 @@ export class BestiaryPanel {
   private buildTabs(): void {
     const tabW = 118;
     const gap = 6;
-    // Main row: everything except Ashencast; Ashencast sits under Ocean
-    const mainAreas = BESTIARY_AREAS.filter((a) => a.id !== "hotspring");
+    // Main row: everything except Ashencast + Dustspire (those sit on row 2)
+    const secondaryIds = new Set(["hotspring", "dustspire"]);
+    const mainAreas = BESTIARY_AREAS.filter((a) => !secondaryIds.has(a.id));
     const spring = BESTIARY_AREAS.find((a) => a.id === "hotspring");
+    const dust = BESTIARY_AREAS.find((a) => a.id === "dustspire");
     const startX = -((mainAreas.length - 1) * (tabW + gap)) / 2;
     const row1Y = -182;
     const row2Y = -150;
@@ -170,6 +184,10 @@ export class BestiaryPanel {
         addTab(spring, startX, row2Y);
         continue;
       }
+      if (area.id === "dustspire" && dust) {
+        addTab(dust, startX + (tabW + gap), row2Y);
+        continue;
+      }
       const i = mainAreas.findIndex((a) => a.id === area.id);
       addTab(area, startX + i * (tabW + gap), row1Y);
     }
@@ -197,7 +215,11 @@ export class BestiaryPanel {
   setOpen(open: boolean): void {
     this.visible = open;
     this.root.setVisible(open);
-    if (!open) this.closeInspect();
+    if (!open) {
+      this.closeInspect();
+      this.stopMysticalWave?.();
+      this.stopMysticalWave = undefined;
+    }
     if (open) {
       this.scrollY = 0;
       this.redrawMask();
@@ -206,9 +228,16 @@ export class BestiaryPanel {
   }
 
   refresh(): void {
+    this.stopMysticalWave?.();
+    this.stopMysticalWave = undefined;
+    this.mysticalLetterGroups = [];
+    this.mysticalStrokeCards = [];
+
     for (const child of [...this.gridContent.list]) {
       child.destroy(true);
     }
+    this.areaClaimLayer?.destroy(true);
+    this.areaClaimLayer = undefined;
 
     const area =
       BESTIARY_AREAS.find((a) => a.id === this.areaId) ?? BESTIARY_AREAS[0];
@@ -224,6 +253,7 @@ export class BestiaryPanel {
     });
 
     let found = 0;
+    let claimed = 0;
     area.fishIds.forEach((id, index) => {
       const col = index % COLS;
       const row = Math.floor(index / COLS);
@@ -231,6 +261,7 @@ export class BestiaryPanel {
       const y = row * (CELL_H + GAP) + CELL_H / 2;
       this.gridContent.add(this.makeCell(id, x, y));
       if (this.inventory.isBestiaryFound(id)) found++;
+      if (this.inventory.isBestiaryClaimed(id)) claimed++;
     });
 
     this.contentH = Math.max(
@@ -238,9 +269,87 @@ export class BestiaryPanel {
       Math.ceil(area.fishIds.length / COLS) * (CELL_H + GAP)
     );
     this.progressText.setText(
-      `${area.name}: ${found} / ${area.fishIds.length} discovered`
+      `${area.name}: ${found} / ${area.fishIds.length} discovered · ${claimed} claimed`
     );
     this.applyScroll();
+    this.refreshAreaClaimButton(area.id);
+
+    if (
+      this.mysticalLetterGroups.length > 0 ||
+      this.mysticalStrokeCards.length > 0
+    ) {
+      this.stopMysticalWave = startGradientColorWave(
+        this.scene,
+        this.mysticalLetterGroups,
+        [...MYSTICAL_RARITY_WAVE_COLORS],
+        0.0016,
+        this.mysticalStrokeCards
+      );
+    }
+  }
+
+  private refreshAreaClaimButton(habitat: FishHabitat): void {
+    if (!this.inventory.canClaimBestiaryAreaReward(habitat)) {
+      if (this.inventory.isBestiaryAreaRewardClaimed(habitat)) {
+        const bobberId = BESTIARY_AREA_REWARD_BOBBER[habitat];
+        const name = bobberId ? ITEMS[bobberId]?.name ?? "bobber" : "reward";
+        this.progressText.setText(
+          `${BESTIARY_AREAS.find((a) => a.id === habitat)?.name ?? "Area"} complete — ${name} claimed`
+        );
+      }
+      return;
+    }
+
+    const bobberId = BESTIARY_AREA_REWARD_BOBBER[habitat]!;
+    const bobberDef = ITEMS[bobberId];
+    const layer = this.scene.add.container(0, 20).setDepth(50);
+    this.areaClaimLayer = layer;
+    this.root.add(layer);
+
+    const dim = this.scene.add
+      .rectangle(0, 0, PANEL_W - 40, GRID_VIEW_H + 40, 0x000000, 0.55)
+      .setInteractive();
+
+    const btn = this.scene.add
+      .rectangle(0, 8, 280, 72, 0x3a5a2a, 1)
+      .setStrokeStyle(3, 0xffe066)
+      .setInteractive({ useHandCursor: true });
+    const label = this.scene.add
+      .text(
+        0,
+        -4,
+        `CLAIM AREA\n+$${BESTIARY_AREA_COMPLETION_COINS}  ·  ${bobberDef?.name ?? "Bobber"}`,
+        {
+          fontFamily: "Georgia, serif",
+          fontSize: "18px",
+          color: "#fff8e0",
+          align: "center",
+          stroke: "#000000",
+          strokeThickness: 4,
+        }
+      )
+      .setOrigin(0.5);
+
+    const icon = this.scene.add.image(-118, 8, bobberDef?.textureKey ?? "bobber");
+    const maxDim = 48;
+    icon.setScale(Math.min(maxDim / icon.width, maxDim / icon.height));
+
+    const claim = () => {
+      const result = this.inventory.claimBestiaryAreaReward(habitat);
+      if (result.ok) {
+        this.onChanged?.(result.message);
+        this.refresh();
+      }
+    };
+    dim.on("pointerdown", (p: Phaser.Input.Pointer) => p.event.stopPropagation());
+    btn.on("pointerdown", (p: Phaser.Input.Pointer) => {
+      p.event.stopPropagation();
+      claim();
+    });
+    btn.on("pointerover", () => btn.setFillStyle(0x4a7a3a));
+    btn.on("pointerout", () => btn.setFillStyle(0x3a5a2a));
+
+    layer.add([dim, btn, icon, label]);
   }
 
   private makeCell(fishId: ItemId, x: number, y: number): Phaser.GameObjects.Container {
@@ -253,7 +362,14 @@ export class BestiaryPanel {
 
     const card = this.scene.add
       .rectangle(0, 0, CELL_W, CELL_H, 0x22262e, 0.95)
-      .setStrokeStyle(2, found ? Phaser.Display.Color.HexStringToColor(RARITY_COLOR[rarity]).color : 0x444444)
+      .setStrokeStyle(
+        2,
+        found
+          ? rarity === "mystical"
+            ? MYSTICAL_RARITY_WAVE_COLORS[0]
+            : Phaser.Display.Color.HexStringToColor(RARITY_COLOR[rarity]).color
+          : 0x444444
+      )
       .setInteractive({ useHandCursor: true });
     card.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       pointer.event.stopPropagation();
@@ -287,15 +403,34 @@ export class BestiaryPanel {
       })
       .setOrigin(0.5);
 
-    const rarityLabel = this.scene.add
-      .text(0, 40, found ? rarity : "unknown", {
-        fontFamily: "Arial",
-        fontSize: "11px",
-        color: found ? RARITY_COLOR[rarity] : "#555555",
-      })
-      .setOrigin(0.5);
+    cell.add([card, icon, name]);
 
-    cell.add([card, icon, name, rarityLabel]);
+    if (found && rarity === "mystical") {
+      const wave = createGradientWaveText(
+        this.scene,
+        RARITY_NAME.mystical,
+        {
+          fontFamily: "Arial",
+          fontSize: "11px",
+          color: RARITY_COLOR.mystical,
+          fontStyle: "bold",
+        },
+        0.5
+      );
+      wave.root.setPosition(0, 40);
+      cell.add(wave.root);
+      this.mysticalLetterGroups.push(wave.letters);
+      this.mysticalStrokeCards.push(card);
+    } else {
+      const rarityLabel = this.scene.add
+        .text(0, 40, found ? rarity : "unknown", {
+          fontFamily: "Arial",
+          fontSize: "11px",
+          color: found ? RARITY_COLOR[rarity] : "#555555",
+        })
+        .setOrigin(0.5);
+      cell.add(rarityLabel);
+    }
 
     if (found && !claimed) {
       const claimBtn = this.scene.add
@@ -381,13 +516,39 @@ export class BestiaryPanel {
       })
       .setOrigin(0.5);
 
-    const rarityText = this.scene.add
-      .text(0, -4, found ? rarity : "unknown", {
-        fontFamily: "Arial",
-        fontSize: "12px",
-        color: found ? RARITY_COLOR[rarity] : "#666666",
-      })
-      .setOrigin(0.5);
+    let rarityObj: Phaser.GameObjects.GameObject;
+    let inspectMysticalStop: (() => void) | undefined;
+    if (found && rarity === "mystical") {
+      const wave = createGradientWaveText(
+        this.scene,
+        RARITY_NAME.mystical,
+        {
+          fontFamily: "Arial",
+          fontSize: "12px",
+          color: RARITY_COLOR.mystical,
+          fontStyle: "bold",
+        },
+        0.5
+      );
+      wave.root.setPosition(0, -4);
+      rarityObj = wave.root;
+      panel.setStrokeStyle(2, MYSTICAL_RARITY_WAVE_COLORS[0]);
+      inspectMysticalStop = startGradientColorWave(
+        this.scene,
+        [wave.letters],
+        [...MYSTICAL_RARITY_WAVE_COLORS],
+        0.0016,
+        [panel]
+      );
+    } else {
+      rarityObj = this.scene.add
+        .text(0, -4, found ? rarity : "unknown", {
+          fontFamily: "Arial",
+          fontSize: "12px",
+          color: found ? RARITY_COLOR[rarity] : "#666666",
+        })
+        .setOrigin(0.5);
+    }
 
     const spawnLine = formatFishSpawnChanceLabel(fishId, area.id);
     const spawnText = this.scene.add
@@ -455,12 +616,18 @@ export class BestiaryPanel {
       this.closeInspect();
     });
 
+    if (inspectMysticalStop) {
+      layer.once(Phaser.GameObjects.Events.DESTROY, () => {
+        inspectMysticalStop?.();
+      });
+    }
+
     layer.add([
       dim,
       panel,
       icon,
       title,
-      rarityText,
+      rarityObj,
       spawnText,
       baitText,
       desc,

@@ -23,6 +23,8 @@ import {
 import { resonatedHatChecklist } from "../systems/ResonatedHatQuest";
 import { ANVIL_PIECE_IDS } from "../systems/AshencastQuest";
 import { ITEMS } from "../data/items";
+import { stevenQuestTitle } from "../systems/StevenQuest";
+import { denQuestTitle } from "../systems/DenQuest";
 
 const GEM_HINTS: Record<(typeof VAULT_GEM_IDS)[number], string> = {
   gem_red: "Abyss Reach (water)",
@@ -61,12 +63,22 @@ export class QuestTracker {
   private resonateBg: Phaser.GameObjects.Graphics;
   private resonateTitle: Phaser.GameObjects.Text;
   private resonateBody: Phaser.GameObjects.Text;
+  private stevenRoot: Phaser.GameObjects.Container;
+  private stevenBg: Phaser.GameObjects.Graphics;
+  private stevenTitle: Phaser.GameObjects.Text;
+  private stevenBody: Phaser.GameObjects.Text;
+  private denRoot: Phaser.GameObjects.Container;
+  private denBg: Phaser.GameObjects.Graphics;
+  private denTitle: Phaser.GameObjects.Text;
+  private denBody: Phaser.GameObjects.Text;
   private lastHermitKey = "";
   private lastVaultKey = "";
   private lastFishKey = "";
   private lastAshenKey = "";
   private lastAstralKey = "";
   private lastResonateKey = "";
+  private lastStevenKey = "";
+  private lastDenKey = "";
 
   constructor(scene: Phaser.Scene, inventory: InventorySystem) {
     this.inventory = inventory;
@@ -222,6 +234,54 @@ export class QuestTracker {
     ]);
     this.resonateRoot.setVisible(false);
 
+    this.stevenRoot = scene.add.container(14, 14).setScrollFactor(0).setDepth(105);
+    this.stevenBg = scene.add.graphics();
+    this.stevenTitle = scene.add
+      .text(10, 8, "", {
+        fontFamily: "Georgia, serif",
+        fontSize: "14px",
+        color: "#e8c878",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0, 0);
+    this.stevenBody = scene.add
+      .text(10, 28, "", {
+        fontFamily: "Arial",
+        fontSize: "12px",
+        color: "#e8eef4",
+        stroke: "#000000",
+        strokeThickness: 2,
+        lineSpacing: 4,
+      })
+      .setOrigin(0, 0);
+    this.stevenRoot.add([this.stevenBg, this.stevenTitle, this.stevenBody]);
+    this.stevenRoot.setVisible(false);
+
+    this.denRoot = scene.add.container(14, 14).setScrollFactor(0).setDepth(105);
+    this.denBg = scene.add.graphics();
+    this.denTitle = scene.add
+      .text(10, 8, "", {
+        fontFamily: "Georgia, serif",
+        fontSize: "14px",
+        color: "#6ec85a",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0, 0);
+    this.denBody = scene.add
+      .text(10, 28, "", {
+        fontFamily: "Arial",
+        fontSize: "12px",
+        color: "#e8eef4",
+        stroke: "#000000",
+        strokeThickness: 2,
+        lineSpacing: 4,
+      })
+      .setOrigin(0, 0);
+    this.denRoot.add([this.denBg, this.denTitle, this.denBody]);
+    this.denRoot.setVisible(false);
+
     this.refresh();
   }
 
@@ -232,6 +292,8 @@ export class QuestTracker {
     this.refreshAshencast();
     this.refreshAstral();
     this.refreshResonatedHat();
+    this.refreshSteven();
+    this.refreshDen();
     this.layout();
   }
 
@@ -481,6 +543,63 @@ export class QuestTracker {
     );
   }
 
+  private refreshSteven(): void {
+    const stage = this.inventory.stevenQuestStage;
+    const paintActive = this.inventory.stevenPaintBombActive;
+    if ((stage < 1 || stage > 6) && !paintActive) {
+      this.stevenRoot.setVisible(false);
+      this.lastStevenKey = "";
+      return;
+    }
+
+    const lines: string[] = [];
+    let title = "Steven";
+    if (stage >= 1 && stage <= 6) {
+      title = stevenQuestTitle(stage);
+      lines.push(this.inventory.stevenQuestProgressLabel());
+    }
+    if (paintActive) {
+      const cel = this.inventory.getAmuletCount("amulet_celestial") >= 1;
+      const dusk = this.inventory.getAmuletCount("amulet_dusky") >= 1;
+      const coco = this.inventory.countFishMatching("coconut", null);
+      lines.push(
+        "Paint Bomb trade:",
+        `${cel ? "☑" : "☐"}  Celestial Amulet`,
+        `${dusk ? "☑" : "☐"}  Dusky Amulet`,
+        `${coco >= 5 ? "☑" : "☐"}  Coconuts  ${Math.min(coco, 5)}/5`
+      );
+      if (stage < 1 || stage > 6) title = "Steven — Paint Bomb";
+    }
+
+    const body = lines.join("\n");
+    const key = `${stage}|${paintActive ? 1 : 0}|${body}`;
+    if (key === this.lastStevenKey && this.stevenRoot.visible) return;
+    this.lastStevenKey = key;
+
+    this.stevenTitle.setText(title);
+    this.stevenBody.setText(body);
+    this.stevenRoot.setVisible(true);
+    this.drawPanel(this.stevenBg, this.stevenTitle, this.stevenBody, 0xc4a878);
+  }
+
+  private refreshDen(): void {
+    const stage = this.inventory.denQuestStage;
+    if (stage !== 1) {
+      this.denRoot.setVisible(false);
+      this.lastDenKey = "";
+      return;
+    }
+    const title = denQuestTitle(stage);
+    const body = this.inventory.denQuestProgressLabel();
+    const key = `${stage}|${body}`;
+    if (key === this.lastDenKey && this.denRoot.visible) return;
+    this.lastDenKey = key;
+    this.denTitle.setText(title);
+    this.denBody.setText(body);
+    this.denRoot.setVisible(true);
+    this.drawPanel(this.denBg, this.denTitle, this.denBody, 0x6ec85a);
+  }
+
   private drawPanel(
     bg: Phaser.GameObjects.Graphics,
     title: Phaser.GameObjects.Text,
@@ -508,6 +627,8 @@ export class QuestTracker {
       this.ashenRoot,
       this.astralRoot,
       this.resonateRoot,
+      this.stevenRoot,
+      this.denRoot,
     ] as const;
     const bodies = [
       this.hermitBody,
@@ -516,6 +637,8 @@ export class QuestTracker {
       this.ashenBody,
       this.astralBody,
       this.resonateBody,
+      this.stevenBody,
+      this.denBody,
     ];
     for (let i = 0; i < stack.length; i++) {
       const root = stack[i];
@@ -534,6 +657,8 @@ export class QuestTracker {
     this.ashenRoot.setScale(s);
     this.astralRoot.setScale(s);
     this.resonateRoot.setScale(s);
+    this.stevenRoot.setScale(s);
+    this.denRoot.setScale(s);
     this.layout();
   }
 }

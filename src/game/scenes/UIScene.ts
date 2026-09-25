@@ -5,6 +5,7 @@ import { CatchMinigame } from "../ui/CatchMinigame";
 import { SkinCrateReveal } from "../ui/SkinCrateReveal";
 import { SkinCrateMenu } from "../ui/SkinCrateMenu";
 import { EquipmentBag } from "../ui/EquipmentBag";
+import { RodXpHud } from "../ui/RodXpHud";
 import { BestiaryPanel } from "../ui/BestiaryPanel";
 import { TideCompassPanel } from "../ui/TideCompassPanel";
 import { AdminDevicePanel } from "../ui/AdminDevicePanel";
@@ -26,6 +27,7 @@ import { BoatMenu } from "../ui/BoatMenu";
 import { CoinDisplay } from "../ui/CoinDisplay";
 import { QuestTracker } from "../ui/QuestTracker";
 import { WildflowerBuyPanel } from "../ui/WildflowerBuyPanel";
+import { DustyRodBuyPanel } from "../ui/DustyRodBuyPanel";
 import { OreVendorPanel } from "../ui/OreVendorPanel";
 import { BaitVendorPanel } from "../ui/BaitVendorPanel";
 import { StellarShopPanel } from "../ui/StellarShopPanel";
@@ -71,6 +73,7 @@ interface UISceneData {
   tryVaultGemInteract: () => boolean;
   declineMerchant: () => void;
   tryBuyJungleRod: () => boolean;
+  tryBuyDustyRod: () => boolean;
   trySecretFallThrough: () => boolean;
   tryOpenBargain: () => boolean;
   completeBargainDeal: (session: BargainSession, price: number) => void;
@@ -130,6 +133,7 @@ export class UIScene extends Phaser.Scene {
   private tryVaultGemInteract!: () => boolean;
   private declineMerchant!: () => void;
   private tryBuyJungleRod!: () => boolean;
+  private tryBuyDustyRod!: () => boolean;
   private trySecretFallThrough!: () => boolean;
   private tryOpenBargain!: () => boolean;
   private completeBargainDeal!: (session: BargainSession, price: number) => void;
@@ -169,6 +173,7 @@ export class UIScene extends Phaser.Scene {
   private skinCrateReveal!: SkinCrateReveal;
   private skinCrateMenu!: SkinCrateMenu;
   private equipmentBag!: EquipmentBag;
+  private rodXpHud!: RodXpHud;
   private bestiaryPanel!: BestiaryPanel;
   private tideCompassPanel!: TideCompassPanel;
   private adminDevicePanel!: AdminDevicePanel;
@@ -176,6 +181,7 @@ export class UIScene extends Phaser.Scene {
   private minigame!: CatchMinigame;
   private boatMenu!: BoatMenu;
   private wildflowerBuy!: WildflowerBuyPanel;
+  private dustyRodBuy!: DustyRodBuyPanel;
   private oreVendor!: OreVendorPanel;
   private baitVendor!: BaitVendorPanel;
   private stellarShop!: StellarShopPanel;
@@ -221,6 +227,7 @@ export class UIScene extends Phaser.Scene {
     this.tryVaultGemInteract = data.tryVaultGemInteract;
     this.declineMerchant = data.declineMerchant;
     this.tryBuyJungleRod = data.tryBuyJungleRod;
+    this.tryBuyDustyRod = data.tryBuyDustyRod;
     this.trySecretFallThrough = data.trySecretFallThrough;
     this.tryOpenBargain = data.tryOpenBargain;
     this.completeBargainDeal = data.completeBargainDeal;
@@ -342,6 +349,7 @@ export class UIScene extends Phaser.Scene {
       game?.syncPlayerCarriedRod?.();
     });
     this.equipmentBag = new EquipmentBag(this, this.inventory);
+    this.rodXpHud = new RodXpHud(this);
     this.equipmentBag.setOnBeforeEquipRod((rodId) => {
       if (this.isRidingStellarSurfer() && rodId !== "test_rod") {
         this.showToast(
@@ -415,6 +423,11 @@ export class UIScene extends Phaser.Scene {
     this.wildflowerBuy.setCallbacks(() => {
       // Second confirm (click Buy) — purchase if panel is open
       this.tryBuyJungleRod();
+      this.hotbar.refresh();
+    });
+    this.dustyRodBuy = new DustyRodBuyPanel(this);
+    this.dustyRodBuy.setCallbacks(() => {
+      this.tryBuyDustyRod();
       this.hotbar.refresh();
     });
     this.oreVendor = new OreVendorPanel(this);
@@ -776,6 +789,10 @@ export class UIScene extends Phaser.Scene {
         this.closeWildflowerBuy();
         return;
       }
+      if (this.dustyRodBuy.visible) {
+        this.closeDustyRodBuy();
+        return;
+      }
       if (this.fishing.isBusy()) {
         this.fishing.cancelCast();
         return;
@@ -856,7 +873,9 @@ export class UIScene extends Phaser.Scene {
       const sizeMult = sizeScale(this.fishing.getTargetSize());
       const worldMut = this.fishing.isBobberInWhirlpool()
         ? "thunder"
-        : this.fishing.getTargetMutation();
+        : this.fishing.isBobberInPaintBomb()
+          ? "painted"
+          : this.fishing.getTargetMutation();
       const worldMutDef = worldMut ? MUTATIONS[worldMut] : null;
       const dual = this.fishing.hasSecondFish();
       const secondId = this.fishing.getSecondSpeciesId();
@@ -864,7 +883,9 @@ export class UIScene extends Phaser.Scene {
       const sizeMult2 = sizeScale(this.fishing.getSecondSize());
       const worldMut2 = this.fishing.isBobberInWhirlpool()
         ? "thunder"
-        : this.fishing.getSecondMutation();
+        : this.fishing.isBobberInPaintBomb()
+          ? "painted"
+          : this.fishing.getSecondMutation();
       const worldMutDef2 = worldMut2 ? MUTATIONS[worldMut2] : null;
 
       // Dual catch: combine both fish stats, but only use the fishs' own
@@ -930,7 +951,11 @@ export class UIScene extends Phaser.Scene {
               this.fishing.lastCaughtFish,
               wasNewBySpecies
             );
+            if (this.fishing.lastRodXpGrant) {
+              this.rodXpHud.present(this.fishing.lastRodXpGrant);
+            }
             this.inventoryPanel.refresh();
+            this.equipmentBag.refresh();
             this.coins.refresh();
             this.persistSave();
             this.maybeOpenAugmentUpgrade();
@@ -997,7 +1022,18 @@ export class UIScene extends Phaser.Scene {
           voidHarvest,
           paintSplash:
             ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
-            "paint_splash",
+              "paint_splash" ||
+            ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+              "paint_composition",
+          paintMustCatch:
+            ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+            "paint_composition",
+          paintCompositionTheme:
+            ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+            "paint_composition",
+          fossilFreeze:
+            ITEMS[this.inventory.getEquippedRodId()]?.rodMinigamePower ===
+            "fossil_freeze",
           rodSkinId: (() => {
             const sid = this.inventory.getActiveRodSkinId(
               this.inventory.getEquippedRodId()
@@ -1089,7 +1125,7 @@ export class UIScene extends Phaser.Scene {
     }
     if (this.tutorial.visible) return;
     if (this.minigame.isActive() || this.boatMenu.visible) return;
-    if (this.coralRodOffer.visible || this.wildflowerBuy.visible) return;
+    if (this.coralRodOffer.visible || this.wildflowerBuy.visible || this.dustyRodBuy.visible) return;
     if (this.codeGuyPanel.isOpen()) return;
     if (this.bargainPanel.visible) return;
     if (this.augmentUpgrade.visible) return;
@@ -1204,6 +1240,11 @@ export class UIScene extends Phaser.Scene {
       this.hotbar.refresh();
       return;
     }
+    if (this.dustyRodBuy.visible) {
+      this.tryBuyDustyRod();
+      this.hotbar.refresh();
+      return;
+    }
     if (this.trySecretFallThrough()) return;
     if (this.tryTalkToMerchant()) {
       this.inventoryPanel.refresh();
@@ -1216,6 +1257,10 @@ export class UIScene extends Phaser.Scene {
     }
     if (this.tryOpenBargain()) return;
     if (this.tryBuyJungleRod()) {
+      this.hotbar.refresh();
+      return;
+    }
+    if (this.tryBuyDustyRod()) {
       this.hotbar.refresh();
       return;
     }
@@ -1236,6 +1281,7 @@ export class UIScene extends Phaser.Scene {
       this.minigame.isActive() ||
       this.boatMenu.visible ||
       this.wildflowerBuy.visible ||
+      this.dustyRodBuy.visible ||
       this.oreVendor.visible ||
       this.stellarShop.visible ||
       this.baitVendor.visible ||
@@ -1304,6 +1350,18 @@ export class UIScene extends Phaser.Scene {
 
   closeWildflowerBuy(): void {
     this.wildflowerBuy.close();
+  }
+
+  isDustyRodBuyOpen(): boolean {
+    return this.dustyRodBuy.visible;
+  }
+
+  openDustyRodBuy(): void {
+    this.dustyRodBuy.setOpen(true);
+  }
+
+  closeDustyRodBuy(): void {
+    this.dustyRodBuy.close();
   }
 
   openOreVendor(): void {

@@ -324,3 +324,131 @@ export function generateGreenShirtNpcTexture(scene: Phaser.Scene): void {
   g.generateTexture("npc_green_shirt", w, h);
   g.destroy();
 }
+
+/** Human NPC with a blue shirt (Dustspire — Steven). */
+export function generateBlueShirtNpcTexture(scene: Phaser.Scene): void {
+  if (scene.textures.exists("npc_blue_shirt")) return;
+
+  const g = scene.make.graphics({ x: 0, y: 0 });
+  g.setVisible(false);
+  const w = 36;
+  const h = 56;
+
+  g.fillStyle(0x000000, 0.15);
+  g.fillEllipse(w / 2, h - 2, 20, 5);
+
+  // Legs / shoes
+  g.fillStyle(0x3a3428);
+  g.fillRect(10, 38, 7, 16);
+  g.fillRect(19, 38, 7, 16);
+  g.fillStyle(0x2a2418);
+  g.fillRect(10, 50, 8, 4);
+  g.fillRect(19, 50, 8, 4);
+
+  // Blue shirt body
+  g.fillStyle(0x3a6aaa);
+  g.fillRect(8, 20, 20, 20);
+  g.fillStyle(0x2e5288);
+  g.fillRect(8, 20, 4, 20);
+  g.fillStyle(0x4a82c8);
+  g.fillRect(24, 22, 3, 16);
+  // Shirt placket / buttons
+  g.fillStyle(0xe8e0d0);
+  g.fillRect(16, 24, 4, 14);
+  g.fillStyle(0xd0c8b0);
+  g.fillRect(17, 26, 2, 2);
+  g.fillRect(17, 30, 2, 2);
+  g.fillRect(17, 34, 2, 2);
+
+  // Arms
+  g.fillStyle(0xc4a484);
+  g.fillRect(4, 22, 6, 12);
+  g.fillRect(26, 22, 6, 12);
+  // Shirt sleeves
+  g.fillStyle(0x3a6aaa);
+  g.fillRect(4, 20, 6, 8);
+  g.fillRect(26, 20, 6, 8);
+
+  // Head
+  g.fillStyle(0xc4a484);
+  g.fillRect(10, 4, 16, 16);
+  g.fillStyle(0xb8956e);
+  g.fillRect(10, 4, 4, 16);
+
+  // Short brown hair
+  g.fillStyle(0x5a3a18);
+  g.fillRect(9, 2, 18, 6);
+  g.fillRect(9, 6, 4, 8);
+  g.fillRect(23, 6, 4, 6);
+
+  // Eyes
+  g.fillStyle(0x1a1a1a);
+  g.fillRect(14, 10, 2, 2);
+  g.fillRect(20, 10, 2, 2);
+
+  g.generateTexture("npc_blue_shirt", w, h);
+  g.destroy();
+}
+
+/** Human NPC in a green polo + cap (Dustspire — Den the golfer). */
+export function generateDenNpcTexture(scene: Phaser.Scene): void {
+  if (scene.textures.exists("npc_den")) return;
+
+  const g = scene.make.graphics({ x: 0, y: 0 });
+  g.setVisible(false);
+  const w = 36;
+  const h = 56;
+
+  g.fillStyle(0x000000, 0.15);
+  g.fillEllipse(w / 2, h - 2, 20, 5);
+
+  // Legs / shoes
+  g.fillStyle(0x3a3428);
+  g.fillRect(10, 38, 7, 16);
+  g.fillRect(19, 38, 7, 16);
+  g.fillStyle(0x2a2418);
+  g.fillRect(10, 50, 8, 4);
+  g.fillRect(19, 50, 8, 4);
+
+  // Green polo
+  g.fillStyle(0x3a8a4a);
+  g.fillRect(8, 20, 20, 20);
+  g.fillStyle(0x2e6e3a);
+  g.fillRect(8, 20, 4, 20);
+  g.fillStyle(0x4aaa5a);
+  g.fillRect(24, 22, 3, 16);
+  // Collar
+  g.fillStyle(0xe8e0d0);
+  g.fillTriangle(12, 20, 18, 26, 18, 20);
+  g.fillTriangle(24, 20, 18, 26, 18, 20);
+
+  // Arms
+  g.fillStyle(0xc4a484);
+  g.fillRect(4, 22, 6, 12);
+  g.fillRect(26, 22, 6, 12);
+  g.fillStyle(0x3a8a4a);
+  g.fillRect(4, 20, 6, 8);
+  g.fillRect(26, 20, 6, 8);
+
+  // Head
+  g.fillStyle(0xc4a484);
+  g.fillRect(10, 6, 16, 14);
+  g.fillStyle(0xb8956e);
+  g.fillRect(10, 6, 4, 14);
+
+  // Golf cap
+  g.fillStyle(0x2a5a30);
+  g.fillEllipse(18, 6, 20, 8);
+  g.fillStyle(0x1e4024);
+  g.fillRect(8, 6, 20, 4);
+  g.fillStyle(0x3a7040);
+  g.fillRect(22, 7, 10, 3);
+
+  // Eyes
+  g.fillStyle(0x1a1a1a);
+  g.fillRect(14, 12, 2, 2);
+  g.fillRect(20, 12, 2, 2);
+
+  g.generateTexture("npc_den", w, h);
+  g.destroy();
+}

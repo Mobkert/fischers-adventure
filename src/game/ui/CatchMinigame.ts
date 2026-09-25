@@ -19,6 +19,10 @@ import {
 import {
   drawStarryNightBar,
   drawStarryNightPanel,
+  drawCompositionViiBar,
+  drawCompositionViiPanel,
+  drawGolfCourseBar,
+  drawGolfCoursePanel,
   rollPaintColor,
 } from "../art/PaintBrushArt";
 
@@ -26,6 +30,8 @@ type PaintDrop = {
   root: Phaser.GameObjects.Container;
   color: number;
   vy: number;
+  /** Composition VII — Zeus-style catch zone on the bar while falling. */
+  zone?: Phaser.GameObjects.Rectangle;
 };
 
 type PaintSplat = {
@@ -35,6 +41,10 @@ type PaintSplat = {
   age: number;
 };
 
+function isGolfClubSkin(skinId: string | null): boolean {
+  return skinId === "golf_club" || skinId === "golf_club_composition";
+}
+
 export type CatchMinigameResultMeta = {
   guaranteeThunder?: boolean;
   guaranteeAshencast?: boolean;
@@ -43,6 +53,8 @@ export type CatchMinigameResultMeta = {
   guaranteeLunar?: boolean;
   /** Paint Brush: vertical meter filled → Painted (4×). */
   guaranteePainted?: boolean;
+  /** Fossil Rod froze the fish during this fight. */
+  fossilFroze?: boolean;
   /** How many Recoil shotgun kicks fired during this fight. */
   recoilKicks?: number;
   /** Tranquil bubble popped during this fight (75% Tranquil mutation). */
@@ -372,6 +384,24 @@ export class CatchMinigame {
   private voidHarvestFillEnabled = false;
   /** Paint Brush — falling paint drops, splats, vertical meter, wavy boost. */
   private paintSplash = false;
+  /** Composition VII variant — must catch falling drops or lose 70% progress. */
+  private paintMustCatch = false;
+  /** Composition VII UI theme (vs Starry Night). */
+  private paintCompositionTheme = false;
+  private fossilFreeze = false;
+  private fossilRollTimer = 0;
+  private fossilFrozeOnce = false;
+  private fossilFreezeRemain = 0;
+  private fossilCageGfx?: Phaser.GameObjects.Graphics;
+  private fossilDuneGfx?: Phaser.GameObjects.Graphics;
+  private fossilFxGfx?: Phaser.GameObjects.Graphics;
+  private fossilCagePhase = 0;
+  private fossilDunePhase = 0;
+  private fossilImpactT = 0;
+  private fossilSlamScale = 1;
+  private readonly fossilRollInterval = 0.4;
+  private readonly fossilFreezeChance = 0.1;
+  private readonly fossilFreezeDuration = 5;
   private paintSpawnTimer = 0;
   private paintSpawnedCount = 0;
   private paintSplatCount = 0;
@@ -390,6 +420,8 @@ export class CatchMinigame {
   private readonly paintSpawnInterval = 3;
   private readonly paintSplatSlowMult = 0.78;
   private readonly paintBoostProgressSpeed = 75;
+  /** Composition VII catch-zone width (Zeus-style telegraph on the bar). */
+  private readonly paintDropZoneW = 96;
   private birthdayBalloons: BirthdayBalloon[] = [];
   private birthdayBalloonLayer!: Phaser.GameObjects.Container;
   private birthdaySpawnTimer = 0;
@@ -647,8 +679,14 @@ export class CatchMinigame {
       starweaverWeave?: boolean;
       /** The Voidharvester — shrink zone while fish inside, blast progress on leave. */
       voidHarvest?: boolean;
-      /** Paint Brush — paint drops, Starry Night bar, vertical meter boost. */
+      /** Paint Brush — paint drops, Starry Night / Composition VII bar, vertical meter boost. */
       paintSplash?: boolean;
+      /** Composition VII — miss a falling drop → lose 70% progress. */
+      paintMustCatch?: boolean;
+      /** Composition VII Kandinsky UI (default Starry Night). */
+      paintCompositionTheme?: boolean;
+      /** Fossil Rod — chance to cage-freeze the fish once per fight. */
+      fossilFreeze?: boolean;
       /** Test Rod accelerating star rain. */
       starRain?: boolean;
       /** Defined Surfer — stars only to 0.3s, no black hole. */
@@ -753,6 +791,8 @@ export class CatchMinigame {
     this.birthdayParty = !!options?.birthdayParty;
     this.voidHarvest = !!options?.voidHarvest;
     this.paintSplash = !!options?.paintSplash;
+    this.paintMustCatch = !!options?.paintMustCatch;
+    this.paintCompositionTheme = !!options?.paintCompositionTheme;
     this.clearPaintSplash();
     this.paintSpawnTimer = this.paintSpawnInterval;
     this.paintSpawnedCount = 0;
@@ -762,6 +802,15 @@ export class CatchMinigame {
     this.paintBoostSpeedAdd = 0;
     this.paintPhase = 0;
     this.paintLayer.setVisible(this.paintSplash);
+    this.fossilFreeze = !!options?.fossilFreeze;
+    this.fossilRollTimer = 0;
+    this.fossilFrozeOnce = false;
+    this.fossilFreezeRemain = 0;
+    this.fossilCagePhase = 0;
+    this.fossilDunePhase = 0;
+    this.fossilImpactT = 0;
+    this.fossilSlamScale = 1;
+    this.clearFossilUi();
     this.voidControlShare = this.voidControlMax;
     this.voidResilience = 100;
     this.voidWasOverlapping = false;
@@ -1023,6 +1072,7 @@ export class CatchMinigame {
     );
     this.prevRightDown = pointerRightDown;
     this.updatePaintSplash(dt);
+    this.updateFossilFreeze(dt);
 
     const halfWhite = this.whiteWidth / 2;
     const overlapping =
@@ -2836,7 +2886,10 @@ export class CatchMinigame {
   }
 
   private clearPaintSplash(): void {
-    for (const d of this.paintDrops) d.root.destroy();
+    for (const d of this.paintDrops) {
+      d.zone?.destroy();
+      d.root.destroy();
+    }
     this.paintDrops = [];
     this.paintSplats = [];
     this.clearPaintSplashGraphicsOnly();
@@ -2846,6 +2899,373 @@ export class CatchMinigame {
     this.paintSpawnedCount = 0;
     this.paintSplatCount = 0;
     this.progressFill.setVisible(true);
+  }
+
+  private clearFossilCage(): void {
+    this.fossilCageGfx?.destroy();
+    this.fossilCageGfx = undefined;
+    this.fossilFreezeRemain = 0;
+    this.fossilImpactT = 0;
+    this.fossilSlamScale = 1;
+  }
+
+  private clearFossilUi(): void {
+    this.clearFossilCage();
+    this.fossilDuneGfx?.destroy();
+    this.fossilDuneGfx = undefined;
+    this.fossilFxGfx?.destroy();
+    this.fossilFxGfx = undefined;
+    this.fossilDunePhase = 0;
+  }
+
+  private setupFossilDuneUi(): void {
+    const scene = this.root.scene;
+    this.fossilDuneGfx?.destroy();
+    this.fossilFxGfx?.destroy();
+    this.fossilDuneGfx = scene.add.graphics();
+    this.fossilFxGfx = scene.add.graphics();
+    this.root.addAt(this.fossilDuneGfx, 0);
+    this.root.add(this.fossilFxGfx);
+    this.redrawFossilDunes();
+  }
+
+  private redrawFossilDunes(): void {
+    const g = this.fossilDuneGfx;
+    if (!g) return;
+    g.clear();
+    const t = this.fossilDunePhase;
+    const w = 290;
+    const top = -78;
+    const bot = 62;
+
+    // Hot dune sky gradient bands
+    g.fillStyle(0x3d2818, 0.92);
+    g.fillRoundedRect(-w, top, w * 2, bot - top, 14);
+    g.fillStyle(0x5a3a22, 0.55);
+    g.fillEllipse(0, top + 28, 520, 70);
+    g.fillStyle(0xc47838, 0.22);
+    g.fillEllipse(-40 + Math.sin(t * 0.4) * 8, top + 18, 180, 36);
+    g.fillStyle(0xe8a050, 0.18);
+    g.fillEllipse(90 + Math.cos(t * 0.35) * 6, top + 22, 140, 28);
+
+    // Distant dune ridges
+    const ridges = [
+      { y: 8, h: 22, col: 0x8a6038, a: 0.55 },
+      { y: 18, h: 28, col: 0xa87848, a: 0.7 },
+      { y: 30, h: 34, col: 0xc49858, a: 0.85 },
+    ];
+    for (const r of ridges) {
+      g.fillStyle(r.col, r.a);
+      g.beginPath();
+      g.moveTo(-w + 8, r.y + 20);
+      for (let x = -w + 8; x <= w - 8; x += 18) {
+        const wave =
+          Math.sin(x * 0.018 + t * 0.55 + r.y * 0.1) * r.h * 0.35 +
+          Math.sin(x * 0.04 + t * 0.3) * 4;
+        g.lineTo(x, r.y - wave);
+      }
+      g.lineTo(w - 8, r.y + 28);
+      g.lineTo(-w + 8, r.y + 28);
+      g.closePath();
+      g.fillPath();
+    }
+
+    // Wind-blown sand streaks
+    for (let i = 0; i < 10; i++) {
+      const y = -50 + ((i * 17 + t * 22) % 100);
+      const x0 = -w + 20 + ((i * 41 + t * 40) % (w * 1.6));
+      g.lineStyle(1.2, 0xf5e0b8, 0.2 + (i % 3) * 0.08);
+      g.lineBetween(x0, y, x0 + 28 + (i % 4) * 6, y - 2);
+    }
+
+    // Bone / fossil chips in the sand
+    for (let i = 0; i < 5; i++) {
+      const x = -120 + i * 55 + Math.sin(t + i) * 3;
+      const y = 36 + (i % 2) * 4;
+      g.fillStyle(0xe8dcc0, 0.55);
+      g.fillEllipse(x, y, 10, 4);
+      g.fillStyle(0xa89068, 0.45);
+      g.fillEllipse(x + 2, y, 4, 2);
+    }
+
+    // Warm rim
+    g.lineStyle(2.5, 0xe8c878, 0.85);
+    g.strokeRoundedRect(-w, top, w * 2, bot - top, 14);
+    g.lineStyle(1.2, 0xfff0c8, 0.35);
+    g.strokeRoundedRect(-w + 4, top + 4, w * 2 - 8, bot - top - 8, 12);
+  }
+
+  private ensureFossilCageGfx(): Phaser.GameObjects.Graphics {
+    if (this.fossilCageGfx && this.fossilCageGfx.active) {
+      return this.fossilCageGfx;
+    }
+    const g = this.root.scene.add.graphics().setDepth(188);
+    this.root.add(g);
+    this.fossilCageGfx = g;
+    return g;
+  }
+
+  private playFossilFreezeImpact(): void {
+    const scene = this.root.scene;
+    const cx = this.root.x + this.fishIcon.x;
+    const cy = this.root.y + this.fishIcon.y;
+    this.fossilImpactT = 0.85;
+    this.fossilSlamScale = 2.1;
+
+    // Amber shock flash
+    const flash = scene.add
+      .circle(cx, cy, 14, 0xffe0a0, 0.95)
+      .setDepth(220)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    scene.tweens.add({
+      targets: flash,
+      scale: 4.5,
+      alpha: 0,
+      duration: 420,
+      ease: "Quad.easeOut",
+      onComplete: () => flash.destroy(),
+    });
+
+    // Expanding dune sand rings
+    for (let i = 0; i < 3; i++) {
+      const ring = scene.add
+        .ellipse(cx, cy, 20, 12, 0xd4a860, 0)
+        .setStrokeStyle(3 - i * 0.5, i % 2 ? 0xf5e0b8 : 0xc47838, 0.95)
+        .setDepth(219)
+        .setScrollFactor(0);
+      scene.tweens.add({
+        targets: ring,
+        scaleX: 2.8 + i * 0.7,
+        scaleY: 2.2 + i * 0.55,
+        alpha: 0,
+        duration: 480 + i * 90,
+        delay: i * 55,
+        ease: "Cubic.easeOut",
+        onComplete: () => ring.destroy(),
+      });
+    }
+
+    // Sand burst particles
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2 + Math.random() * 0.3;
+      const dist = Phaser.Math.FloatBetween(36, 78);
+      const grit = scene.add
+        .ellipse(
+          cx,
+          cy,
+          Phaser.Math.FloatBetween(4, 9),
+          Phaser.Math.FloatBetween(2, 4),
+          i % 2 ? 0xe8c878 : 0xc4a060,
+          0.95
+        )
+        .setDepth(221)
+        .setScrollFactor(0)
+        .setAngle(Phaser.Math.Between(-40, 40));
+      scene.tweens.add({
+        targets: grit,
+        x: cx + Math.cos(a) * dist,
+        y: cy + Math.sin(a) * dist * 0.65,
+        alpha: 0,
+        scale: 0.3,
+        duration: Phaser.Math.Between(380, 620),
+        ease: "Quad.easeOut",
+        onComplete: () => grit.destroy(),
+      });
+    }
+
+    // Bone rib shards slamming inward
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const bone = scene.add
+        .rectangle(
+          cx + Math.cos(a) * 54,
+          cy + Math.sin(a) * 36,
+          16,
+          4,
+          0xf0e6d0,
+          0.95
+        )
+        .setDepth(222)
+        .setScrollFactor(0)
+        .setAngle((a * 180) / Math.PI);
+      scene.tweens.add({
+        targets: bone,
+        x: cx + Math.cos(a) * 18,
+        y: cy + Math.sin(a) * 12,
+        scaleX: 0.6,
+        alpha: 0.15,
+        duration: 280,
+        ease: "Back.easeIn",
+        onComplete: () => bone.destroy(),
+      });
+    }
+
+    // Slam scale ease for the cage
+    const slamProxy = { v: 2.1 };
+    this.fossilSlamScale = 2.1;
+    scene.tweens.add({
+      targets: slamProxy,
+      v: 1,
+      duration: 320,
+      ease: "Back.easeOut",
+      onUpdate: () => {
+        this.fossilSlamScale = slamProxy.v;
+      },
+    });
+
+    // Brief title shout
+    this.title.setText("FOSSIL CAGE!");
+    this.title.setColor("#ffe8a0");
+    scene.tweens.add({
+      targets: this.title,
+      scale: 1.18,
+      duration: 120,
+      yoyo: true,
+      ease: "Back.easeOut",
+    });
+    scene.time.delayedCall(700, () => {
+      if (!this.active) return;
+      this.title.setText("Keep the fish in the dune zone!");
+      this.title.setColor("#f5e6c0");
+      this.title.setScale(1);
+    });
+  }
+
+  private redrawFossilCage(): void {
+    if (this.fossilFreezeRemain <= 0) {
+      this.fossilCageGfx?.clear();
+      this.fossilFxGfx?.clear();
+      return;
+    }
+    const g = this.ensureFossilCageGfx();
+    g.clear();
+    const fx = this.fossilFxGfx;
+    fx?.clear();
+
+    const cx = this.fishIcon.x;
+    const cy = this.fishIcon.y;
+    const t = this.fossilCagePhase;
+    const slam = this.fossilSlamScale;
+    const pulse = 0.92 + Math.sin(t * 7) * 0.08;
+    const rx = 30 * pulse * slam;
+    const ry = 22 * pulse * slam;
+    const impact = Math.max(0, this.fossilImpactT);
+
+    // Sand swirl aura
+    if (fx) {
+      for (let i = 0; i < 12; i++) {
+        const a = t * 2.2 + (i / 12) * Math.PI * 2;
+        const orbit = 1.15 + (i % 3) * 0.12 + impact * 0.35;
+        const x = cx + Math.cos(a) * rx * orbit;
+        const y = cy + Math.sin(a * 1.15) * ry * orbit * 0.9;
+        fx.fillStyle(i % 2 ? 0xe8c878 : 0xc4a060, 0.35 + Math.sin(t * 5 + i) * 0.2);
+        fx.fillCircle(x, y, 1.4 + (i % 3) * 0.5);
+      }
+      // Amber afterglow while impact settles
+      if (impact > 0) {
+        fx.fillStyle(0xffe0a0, impact * 0.35);
+        fx.fillEllipse(cx, cy, rx * 2.4, ry * 2.2);
+      }
+    }
+
+    // Outer sandstone ring
+    g.lineStyle(5, 0xa88858, 0.55);
+    g.strokeEllipse(cx, cy, rx * 2.35, ry * 2.4);
+    g.lineStyle(3.4, 0xf0e6d0, 0.98);
+    g.strokeEllipse(cx, cy, rx * 2, ry * 2);
+    g.lineStyle(1.8, 0xc4a060, 0.75);
+    g.strokeEllipse(cx, cy, rx * 1.7, ry * 1.7);
+
+    // Interlocking fossil ribs
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + t * 0.25;
+      const x0 = cx + Math.cos(a) * rx * 0.28;
+      const y0 = cy + Math.sin(a) * ry * 0.28;
+      const x1 = cx + Math.cos(a) * rx * 1.08;
+      const y1 = cy + Math.sin(a) * ry * 1.08;
+      g.lineStyle(3.2, 0xf5ecd8, 0.95);
+      g.lineBetween(x0, y0, x1, y1);
+      g.lineStyle(1.4, 0x8a7050, 0.7);
+      g.lineBetween(x0, y0, x1, y1);
+      // Joint knobs
+      g.fillStyle(0xe8dcc0, 0.95);
+      g.fillCircle(x1, y1, 3.2);
+      g.fillStyle(0xa89068, 0.7);
+      g.fillCircle(x1, y1, 1.5);
+      g.fillStyle(0xfff8e8, 0.5);
+      g.fillCircle(x1 - 0.6, y1 - 0.6, 0.8);
+    }
+
+    // Cross-bracing bones
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI + t * 0.15;
+      const x0 = cx + Math.cos(a) * rx * 0.85;
+      const y0 = cy + Math.sin(a) * ry * 0.85;
+      const x1 = cx + Math.cos(a + Math.PI) * rx * 0.85;
+      const y1 = cy + Math.sin(a + Math.PI) * ry * 0.85;
+      g.lineStyle(2, 0xd4c4a0, 0.55);
+      g.lineBetween(x0, y0, x1, y1);
+    }
+
+    // Amber fossil chips orbiting
+    for (let i = 0; i < 5; i++) {
+      const a = -t * 1.4 + i * 1.35;
+      const x = cx + Math.cos(a) * rx * 0.72;
+      const y = cy + Math.sin(a) * ry * 0.58;
+      g.fillStyle(i % 2 ? 0xc47838 : 0xe8c878, 0.85);
+      g.fillEllipse(x, y, 6.5, 3.2);
+      g.fillStyle(0x6b5340, 0.45);
+      g.fillEllipse(x, y, 2.5, 1.2);
+    }
+
+    // Center lock seal
+    g.fillStyle(0x8a6840, 0.55);
+    g.fillCircle(cx, cy, 5);
+    g.lineStyle(1.5, 0xffe8a0, 0.8);
+    g.strokeCircle(cx, cy, 5);
+  }
+
+  private updateFossilFreeze(dt: number): void {
+    if (!this.fossilFreeze) return;
+    this.fossilCagePhase += dt;
+    this.fossilDunePhase += dt;
+    if (this.fossilImpactT > 0) {
+      this.fossilImpactT = Math.max(0, this.fossilImpactT - dt);
+    }
+    this.redrawFossilDunes();
+
+    if (this.fossilFreezeRemain > 0) {
+      this.fossilFreezeRemain = Math.max(0, this.fossilFreezeRemain - dt);
+      this.fishVel = 0;
+      this.fishTargetVel = 0;
+      this.fishPauseTimer = Math.max(this.fishPauseTimer, this.fossilFreezeRemain);
+      this.redrawFossilCage();
+      if (this.fossilFreezeRemain <= 0) {
+        this.fossilCageGfx?.clear();
+        this.fossilFxGfx?.clear();
+        this.fossilSlamScale = 1;
+        this.fossilImpactT = 0;
+      }
+      return;
+    }
+
+    if (this.fossilFrozeOnce || !this.ready) return;
+
+    this.fossilRollTimer += dt;
+    while (this.fossilRollTimer >= this.fossilRollInterval) {
+      this.fossilRollTimer -= this.fossilRollInterval;
+      if (Math.random() < this.fossilFreezeChance) {
+        this.fossilFrozeOnce = true;
+        this.fossilFreezeRemain = this.fossilFreezeDuration;
+        this.fishVel = 0;
+        this.fishTargetVel = 0;
+        this.fishPauseTimer = this.fossilFreezeDuration;
+        this.playFossilFreezeImpact();
+        this.redrawFossilCage();
+        break;
+      }
+    }
   }
 
   private updatePaintSplash(dt: number): void {
@@ -2866,6 +3286,21 @@ export class CatchMinigame {
       drop.vy += 520 * dt;
       drop.root.y += drop.vy * dt;
       drop.root.setAngle(Math.sin(this.paintPhase * 6 + i) * 12);
+      if (drop.zone) {
+        const localX = drop.root.x - this.root.x;
+        drop.zone.setX(localX);
+        // Pulse like Zeus warn zone while falling
+        const pulse = 0.22 + 0.14 * (0.5 + 0.5 * Math.sin(this.paintPhase * 8 + i));
+        drop.zone.setAlpha(pulse);
+      }
+    }
+
+    if (this.paintMustCatch) {
+      this.tryCatchPaintDrops();
+    }
+
+    for (let i = this.paintDrops.length - 1; i >= 0; i--) {
+      const drop = this.paintDrops[i]!;
       if (drop.root.y >= groundY) {
         const localX = drop.root.x - this.root.x;
         this.landPaintDrop(i, localX, drop.color);
@@ -2882,36 +3317,49 @@ export class CatchMinigame {
       this.progressFill.setVisible(false);
     }
 
-    this.redrawPaintStarryNight();
+    this.redrawPaintBackdrop();
     this.redrawPaintSplats();
     this.redrawPaintMeter();
     if (this.paintBoostActive) this.redrawPaintWavyProgress();
   }
 
-  private spawnPaintDrop(): void {
-    if (this.paintSpawnedCount >= this.paintMaxDrops) return;
-    const scene = this.root.scene;
-    const color = rollPaintColor();
-    const half = this.barWidth / 2 - 20;
-    const x = this.root.x + Phaser.Math.FloatBetween(-half, half);
-    const y = 18;
-    const blob = scene.add.circle(0, 0, 9, color, 0.95);
-    const shine = scene.add.circle(-2.5, -2.5, 3, 0xffffff, 0.75);
-    const drip = scene.add.ellipse(0, 8, 7, 11, color, 0.9);
-    const root = scene.add.container(x, y, [drip, blob, shine]).setDepth(186);
-    this.paintLayer.add(root);
-    this.paintDrops.push({ root, color, vy: 40 });
-    this.paintSpawnedCount += 1;
+  /** Catch falling drops with the white bar (Composition VII). */
+  private tryCatchPaintDrops(): void {
+    const halfZone = this.paintDropZoneW / 2;
+    const halfWhite = this.whiteWidth / 2;
+    const barTop = this.root.y - 8 - this.barHeight * 0.55;
+    const barBot = this.root.y - 8 + this.barHeight * 0.55;
+    for (let i = this.paintDrops.length - 1; i >= 0; i--) {
+      const drop = this.paintDrops[i]!;
+      const localX = drop.root.x - this.root.x;
+      const y = drop.root.y;
+      if (y < barTop || y > barBot) continue;
+      // White bar overlaps the drop's Zeus-style zone
+      const overlap =
+        this.whiteX - halfWhite < localX + halfZone &&
+        this.whiteX + halfWhite > localX - halfZone;
+      if (overlap) {
+        this.catchPaintDrop(i, localX, drop.color);
+      }
+    }
   }
 
-  private landPaintDrop(index: number, localX: number, color: number): void {
+  private destroyPaintDropZone(drop: PaintDrop): void {
+    drop.zone?.destroy();
+    drop.zone = undefined;
+  }
+
+  private catchPaintDrop(index: number, localX: number, color: number): void {
     const drop = this.paintDrops[index];
     if (!drop) return;
     this.paintDrops.splice(index, 1);
+    this.destroyPaintDropZone(drop);
     drop.root.destroy();
     this.paintSplats.push({
       x: localX,
-      w: Phaser.Math.FloatBetween(52, 78),
+      w: isGolfClubSkin(this.rodSkinId)
+        ? 28
+        : Phaser.Math.FloatBetween(52, 78),
       color,
       age: 0,
     });
@@ -2922,10 +3370,149 @@ export class CatchMinigame {
     this.playPaintSplatFx(localX, color);
   }
 
+  private missPaintDrop(index: number, localX: number, color: number): void {
+    const drop = this.paintDrops[index];
+    if (!drop) return;
+    this.paintDrops.splice(index, 1);
+    this.destroyPaintDropZone(drop);
+    drop.root.destroy();
+    this.progress = Math.max(0, this.progress * 0.3);
+    this.playPaintMissFx(localX, color);
+  }
+
+  private playPaintMissFx(localX: number, color: number): void {
+    const scene = this.root.scene;
+    const x = this.root.x + localX;
+    const y = this.root.y - 8;
+    const flash = scene.add
+      .circle(x, y, 12, 0xff2244, 0.9)
+      .setDepth(200)
+      .setScrollFactor(0);
+    scene.tweens.add({
+      targets: flash,
+      scale: 2.8,
+      alpha: 0,
+      duration: 320,
+      ease: "Quad.easeOut",
+      onComplete: () => flash.destroy(),
+    });
+    const tip = scene.add
+      .text(x, y - 28, "−70%", {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "18px",
+        color: "#ff6644",
+        stroke: "#000000",
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5)
+      .setDepth(201)
+      .setScrollFactor(0);
+    scene.tweens.add({
+      targets: tip,
+      y: y - 52,
+      alpha: 0,
+      duration: 650,
+      ease: "Quad.easeOut",
+      onComplete: () => tip.destroy(),
+    });
+    void color;
+  }
+
+  private spawnPaintDrop(): void {
+    if (this.paintSpawnedCount >= this.paintMaxDrops) return;
+    const scene = this.root.scene;
+    const golf = isGolfClubSkin(this.rodSkinId);
+    const color = golf ? 0xf4f4f4 : rollPaintColor();
+    const half = this.barWidth / 2 - 20;
+    const x = this.root.x + Phaser.Math.FloatBetween(-half, half);
+    const y = 18;
+    const localX = x - this.root.x;
+    let root: Phaser.GameObjects.Container;
+    if (golf) {
+      const ball = scene.add.circle(0, 0, 9, 0xf8f8f8, 1);
+      const shade = scene.add.circle(2, 2.5, 9, 0xc8c8c8, 0.45);
+      const dimples: Phaser.GameObjects.Arc[] = [];
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        dimples.push(
+          scene.add.circle(
+            Math.cos(a) * 3.2,
+            Math.sin(a) * 3.2 - 0.5,
+            1.1,
+            0xd0d0d0,
+            0.85
+          )
+        );
+      }
+      const shine = scene.add.circle(-2.5, -3, 2.2, 0xffffff, 0.95);
+      root = scene.add
+        .container(x, y, [shade, ball, ...dimples, shine])
+        .setDepth(186);
+    } else {
+      const blob = scene.add.circle(0, 0, 9, color, 0.95);
+      const shine = scene.add.circle(-2.5, -2.5, 3, 0xffffff, 0.75);
+      const drip = scene.add.ellipse(0, 8, 7, 11, color, 0.9);
+      root = scene.add.container(x, y, [drip, blob, shine]).setDepth(186);
+    }
+    this.paintLayer.add(root);
+
+    let zone: Phaser.GameObjects.Rectangle | undefined;
+    if (this.paintMustCatch) {
+      // Zeus-style telegraph on the catch bar under the falling drop
+      zone = scene.add
+        .rectangle(
+          localX,
+          -8,
+          this.paintDropZoneW,
+          this.barHeight + 4,
+          golf ? 0x3a9a48 : color,
+          0.28
+        )
+        .setStrokeStyle(2, golf ? 0xffffff : color, 0.95);
+      const whiteIdx = this.root.getIndex(this.whiteBar);
+      if (whiteIdx >= 0) this.root.addAt(zone, whiteIdx);
+      else this.root.add(zone);
+      // Keep fish / white bar readable above the zone fill
+      this.root.bringToTop(this.whiteBar);
+      this.root.bringToTop(this.fishGlow);
+      this.root.bringToTop(this.fishIcon);
+      this.root.bringToTop(this.fishGlow2);
+      this.root.bringToTop(this.fishIcon2);
+    }
+
+    this.paintDrops.push({ root, color, vy: 40, zone });
+    this.paintSpawnedCount += 1;
+  }
+
+  private landPaintDrop(index: number, localX: number, color: number): void {
+    if (this.paintMustCatch) {
+      // Hitting the ground without catching = miss
+      this.missPaintDrop(index, localX, color);
+      return;
+    }
+    this.catchPaintDrop(index, localX, color);
+  }
+
   private playPaintSplatFx(localX: number, color: number): void {
     const scene = this.root.scene;
     const x = this.root.x + localX;
     const y = this.root.y - 8;
+    if (isGolfClubSkin(this.rodSkinId)) {
+      // Brief plant flash — flag itself is drawn in redrawPaintSplats
+      const flash = scene.add
+        .circle(x, y + 4, 8, 0xffffff, 0.7)
+        .setDepth(200)
+        .setScrollFactor(0);
+      scene.tweens.add({
+        targets: flash,
+        scale: 2.2,
+        alpha: 0,
+        duration: 260,
+        ease: "Quad.easeOut",
+        onComplete: () => flash.destroy(),
+      });
+      return;
+    }
     const flash = scene.add
       .circle(x, y, 10, color, 0.9)
       .setDepth(200)
@@ -2957,19 +3544,36 @@ export class CatchMinigame {
     }
   }
 
-  private redrawPaintStarryNight(): void {
+  private redrawPaintBackdrop(): void {
     const g = this.paintStarryGfx;
     if (!g) return;
     g.clear();
-    // Big panel painting first, then the control-bar track on top of it
-    drawStarryNightPanel(g, 580, 156, -10, this.paintPhase);
-    drawStarryNightBar(g, this.barWidth, this.barHeight, -8, this.paintPhase);
+    if (isGolfClubSkin(this.rodSkinId)) {
+      drawGolfCoursePanel(g, 580, 156, -10, this.paintPhase);
+      drawGolfCourseBar(g, this.barWidth, this.barHeight, -8, this.paintPhase);
+    } else if (this.paintCompositionTheme) {
+      drawCompositionViiPanel(g, 580, 156, -10, this.paintPhase);
+      drawCompositionViiBar(g, this.barWidth, this.barHeight, -8, this.paintPhase);
+    } else {
+      drawStarryNightPanel(g, 580, 156, -10, this.paintPhase);
+      drawStarryNightBar(g, this.barWidth, this.barHeight, -8, this.paintPhase);
+    }
+  }
+
+  private redrawPaintStarryNight(): void {
+    this.redrawPaintBackdrop();
   }
 
   private redrawPaintSplats(): void {
     const g = this.paintSplatGfx;
     if (!g) return;
     g.clear();
+    if (isGolfClubSkin(this.rodSkinId)) {
+      for (const s of this.paintSplats) {
+        this.drawGolfFlagSplat(g, s.x, s.age);
+      }
+      return;
+    }
     for (const s of this.paintSplats) {
       g.fillStyle(s.color, 0.55);
       g.fillEllipse(s.x, -8 + this.barHeight * 0.22, s.w, 14);
@@ -2978,6 +3582,48 @@ export class CatchMinigame {
       g.fillStyle(0xffffff, 0.2);
       g.fillEllipse(s.x + s.w * 0.12, -8 + this.barHeight * 0.08, s.w * 0.2, 4);
     }
+  }
+
+  /** Planted pin flag where a golf ball landed on the catch bar. */
+  private drawGolfFlagSplat(
+    g: Phaser.GameObjects.Graphics,
+    x: number,
+    age: number
+  ): void {
+    const barY = -8;
+    const flap = Math.sin(this.paintPhase * 3.5 + age * 2) * 2.5;
+    const poleH = 28;
+    const holeY = barY + this.barHeight * 0.28;
+
+    // Soft green mound / hole cup
+    g.fillStyle(0x3a9028, 0.85);
+    g.fillEllipse(x, holeY + 2, 16, 7);
+    g.fillStyle(0x1a1a1a, 0.9);
+    g.fillCircle(x, holeY + 1, 3.2);
+    g.fillStyle(0x0a0a0a, 1);
+    g.fillCircle(x, holeY + 1, 1.8);
+
+    // Flagstick
+    g.lineStyle(2, 0xe8e0d0, 1);
+    g.lineBetween(x, holeY, x, holeY - poleH);
+    g.fillStyle(0xe8e0d0, 1);
+    g.fillCircle(x, holeY - poleH, 1.6);
+
+    // Red pennant
+    g.fillStyle(0xe82828, 1);
+    g.beginPath();
+    g.moveTo(x, holeY - poleH + 1);
+    g.lineTo(x + 14 + flap, holeY - poleH + 8);
+    g.lineTo(x, holeY - poleH + 15);
+    g.closePath();
+    g.fillPath();
+    g.fillStyle(0xff6060, 0.9);
+    g.beginPath();
+    g.moveTo(x, holeY - poleH + 3);
+    g.lineTo(x + 9 + flap * 0.6, holeY - poleH + 8);
+    g.lineTo(x, holeY - poleH + 12);
+    g.closePath();
+    g.fillPath();
   }
 
   private redrawPaintMeter(): void {
@@ -2998,18 +3644,25 @@ export class CatchMinigame {
     const fillH = h * Phaser.Math.Clamp(this.paintMeterVisual, 0, 1);
     if (fillH > 0.5) {
       if (this.paintBoostActive) {
-        // Rainbow fill
-        const bands = 8;
-        for (let i = 0; i < bands; i++) {
-          const u0 = i / bands;
-          const u1 = (i + 1) / bands;
-          const y0 = y + h - fillH * u1;
-          const y1 = y + h - fillH * u0;
-          const hue = (this.paintPhase * 80 + i * 40) % 360;
-          const color = Phaser.Display.Color.HSLToColor(hue / 360, 0.85, 0.55)
-            .color;
-          g.fillStyle(color, 0.95);
-          g.fillRect(x - w / 2, y0, w, Math.max(1, y1 - y0));
+        if (isGolfClubSkin(this.rodSkinId)) {
+          g.fillStyle(0x8a9098, 0.95);
+          g.fillRect(x - w / 2, y + h - fillH, w, fillH);
+          g.fillStyle(0xd0d4d8, 0.55);
+          g.fillRect(x - w / 2, y + h - fillH, w, Math.min(6, fillH));
+        } else {
+          // Rainbow fill
+          const bands = 8;
+          for (let i = 0; i < bands; i++) {
+            const u0 = i / bands;
+            const u1 = (i + 1) / bands;
+            const y0 = y + h - fillH * u1;
+            const y1 = y + h - fillH * u0;
+            const hue = (this.paintPhase * 80 + i * 40) % 360;
+            const color = Phaser.Display.Color.HSLToColor(hue / 360, 0.85, 0.55)
+              .color;
+            g.fillStyle(color, 0.95);
+            g.fillRect(x - w / 2, y0, w, Math.max(1, y1 - y0));
+          }
         }
       } else {
         g.fillStyle(0x66aaff, 0.95);
@@ -3060,11 +3713,17 @@ export class CatchMinigame {
       g.lineTo(x, y);
     }
     g.closePath();
-    const hue = (t * 90) % 360;
-    const c = Phaser.Display.Color.HSLToColor(hue / 360, 0.8, 0.55).color;
-    g.fillStyle(c, 0.95);
-    g.fillPath();
-    g.lineStyle(1.5, 0xffffff, 0.65);
+    if (isGolfClubSkin(this.rodSkinId)) {
+      g.fillStyle(0x8a9098, 0.95);
+      g.fillPath();
+      g.lineStyle(1.5, 0xd8dce0, 0.75);
+    } else {
+      const hue = (t * 90) % 360;
+      const c = Phaser.Display.Color.HSLToColor(hue / 360, 0.8, 0.55).color;
+      g.fillStyle(c, 0.95);
+      g.fillPath();
+      g.lineStyle(1.5, 0xffffff, 0.65);
+    }
     g.beginPath();
     for (let i = 0; i <= segs; i++) {
       const u = i / segs;
@@ -3399,30 +4058,99 @@ export class CatchMinigame {
     if (this.paintSplash) {
       this.setupPaintSplashUi();
     }
+    if (this.fossilFreeze) {
+      this.setupFossilDuneUi();
+    }
 
     this.applyRodSkinThemeColors();
   }
 
   /** Progress / panel tints that must win over start() defaults. */
   private applyRodSkinThemeColors(): void {
-    if (this.paintSplash) {
+    if (this.fossilFreeze) {
       this.panel
-        .setSize(580, 156)
-        .setPosition(0, -10)
-        .setFillStyle(0x0a1430, 0.08)
-        .setStrokeStyle(2, 0xffe066, 0.9);
+        .setSize(580, 168)
+        .setPosition(0, -14)
+        .setFillStyle(0x2a1c10, 0.55)
+        .setStrokeStyle(2.5, 0xe8c878, 0.95);
       this.title
-        .setText("Keep the fish in the painted night!")
-        .setColor("#ffe8a0")
-        .setY(-68);
-      this.greyBar.setFillStyle(0x0a1430, 0.05);
-      this.greyBar.setStrokeStyle(2, 0xffe066, 0.35);
-      this.whiteBar.setFillStyle(0xfff6c8, 0.9);
-      this.whiteBar.setStrokeStyle(1, 0xffe066);
-      this.progressBg.setFillStyle(0x0a1430, 0.65);
-      this.progressBg.setStrokeStyle(1, 0x3a6ab8);
-      this.progressFill.setFillStyle(0x66aaff);
-      this.hint.setColor("#c8dcff");
+        .setText("Keep the fish in the dune zone!")
+        .setColor("#f5e6c0")
+        .setY(-72);
+      this.greyBar.setFillStyle(0x6b5340, 0.55);
+      this.greyBar.setStrokeStyle(2, 0xc4a878, 0.7);
+      this.whiteBar.setFillStyle(0xf0e0b8, 0.92);
+      this.whiteBar.setStrokeStyle(1.5, 0xd4a860);
+      this.progressBg.setFillStyle(0x3a2818, 0.85);
+      this.progressBg.setStrokeStyle(1, 0xa88858);
+      this.progressFill.setFillStyle(0xe8b060);
+      this.hint.setColor("#e8d4a0");
+      return;
+    }
+    if (this.paintSplash) {
+      if (isGolfClubSkin(this.rodSkinId)) {
+        this.panel
+          .setSize(580, 156)
+          .setPosition(0, -10)
+          .setFillStyle(0x5aaa48, 0.08)
+          .setStrokeStyle(2, 0x2a6a20, 0.9);
+        this.title
+          .setText(
+            this.paintMustCatch
+              ? "Catch the golf balls — miss = −70% progress!"
+              : "Keep the fish on the fairway!"
+          )
+          .setColor("#1a4020")
+          .setY(-68);
+        this.greyBar.setFillStyle(0x5aaa48, 0.12);
+        this.greyBar.setStrokeStyle(2, 0x2a6a20, 0.45);
+        this.whiteBar.setFillStyle(0x3a9a48, 0.95);
+        this.whiteBar.setStrokeStyle(1.5, 0xffffff);
+        this.progressBg.setFillStyle(0x2a4820, 0.75);
+        this.progressBg.setStrokeStyle(1, 0x6ec85a);
+        this.progressFill.setFillStyle(0x8ae070);
+        this.hint.setColor("#2a5a28");
+      } else if (this.paintCompositionTheme) {
+        this.panel
+          .setSize(580, 156)
+          .setPosition(0, -10)
+          .setFillStyle(0xd8c090, 0.12)
+          .setStrokeStyle(2, 0xc42828, 0.95);
+        this.title
+          .setText(
+            this.paintMustCatch
+              ? "Catch the paint drops — miss = −70% progress!"
+              : "Keep the fish in Composition VII!"
+          )
+          .setColor("#3a2010")
+          .setY(-68);
+        this.greyBar.setFillStyle(0xc8b078, 0.15);
+        this.greyBar.setStrokeStyle(2, 0x4a3020, 0.55);
+        this.whiteBar.setFillStyle(0xfff0d0, 0.92);
+        this.whiteBar.setStrokeStyle(1.5, 0xc42828);
+        this.progressBg.setFillStyle(0x3a2818, 0.75);
+        this.progressBg.setStrokeStyle(1, 0xc42828);
+        this.progressFill.setFillStyle(0xe84828);
+        this.hint.setColor("#5a3820");
+      } else {
+        this.panel
+          .setSize(580, 156)
+          .setPosition(0, -10)
+          .setFillStyle(0x0a1430, 0.08)
+          .setStrokeStyle(2, 0xffe066, 0.9);
+        this.title
+          .setText("Keep the fish in the painted night!")
+          .setColor("#ffe8a0")
+          .setY(-68);
+        this.greyBar.setFillStyle(0x0a1430, 0.05);
+        this.greyBar.setStrokeStyle(2, 0xffe066, 0.35);
+        this.whiteBar.setFillStyle(0xfff6c8, 0.9);
+        this.whiteBar.setStrokeStyle(1, 0xffe066);
+        this.progressBg.setFillStyle(0x0a1430, 0.65);
+        this.progressBg.setStrokeStyle(1, 0x3a6ab8);
+        this.progressFill.setFillStyle(0x66aaff);
+        this.hint.setColor("#c8dcff");
+      }
       return;
     }
     if (this.voidHarvest) {
@@ -5428,7 +6156,13 @@ export class CatchMinigame {
     const guaranteePainted = this.paintSplash && this.paintBoostActive;
     this.clearPaintSplash();
     this.paintSplash = false;
+    this.paintMustCatch = false;
+    this.paintCompositionTheme = false;
     this.paintLayer.setVisible(false);
+    const fossilFroze = this.fossilFrozeOnce;
+    this.clearFossilUi();
+    this.fossilFreeze = false;
+    this.fossilFrozeOnce = false;
     this.forgePhase = "idle";
     this.setElectrified(false);
     this.zeusPhase = "idle";
@@ -5446,6 +6180,7 @@ export class CatchMinigame {
       this.guaranteeConfetti ||
       guaranteeLunar ||
       guaranteePainted ||
+      fossilFroze ||
       this.recoilKickCount > 0 ||
       this.bubbleCatch ||
       blackHoleDuplicateChance > 0
@@ -5455,6 +6190,7 @@ export class CatchMinigame {
             ...(this.guaranteeConfetti ? { guaranteeConfetti: true } : {}),
             ...(guaranteeLunar ? { guaranteeLunar: true } : {}),
             ...(guaranteePainted ? { guaranteePainted: true } : {}),
+            ...(fossilFroze ? { fossilFroze: true } : {}),
             ...(this.recoilKickCount > 0
               ? { recoilKicks: this.recoilKickCount }
               : {}),

@@ -19,6 +19,7 @@ export class Bobber {
   private sinkBubbles?: { stop: () => void };
   /** Paint Brush rod — wavy multicolor fishing line. */
   private paintBrushLine = false;
+  private golfClubLine = false;
 
   constructor(scene: Phaser.Scene) {
     this.sprite = scene.add
@@ -31,6 +32,12 @@ export class Bobber {
 
   setPaintBrushLine(on: boolean): void {
     this.paintBrushLine = on;
+    if (on) this.golfClubLine = false;
+  }
+
+  setGolfClubLine(on: boolean): void {
+    this.golfClubLine = on;
+    if (on) this.paintBrushLine = false;
   }
 
   setTexture(key: string): void {
@@ -171,6 +178,10 @@ export class Bobber {
 
   private drawLine(fromX: number, fromY: number): void {
     this.line.clear();
+    if (this.golfClubLine) {
+      this.drawGolfClubLine(fromX, fromY);
+      return;
+    }
     if (this.paintBrushLine) {
       this.drawPaintBrushLine(fromX, fromY);
       return;
@@ -180,6 +191,35 @@ export class Bobber {
     this.line.moveTo(fromX, fromY);
     this.line.lineTo(this.sprite.x, this.sprite.y);
     this.line.strokePath();
+  }
+
+  /** White fairway line — Golf Club paintbrush skin. */
+  private drawGolfClubLine(fromX: number, fromY: number): void {
+    const toX = this.sprite.x;
+    const toY = this.sprite.y;
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const tNow = this.sprite.scene.time.now / 1000;
+    const segs = Math.max(10, Math.min(24, Math.floor(len / 16)));
+
+    let prevX = fromX;
+    let prevY = fromY;
+    for (let i = 1; i <= segs; i++) {
+      const u = i / segs;
+      const wave = Math.sin(u * Math.PI * 2.4 + tNow * 3.2) * 4;
+      const x = fromX + dx * u + nx * wave;
+      const y = fromY + dy * u + ny * wave;
+      this.line.lineStyle(2.2, 0xffffff, 0.92);
+      this.line.beginPath();
+      this.line.moveTo(prevX, prevY);
+      this.line.lineTo(x, y);
+      this.line.strokePath();
+      prevX = x;
+      prevY = y;
+    }
   }
 
   /** Wavy rainbow fishing line — Paint Brush only. */

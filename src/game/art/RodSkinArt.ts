@@ -16,6 +16,7 @@ import {
   drawHorizonbreakerRod,
   drawSkinRodIcon,
 } from "./RodSkinHeldArt";
+import { drawGolfClubRod } from "./PaintBrushArt";
 
 /** Generate high-detail UI / hotbar textures for crate rod skins. */
 export function generateRodSkinTextures(scene: Phaser.Scene): void {
@@ -53,6 +54,7 @@ export function generateRodSkinTextures(scene: Phaser.Scene): void {
   bake("skin_hyperthermic", drawHyperthermicRod);
   bake("skin_rubber_duck", drawRubberDuckRod);
   bake("skin_horizonbreaker", drawHorizonbreakerRod);
+  bake("skin_golf_club", drawGolfClubRod);
 
   // Pufferfirm — use the real pufferfish image stretched (not procedural)
   if (scene.textures.exists("pufferfish")) {

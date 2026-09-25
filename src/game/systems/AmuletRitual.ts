@@ -19,6 +19,7 @@ const EFFECT_SPARKLE: Record<AmuletEffectId, number> = {
   sunlit: 0xffe066,
   thunder: 0xffe066,
   cave: 0x7ad0ff,
+  paint_bomb: 0xff66cc,
 };
 
 /**
@@ -44,6 +45,8 @@ export class AmuletRitual {
     dayNight: DayNightCycle;
     /** Cave Amulet — called mid-ritual when the whale should appear. */
     onCaveWhale?: () => boolean;
+    /** Paint Bomb — place the paint column in island water. */
+    onPaintBomb?: () => boolean;
     onDone?: (message: string) => void;
   }): void {
     if (this.busy) return;
@@ -123,6 +126,11 @@ export class AmuletRitual {
       return;
     }
 
+    if (opts.effect === "paint_bomb") {
+      this.playPaintBomb(orb, glow, follow, spin, opts.onPaintBomb, opts.onDone);
+      return;
+    }
+
     // Weather amulets: spin briefly, then force weather + burst
     this.scene.time.addEvent({
       delay: 40,
@@ -133,6 +141,74 @@ export class AmuletRitual {
       const weatherId = EFFECT_WEATHER[opts.effect];
       if (weatherId) opts.weather.forceWeather(weatherId);
       finish(`${def.name} flares to life!`);
+    });
+  }
+
+  /** Color splash burst, then drop a paint column in nearby water. */
+  private playPaintBomb(
+    orb: Phaser.GameObjects.Image,
+    glow: Phaser.GameObjects.Arc,
+    follow: () => void,
+    spin: Phaser.Tweens.Tween,
+    onPaintBomb?: () => boolean,
+    onDone?: (message: string) => void
+  ): void {
+    const paintCols = [
+      0xff3355, 0xffcc33, 0x33aaff, 0x66cc44, 0xff66cc, 0x7755ff,
+    ];
+    this.scene.time.addEvent({
+      delay: 40,
+      repeat: 40,
+      callback: () => follow(),
+    });
+
+    for (let i = 0; i < 6; i++) {
+      this.scene.time.delayedCall(120 + i * 160, () => {
+        const col = paintCols[i % paintCols.length]!;
+        const ring = this.scene.add
+          .circle(orb.x, orb.y + 40, 6, col, 0)
+          .setStrokeStyle(3, col, 0.9)
+          .setDepth(23);
+        this.scene.tweens.add({
+          targets: ring,
+          scale: 3.8 + i * 0.25,
+          alpha: 0,
+          duration: 700,
+          ease: "Cubic.easeOut",
+          onComplete: () => ring.destroy(),
+        });
+      });
+    }
+
+    this.scene.time.delayedCall(1600, () => {
+      spin.stop();
+      this.burstSparkles(orb.x, orb.y, 0xff66cc);
+      // Extra colored spark pops
+      for (let i = 0; i < 10; i++) {
+        const col = paintCols[i % paintCols.length]!;
+        const a = (i / 10) * Math.PI * 2;
+        const speck = this.scene.add
+          .circle(orb.x, orb.y, 3, col, 0.95)
+          .setDepth(26);
+        this.scene.tweens.add({
+          targets: speck,
+          x: orb.x + Math.cos(a) * 48,
+          y: orb.y + Math.sin(a) * 36,
+          alpha: 0,
+          scale: 0.2,
+          duration: 480,
+          onComplete: () => speck.destroy(),
+        });
+      }
+      orb.destroy();
+      glow.destroy();
+      this.busy = false;
+      const ok = onPaintBomb?.() ?? false;
+      onDone?.(
+        ok
+          ? "Paint explodes across the water — catch in the splash for Painted!"
+          : "No water nearby to paint…"
+      );
     });
   }
 

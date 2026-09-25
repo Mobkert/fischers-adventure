@@ -4,6 +4,8 @@ export type ItemId =
   | "firm_rod"
   | "amber_rod"
   | "wildflower_rod"
+  | "dusty_rod"
+  | "fossil_rod"
   | "zeus_rod"
   | "coral_rod"
   | "augment_rod"
@@ -17,6 +19,7 @@ export type ItemId =
   | "star_line_rod"
   | "voidharvester_rod"
   | "paint_brush_rod"
+  | "paint_brush_composition_rod"
   | "equipment_bag"
   | "bestiary"
   | "tide_compass"
@@ -27,6 +30,12 @@ export type ItemId =
   | "bobber_clover"
   | "bobber_depth"
   | "bobber_inflated"
+  | "bobber_fish_head"
+  | "bobber_exp"
+  | "bobber_starfish"
+  | "bobber_anchor"
+  | "bobber_ruby"
+  | "bobber_shell"
   | "ashencast_trout"
   | "driftwood"
   | "anvil_piece_curio"
@@ -48,6 +57,12 @@ export type ItemId =
   | "mushroom_cluster"
   | "arapaima"
   | "alligator"
+  | "coconut"
+  | "coconut_crab"
+  | "skeletal_seahorse"
+  | "decayed_nautilus"
+  | "cactifin"
+  | "leopard_shark"
   | "clownfish"
   | "angelfish"
   | "pufferfish"
@@ -82,6 +97,7 @@ export type ItemId =
   | "amulet_sunlit"
   | "amulet_thunder"
   | "amulet_cave"
+  | "amulet_paint_bomb"
   | "admin_device"
   | "gem_red"
   | "gem_green"
@@ -125,7 +141,8 @@ export type AmuletEffectId =
   | "dusky"
   | "sunlit"
   | "thunder"
-  | "cave";
+  | "cave"
+  | "paint_bomb";
 
 export type FishMutationId =
   | "bloom"
@@ -150,13 +167,17 @@ export type FishMutationId =
   | "starstruck"
   | "event_horizon"
   | "gate"
-  | "painted";
+  | "painted"
+  | "oasis"
+  | "sandy"
+  | "dusty"
+  | "fossilized";
 
 export type FishBodyTone = "black" | "orange" | "red";
 
 export type FishSizeId = "normal" | "big" | "giant" | "unsellable";
 
-export type FishHabitat = "ocean" | "pond" | "reef" | "cave" | "hotspring";
+export type FishHabitat = "ocean" | "pond" | "reef" | "cave" | "hotspring" | "dustspire";
 
 export type FishRarity =
   | "common"
@@ -409,6 +430,43 @@ export const MUTATIONS: Record<FishMutationId, MutationDef> = {
     toastColor: "#ff88cc",
     label: "Painted! ",
   },
+  oasis: {
+    id: "oasis",
+    name: "Oasis",
+    sellMult: 5,
+    tint: 0x5ecf8a,
+    glowColor: 0xff9ec8,
+    toastColor: "#7dffa8",
+    label: "Oasis! ",
+  },
+  sandy: {
+    id: "sandy",
+    name: "Sandy",
+    sellMult: 2.5,
+    tint: 0xd4b078,
+    glowColor: 0xe8c890,
+    toastColor: "#e8c878",
+    label: "Sandy! ",
+  },
+  dusty: {
+    id: "dusty",
+    name: "Dusty",
+    sellMult: 0.75,
+    tint: 0xc4a060,
+    tintFill: true,
+    toastColor: "#c8a878",
+    label: "Dusty! ",
+  },
+  fossilized: {
+    id: "fossilized",
+    name: "Fossilized",
+    sellMult: 5.5,
+    tint: 0x2a4a78,
+    tintFill: true,
+    glowColor: 0x6a9acc,
+    toastColor: "#8ec0ff",
+    label: "Fossilized! ",
+  },
 };
 
 export interface SizeDef {
@@ -528,6 +586,7 @@ export interface BobberStats {
   luck?: number;
   control?: number;
   progressSpeed?: number;
+  resilience?: number;
   lineDepth?: number;
   /** Extra attract radius in px (base attract is 340). */
   attractBonus?: number;
@@ -537,6 +596,15 @@ export interface BobberStats {
   hooks?: 1 | 2;
   /** Multiplier on world-mutation chances on catch (not amber/bloom). */
   mutationChanceMult?: number;
+  /** Multiplier on rod mastery XP from catches (e.g. 1.3 = +30%). */
+  masteryXpMult?: number;
+  /** Only fish with a mutation or non-normal size will approach the bobber. */
+  attractMutatedOnly?: boolean;
+  /**
+   * Additive chance bonuses for rod-only mutations (e.g. dusty 0.15 stacks
+   * with Dusty Rod's 0.20 → 0.35).
+   */
+  rodMutationBonuses?: Partial<Record<FishMutationId, number>>;
 }
 
 export interface BobberCraftIngredient {
@@ -651,7 +719,7 @@ export interface ItemDef {
   sellPrice?: number;
   buyPrice?: number;
   /** Where this rod is sold (omit = not in a shop UI). */
-  shop?: "village" | "jungle" | "cloud";
+  shop?: "village" | "jungle" | "cloud" | "dustspire";
   /** Sold / crafted in the red-house bobber workshop. */
   bobberShop?: boolean;
   /** Sold in the green-house pack shop. */
@@ -705,7 +773,9 @@ export interface ItemDef {
     | "star_rain"
     | "star_line"
     | "void_harvest"
-    | "paint_splash";
+    | "paint_splash"
+    | "paint_composition"
+    | "fossil_freeze";
   /**
    * Limited / seasonal rod — blue badge in bag (and forge when craftable).
    * Tooltip shows when it was / is obtainable.
@@ -871,6 +941,13 @@ export const RARITY_COLOR: Record<FishRarity, string> = {
   admin: "#ff9944",
 };
 
+/** Mystical rarity wave — purple/blue → white (update-log style). */
+export const MYSTICAL_RARITY_WAVE_COLORS = [
+  0x5aa8ff,
+  0xb878ff,
+  0xffffff,
+] as const;
+
 export const RARITY_LABEL: Record<FishRarity, string> = {
   common: "",
   uncommon: "Uncommon! ",
@@ -901,11 +978,17 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   starter_rod: {
     id: "starter_rod",
     name: "Starter Rod",
-    description: "A basic fishing rod with no special stats.",
+    description: "A basic fishing rod with a bit of Control.",
     stackable: false,
     textureKey: "rod",
     isRod: true,
-    rodStats: { ...ZERO_ROD_STATS },
+    rodStats: {
+      luck: 0,
+      resilience: 0,
+      control: 7.5,
+      progressSpeed: 0,
+      lineDepth: 0,
+    },
   },
   lucky_rod: {
     id: "lucky_rod",
@@ -980,6 +1063,47 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       lineDepth: 3,
     },
     rodMutation: { mutation: "bloom", chance: 0.3 },
+  },
+  dusty_rod: {
+    id: "dusty_rod",
+    name: "Dusty Rod",
+    description:
+      "Fossil-rib desert rod from Dustspire. 10% Oasis (5×, lush flower aura), 20% Sandy (2.5×, sand motes), 20% Dusty (0.75×, dry sand tint).",
+    stackable: false,
+    textureKey: "rod_dusty",
+    isRod: true,
+    buyPrice: 33000,
+    shop: "dustspire",
+    rodStats: {
+      luck: 50,
+      resilience: 20,
+      control: 20,
+      progressSpeed: 5,
+      lineDepth: 3,
+    },
+    rodMutations: [
+      { mutation: "oasis", chance: 0.1 },
+      { mutation: "sandy", chance: 0.2 },
+      { mutation: "dusty", chance: 0.2 },
+    ],
+  },
+  fossil_rod: {
+    id: "fossil_rod",
+    name: "Fossil Rod",
+    description:
+      "Steven's bone-curved desert prize. 10% Fossilized (5.5×). In the catch: every 0.4s a 10% chance to cage the fish in fossils for 5s (once per fight). 55% chance after a catch to gift a random fish from that water — if you froze them, that gift gets Oasis (30%) or Dusty (only on the gift).",
+    stackable: false,
+    textureKey: "rod_fossil",
+    isRod: true,
+    rodMinigamePower: "fossil_freeze",
+    rodStats: {
+      luck: 70,
+      resilience: 20,
+      control: 15,
+      progressSpeed: 20,
+      lineDepth: 4,
+    },
+    rodMutations: [{ mutation: "fossilized", chance: 0.1 }],
   },
   zeus_rod: {
     id: "zeus_rod",
@@ -1254,9 +1378,9 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   },
   paint_brush_rod: {
     id: "paint_brush_rod",
-    name: "Paint Brush",
+    name: "Paint Brush (Starry Night)",
     description:
-      "A high-detail artist's brush. Catch bar is Starry Night. Every 3s a paint drop falls (max 3); splats mildly slow the fish. A vertical paint meter fills with each splat — at full it turns rainbow, the progress bar waves, you gain +75% progress speed, and Painted is guaranteed (4×, random color). Otherwise Painted 20%.",
+      "Limited artist's brush. Catch bar is Starry Night. Every 3s a paint drop falls (max 3); splats mildly slow the fish. A vertical paint meter fills with each splat — at full it turns rainbow, the progress bar waves, you gain +75% progress speed, and Painted is guaranteed (4×, random color). Otherwise Painted 20%.",
     stackable: false,
     textureKey: "rod_paint_brush",
     isRod: true,
@@ -1270,6 +1394,34 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       luck: 60,
       resilience: 50,
       control: 30,
+      progressSpeed: 0,
+      lineDepth: 3,
+    },
+  },
+  paint_brush_composition_rod: {
+    id: "paint_brush_composition_rod",
+    name: "Paint Brush (Composition VII)",
+    description:
+      "Forge artist's brush. Catch bar is Composition VII. Every 3s a paint drop falls (max 3) — catch them with your white bar or lose 70% progress. Caught splats mildly slow the fish and fill the paint meter; at full you get +75% progress speed and guaranteed Painted (4×). Otherwise Painted 20%.",
+    stackable: false,
+    textureKey: "rod_paint_brush_composition",
+    isRod: true,
+    rodMinigamePower: "paint_composition",
+    rodMutation: { mutation: "painted", chance: 0.2 },
+    craftCost: {
+      coins: 0,
+      ingredients: [
+        { itemId: "yellowfin_tuna", count: 3, mutation: "painted" },
+        { itemId: "arapaima", count: 1, mutation: "painted" },
+        { itemId: "clownfish", count: 10, mutation: "painted" },
+        { itemId: "crystal_frog", count: 1, mutation: "painted" },
+        { itemId: "vivianite", count: 1 },
+      ],
+    },
+    rodStats: {
+      luck: 60,
+      resilience: 20,
+      control: 23.33,
       progressSpeed: 0,
       lineDepth: 3,
     },
@@ -1557,6 +1709,88 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       ingredients: [{ itemId: "pufferfish", count: 5 }],
     },
   },
+  bobber_fish_head: {
+    id: "bobber_fish_head",
+    name: "Fish Head Bobber",
+    description:
+      "Ocean bestiary prize. Pulls fish from farther away (+250px attract) and +10% Luck.",
+    stackable: false,
+    textureKey: "bobber_fish_head",
+    isBobber: true,
+    bobberStats: { hooks: 1, attractBonus: 250, luck: 10 },
+  },
+  bobber_exp: {
+    id: "bobber_exp",
+    name: "EXP Bobber",
+    description:
+      "Swamp bestiary prize. +30% rod mastery XP from catches.",
+    stackable: false,
+    textureKey: "bobber_exp",
+    isBobber: true,
+    bobberStats: { hooks: 1, masteryXpMult: 1.3 },
+  },
+  bobber_starfish: {
+    id: "bobber_starfish",
+    name: "Starfish Bobber",
+    description:
+      "Coral Reef bestiary prize. Only mutated or sized fish approach. +15% Progress Speed.",
+    stackable: false,
+    textureKey: "bobber_starfish",
+    isBobber: true,
+    bobberStats: {
+      hooks: 1,
+      attractMutatedOnly: true,
+      progressSpeed: 15,
+    },
+  },
+  bobber_anchor: {
+    id: "bobber_anchor",
+    name: "Anchor Bobber",
+    description:
+      "Frostpeak bestiary prize. +2m line depth, +10 Resilience, −20% Progress Speed.",
+    stackable: false,
+    textureKey: "bobber_anchor",
+    isBobber: true,
+    bobberStats: {
+      hooks: 1,
+      lineDepth: 2,
+      resilience: 10,
+      progressSpeed: -20,
+    },
+  },
+  bobber_ruby: {
+    id: "bobber_ruby",
+    name: "Ruby Bobber",
+    description:
+      "Ashencast bestiary prize. 2.5× world mutation chance on catch, +5% Control, +10% Progress Speed.",
+    stackable: false,
+    textureKey: "bobber_ruby",
+    isBobber: true,
+    bobberStats: {
+      hooks: 1,
+      mutationChanceMult: 2.5,
+      control: 5,
+      progressSpeed: 10,
+    },
+  },
+  bobber_shell: {
+    id: "bobber_shell",
+    name: "Shell Bobber",
+    description:
+      "Dustspire Oasis bestiary prize. +15% Sandy, +15% Dusty, +10% Fossilized, +12% Oasis — stacks with rod grants.",
+    stackable: false,
+    textureKey: "bobber_shell",
+    isBobber: true,
+    bobberStats: {
+      hooks: 1,
+      rodMutationBonuses: {
+        sandy: 0.15,
+        dusty: 0.15,
+        fossilized: 0.1,
+        oasis: 0.12,
+      },
+    },
+  },
   ashencast_trout: {
     id: "ashencast_trout",
     name: "Ashencast Trout",
@@ -1716,6 +1950,16 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     isAmulet: true,
     amuletEffect: "cave",
     rarity: "admin",
+  },
+  amulet_paint_bomb: {
+    id: "amulet_paint_bomb",
+    name: "Paint Bomb Amulet",
+    description:
+      "Drops a swirling paint column in nearby island water for 3 minutes. Fish caught in the splash are Painted (4×).",
+    stackable: true,
+    textureKey: "amulet_paint_bomb",
+    isAmulet: true,
+    amuletEffect: "paint_bomb",
   },
   backpack_starter: {
     id: "backpack_starter",
@@ -1956,6 +2200,116 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     displayWidth: 117,
     displayHeight: 22,
     bodyTones: ["black"],
+  },
+  coconut: {
+    id: "coconut",
+    name: "Coconut",
+    description:
+      "A common coconut drifting on the Dustspire oasis. Floats like driftwood.",
+    stackable: true,
+    textureKey: "coconut",
+    sellPrice: 9,
+    rarity: "common",
+    habitat: "dustspire",
+    spawnWeight: 8,
+    ignoresBobber: true,
+    minigameSpeed: 0.4,
+    minigamePauseChance: 0.4,
+    depthBand: { min: 10, max: 28 },
+    displayWidth: 34,
+    displayHeight: 34,
+  },
+  coconut_crab: {
+    id: "coconut_crab",
+    name: "Coconut Crab",
+    description:
+      "An uncommon desert crab hugging the oasis surface.",
+    stackable: true,
+    textureKey: "coconut_crab",
+    sellPrice: 33,
+    rarity: "uncommon",
+    habitat: "dustspire",
+    spawnWeight: 5,
+    minigameSpeed: 0.9,
+    depthBand: { min: 12, max: 34 },
+    displayWidth: 42,
+    displayHeight: 36,
+  },
+  skeletal_seahorse: {
+    id: "skeletal_seahorse",
+    name: "Skeletal Seahorse",
+    description:
+      "A rare bone seahorse of the oasis midwaters — not too shallow, not too deep.",
+    stackable: true,
+    textureKey: "skeletal_seahorse",
+    sellPrice: 120,
+    rarity: "rare",
+    habitat: "dustspire",
+    spawnWeight: 3.2,
+    minigameSpeed: 1.2,
+    depthBand: { min: 48, max: 78 },
+    facesLeft: true,
+    displayWidth: 28,
+    displayHeight: 44,
+  },
+  decayed_nautilus: {
+    id: "decayed_nautilus",
+    name: "Decayed Nautilus",
+    description:
+      "An epic weathered nautilus. Shares the seahorse's midwater band.",
+    stackable: true,
+    textureKey: "decayed_nautilus",
+    sellPrice: 321,
+    rarity: "epic",
+    habitat: "dustspire",
+    spawnWeight: 1.4,
+    minigameSpeed: 1.4,
+    minigamePauseChance: 0.35,
+    depthBand: { min: 48, max: 78 },
+    displayWidth: 52,
+    displayHeight: 38,
+  },
+  cactifin: {
+    id: "cactifin",
+    name: "Cactifin",
+    description:
+      "A legendary desert needlefish. Cruises high — just under the surface.",
+    stackable: true,
+    textureKey: "cactifin",
+    sellPrice: 656,
+    rarity: "legendary",
+    habitat: "dustspire",
+    spawnWeight: 1,
+    minigameSpeed: 1.55,
+    minigameJerky: true,
+    minigameChaos: 0.7,
+    minigamePauseChance: 0.05,
+    depthBand: { min: 28, max: 50 },
+    displayWidth: 96,
+    displayHeight: 26,
+  },
+  leopard_shark: {
+    id: "leopard_shark",
+    name: "Leopard Shark",
+    description:
+      "A mythical spotted desert shark. Needs 3–5m of line — faster than a sunfish.",
+    stackable: true,
+    textureKey: "leopard_shark",
+    sellPrice: 2300,
+    rarity: "mythical",
+    habitat: "dustspire",
+    spawnWeight: 0.18,
+    minigameSpeed: 2.2,
+    minigameJerky: true,
+    minigameChaos: 0.5,
+    catchProgress: -45,
+    drainMult: 1.5,
+    unstoppableJerky: true,
+    minigamePauseChance: 0.04,
+    // 3–5m line depth (BASE 48 + m×22 → ~114–158px)
+    depthBand: { min: 114, max: 158 },
+    displayWidth: 120,
+    displayHeight: 33,
   },
   clownfish: {
     id: "clownfish",
@@ -2584,17 +2938,35 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   },
 };
 
+/** Minerals from ore clusters — shown & claimable in the Ashencast bestiary. */
+export const ASHENCAST_BESTIARY_MINERALS: ItemId[] = [
+  "pyrite",
+  "cassiterite",
+  "emerald",
+  "ruby",
+  "vivianite",
+  "austinite",
+  "taaffite",
+  "rhodochrosite",
+  "painite",
+];
+
 /** Catchable / sellable species that appear in the bestiary UI. */
 export function isBestiarySpecies(itemId: ItemId): boolean {
   if (itemId === "bait_crate") return false;
   const def = ITEMS[itemId];
-  if (!def || def.isMineral || def.isQuestItem) return false;
+  if (!def || def.isQuestItem) return false;
+  // Ashencast cluster ores/gems appear in the Ashencast bestiary tab.
+  if (def.isMineral && ASHENCAST_BESTIARY_MINERALS.includes(itemId)) {
+    return true;
+  }
+  if (def.isMineral) return false;
   return def.sellPrice != null || !!def.isCatchable;
 }
 
 export const FISH_ITEM_IDS: ItemId[] = (
   Object.keys(ITEMS) as ItemId[]
-).filter((id) => isBestiarySpecies(id));
+).filter((id) => isBestiarySpecies(id) && !ITEMS[id].isMineral);
 
 /** Ashencast ore peddler — $240 each, 20 stock, 10 min restock. */
 export const ORE_CLUSTER_VENDOR_PRICE = 240;
@@ -2711,6 +3083,7 @@ export const BAIT_HABITAT_JUNK: Partial<Record<FishHabitat, ItemId>> = {
   ocean: "driftwood",
   pond: "mushroom_cluster",
   hotspring: "ore_cluster",
+  dustspire: "coconut",
 };
 
 export function rollBaitFromCrate(): ItemId {
@@ -2773,6 +3146,7 @@ export function getBaitOceanAttracts(baitId: ItemId): ItemId[] {
 export function formatFishBaitPreferenceLabel(fishId: ItemId): string {
   const def = ITEMS[fishId];
   if (!def) return "—";
+  if (def.isMineral) return "N/A (mineral)";
   if (def.ignoresBobber && fishId !== "driftwood") {
     return "Ignores bait";
   }
@@ -2806,6 +3180,10 @@ export type BaitCastBounds = {
   farWaterLeft: number;
   frostLeft: number;
   frostRight: number;
+  dustLeft: number;
+  dustRight: number;
+  dustRiverLeft: number;
+  dustRiverRight: number;
   farWaterRight: number;
   pondLeft: number;
   pondRight: number;
@@ -2870,6 +3248,16 @@ export function getBaitWaterZones(bounds: BaitCastBounds): BaitWaterZone[] {
     { left: bounds.farWaterLeft, right: bounds.frostLeft, habitat: "ocean" },
     {
       left: bounds.frostRight,
+      right: bounds.dustLeft,
+      habitat: "ocean",
+    },
+    {
+      left: bounds.dustRiverLeft,
+      right: bounds.dustRiverRight,
+      habitat: "dustspire",
+    },
+    {
+      left: bounds.dustRight,
       right: bounds.farWaterRight,
       habitat: "ocean",
     },
@@ -2921,6 +3309,8 @@ function getBaitBlockedLandRanges(bounds: BaitCastBounds): [number, number][] {
     [bounds.islandLeft, bounds.islandRight],
     [bounds.jungleLeft, bounds.jungleRight],
     [bounds.frostLeft, bounds.frostRight],
+    [bounds.dustLeft, bounds.dustRiverLeft],
+    [bounds.dustRiverRight, bounds.dustRight],
   ];
 }
 
@@ -2939,7 +3329,9 @@ export function isOceanBaitCastX(x: number, bounds: BaitCastBounds): boolean {
     inRange(bounds.reefBlendEnd, bounds.westWaterRight) ||
     inRange(bounds.eastWaterLeft, bounds.eastWaterRight) ||
     inRange(bounds.farWaterLeft, bounds.frostLeft) ||
-    inRange(bounds.frostRight, bounds.farWaterRight)
+    inRange(bounds.frostRight, bounds.dustLeft) ||
+    inRange(bounds.dustRiverLeft, bounds.dustRiverRight) ||
+    inRange(bounds.dustRight, bounds.farWaterRight)
   );
 }
 
@@ -3012,6 +3404,7 @@ export const PORTAL_PULL_RADIUS_PX = 400;
 function fishIdsByHabitat(habitat: FishHabitat): ItemId[] {
   return FISH_ITEM_IDS.filter((id) =>
     !ITEMS[id].isQuestItem &&
+    !ITEMS[id].isMineral &&
     (habitat === "ocean"
       ? (ITEMS[id].habitat ?? "ocean") === "ocean"
       : ITEMS[id].habitat === habitat)
@@ -3033,7 +3426,10 @@ export const BESTIARY_AREAS: BestiaryArea[] = [
     id: "hotspring",
     name: "Ashencast",
     subtitle: "Volcanic pools on Ashencast Isle",
-    fishIds: fishIdsByHabitat("hotspring"),
+    fishIds: [
+      ...fishIdsByHabitat("hotspring"),
+      ...ASHENCAST_BESTIARY_MINERALS,
+    ],
   },
   {
     id: "reef",
@@ -3048,12 +3444,32 @@ export const BESTIARY_AREAS: BestiaryArea[] = [
     fishIds: fishIdsByHabitat("pond"),
   },
   {
+    id: "dustspire",
+    name: "Dustspire Oasis",
+    subtitle: "Desert river cutting the dunes",
+    fishIds: fishIdsByHabitat("dustspire"),
+  },
+  {
     id: "cave",
     name: "Frostpeak Cave",
     subtitle: "Icy lakes under the mountain",
     fishIds: fishIdsByHabitat("cave"),
   },
 ];
+
+/** Coins + bobber granted when every entry in a bestiary tab is claimed. */
+export const BESTIARY_AREA_COMPLETION_COINS = 2500;
+
+export const BESTIARY_AREA_REWARD_BOBBER: Partial<
+  Record<FishHabitat, ItemId>
+> = {
+  ocean: "bobber_fish_head",
+  pond: "bobber_exp",
+  reef: "bobber_starfish",
+  cave: "bobber_anchor",
+  hotspring: "bobber_ruby",
+  dustspire: "bobber_shell",
+};
 
 /** Tide Compass warp destinations. */
 export type TideCompassDestId =
@@ -3063,6 +3479,7 @@ export type TideCompassDestId =
   | "reef"
   | "ashencast"
   | "frostpeak"
+  | "dustspire"
   | "stellar_sky";
 
 export type TideCompassDestination = {
@@ -3078,6 +3495,7 @@ export type TideCompassDestination = {
     | "reef"
     | "ashencast"
     | "frostpeak"
+    | "dustspire"
     | "stellar_sky"
     | null;
   /** Frostpeak only — partial bestiary; others need the full habitat tab. */
@@ -3136,6 +3554,14 @@ export const TIDE_COMPASS_DESTINATIONS: TideCompassDestination[] = [
     bestiaryHabitat: "ocean",
     zoneLoad: "frostpeak",
     requireFullBestiary: false,
+  },
+  {
+    id: "dustspire",
+    name: "Dustspire Island",
+    subtitle: "Desert dunes & oasis river",
+    bestiaryHabitat: "dustspire",
+    zoneLoad: "dustspire",
+    requireFullBestiary: true,
   },
   {
     id: "stellar_sky",
@@ -3257,6 +3683,14 @@ function absoluteRareShare(
     if (rarity === "legendary") return Math.max(0, 0.005 + n * 0.0075);
     return null;
   }
+  if (habitat === "dustspire") {
+    // Swamp-like bases; mythical starts at 0.25%; +0.35% per 25% luck for all rares
+    const perTier = 0.0035;
+    if (rarity === "epic") return Math.max(0, 0.04 + n * perTier);
+    if (rarity === "legendary") return Math.max(0, 0.025 + n * perTier);
+    if (rarity === "mythical") return Math.max(0, 0.0025 + n * perTier);
+    return null;
+  }
   const perTier = habitat === "ocean" ? 0.025 : 0.0125;
   if (habitat === "ocean") {
     if (rarity === "epic") return Math.max(0, 0.075 + n * perTier);
@@ -3282,6 +3716,7 @@ export function rollFishSpecies(
     if (habitat === "reef") return "clownfish";
     if (habitat === "cave") return "chilled_clownfish";
     if (habitat === "hotspring") return "ore_cluster";
+    if (habitat === "dustspire") return "coconut";
     return "sockeye_salmon";
   }
 
@@ -3310,6 +3745,7 @@ function computeFishSpawnWeights(
       !ITEMS[id].abundanceOnly &&
       !ITEMS[id].ashencastExclusive &&
       !ITEMS[id].isQuestItem &&
+      !ITEMS[id].isMineral &&
       !excluded.has(id)
   );
   if (fish.length === 0) {
@@ -3404,6 +3840,9 @@ export function formatFishSpawnChanceLabel(
 ): string {
   const def = ITEMS[fishId];
   if (!def) return "—";
+  if (def.isMineral) {
+    return "Crack Ore Clusters (Ashencast)";
+  }
   if (def.abundanceOnly) {
     return "Abundance event only (not in normal rolls)";
   }
@@ -3554,6 +3993,10 @@ const ROD_ONLY_MUTATIONS = new Set<FishMutationId>([
   "event_horizon",
   "gate",
   "painted",
+  "oasis",
+  "sandy",
+  "dusty",
+  "fossilized",
 ]);
 
 /** Full moon catch odds (mutually exclusive; lunar checked first). */
@@ -3659,7 +4102,8 @@ export function rollRodMutation(
   speciesId: ItemId,
   chanceBonus = 0,
   chanceMult = 1,
-  chanceOverrides?: Partial<Record<FishMutationId, number>>
+  chanceOverrides?: Partial<Record<FishMutationId, number>>,
+  chanceAddons?: Partial<Record<FishMutationId, number>>
 ): FishMutationId | null {
   const grants = getRodMutationGrants(rodId);
   if (!grants.length) return null;
@@ -3668,7 +4112,8 @@ export function rollRodMutation(
     if (!fishMatchesRodGrant(speciesId, grant)) continue;
     const base =
       chanceOverrides?.[grant.mutation] ?? grant.chance + chanceBonus;
-    const chance = base * Math.max(0, chanceMult);
+    const addon = chanceAddons?.[grant.mutation] ?? 0;
+    const chance = (base + addon) * Math.max(0, chanceMult);
     if (Math.random() < chance) return grant.mutation;
   }
   return null;
@@ -3692,7 +4137,8 @@ export function resolveCatchMutation(
   mutationChanceMult = 1,
   rodChanceBonus = 0,
   speciesMutMult = 1,
-  chanceOverrides?: Partial<Record<FishMutationId, number>>
+  chanceOverrides?: Partial<Record<FishMutationId, number>>,
+  chanceAddons?: Partial<Record<FishMutationId, number>>
 ): FishMutationId | null {
   if (worldMutation) return worldMutation;
   const grantsWorld = !!ITEMS[rodId]?.grantsWorldMutations;
@@ -3706,7 +4152,8 @@ export function resolveCatchMutation(
     speciesId,
     rodChanceBonus,
     speciesMutMult,
-    chanceOverrides
+    chanceOverrides,
+    chanceAddons
   );
 }
 
@@ -3730,15 +4177,34 @@ export function formatBobberStats(def: ItemDef): string {
   if ((s.hooks ?? 1) > 1) lines.push(`Hooks  ${s.hooks}`);
   if (s.luck) lines.push(`Luck  +${s.luck}%`);
   if (s.control) lines.push(`Control  +${s.control}%`);
-  if (s.progressSpeed) lines.push(`Progress  +${s.progressSpeed}%`);
+  if (s.resilience) lines.push(`Resilience  +${s.resilience}`);
+  if (s.progressSpeed) {
+    lines.push(
+      `Progress  ${s.progressSpeed > 0 ? "+" : ""}${s.progressSpeed}%`
+    );
+  }
   if (s.lineDepthOverride != null) {
     lines.push(`Line Depth  fixed at ${s.lineDepthOverride}m`);
   } else if (s.lineDepth) {
     lines.push(`Line Depth  +${s.lineDepth}m`);
   }
   if (s.attractBonus) lines.push(`Attract range  +${s.attractBonus}px`);
+  if (s.attractMutatedOnly) {
+    lines.push("Attracts mutated / sized fish only");
+  }
+  if (s.masteryXpMult && s.masteryXpMult !== 1) {
+    const pct = Math.round((s.masteryXpMult - 1) * 100);
+    lines.push(`Mastery XP  +${pct}%`);
+  }
   if (s.mutationChanceMult && s.mutationChanceMult > 1) {
     lines.push(`World mutations  ×${s.mutationChanceMult} on catch`);
+  }
+  if (s.rodMutationBonuses) {
+    for (const [mut, bonus] of Object.entries(s.rodMutationBonuses)) {
+      if (!bonus) continue;
+      const name = MUTATIONS[mut as FishMutationId]?.name ?? mut;
+      lines.push(`${name}  +${Math.round(bonus * 100)}% (stacks)`);
+    }
   }
   if (lines.length === 0) lines.push("No bonus stats");
   return lines.join("\n");

@@ -176,6 +176,8 @@ export class WeatherSystem {
   }>;
   /** World X to bias strikes toward (usually the player). */
   getLightningAnchorX?: () => number;
+  /** Optional Paint Bomb catch zone (GameScene). */
+  isInPaintBombZone?: (x: number, y: number, r?: number) => boolean;
   /** When true, rain/thunder FX stay off (Frostpeak Cave). */
   private rainBlocked = false;
 
@@ -358,6 +360,11 @@ export class WeatherSystem {
     const dx = Math.abs(playerX - this.whirlpool.x);
     const dy = Math.abs(playerY - this.whirlpool.y);
     return dx <= radiusX && dy <= 140;
+  }
+
+  /** Paint Bomb catch zone — bobber in the paint column. */
+  isInPaintBomb(x: number, y: number, radius?: number): boolean {
+    return this.isInPaintBombZone?.(x, y, radius) ?? false;
   }
 
   update(delta: number): void {

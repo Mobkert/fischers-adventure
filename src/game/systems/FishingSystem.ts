@@ -3,6 +3,8 @@ import { Player } from "../entities/Player";
 import { Fish } from "../entities/Fish";
 import { Bobber } from "../entities/Bobber";
 import { InventorySystem } from "./InventorySystem";
+import type { RodXpGrantResult } from "./RodMastery";
+import { fishMasteryXp } from "./RodMastery";
 import {
   ITEMS,
   ItemId,
@@ -18,6 +20,8 @@ import {
   luckApproachSpeedMult,
   fishRarityRank,
   PORTAL_PULL_RADIUS_PX,
+  rollFishSpecies,
+  rollFishSize,
 } from "../data/items";
 import {
   playPortalPullFx,
@@ -67,6 +71,7 @@ export class FishingSystem {
       rodId?: string | null
     ) => import("../data/items").RodStats;
     isInWhirlpool: (x: number, y: number, r?: number) => boolean;
+    isInPaintBomb?: (x: number, y: number, r?: number) => boolean;
     getRodMutationChanceBonus?: (rodId?: string | null) => number;
   } | null = null;
   private targetFish: Fish | null = null;
@@ -105,6 +110,8 @@ export class FishingSystem {
   lastCatchSize: FishSizeId | null = null;
   /** All fish landed on the last successful catch. */
   lastCaughtFish: CaughtFishResult[] = [];
+  /** Rod XP granted on the last successful catch (for HUD). */
+  lastRodXpGrant: RodXpGrantResult | null = null;
 
   private portalTipFx: PortalRodTipVfx | null = null;
   private portalPullUsed = false;
@@ -134,6 +141,7 @@ export class FishingSystem {
       rodId?: string | null
     ) => import("../data/items").RodStats;
     isInWhirlpool: (x: number, y: number, r?: number) => boolean;
+    isInPaintBomb?: (x: number, y: number, r?: number) => boolean;
     getRodMutationChanceBonus?: (rodId?: string | null) => number;
   }): void {
     this.weather = weather;
@@ -143,6 +151,15 @@ export class FishingSystem {
     return (
       this.weather?.isInWhirlpool(this.bobber.sprite.x, this.bobber.sprite.y) ??
       false
+    );
+  }
+
+  isBobberInPaintBomb(): boolean {
+    return (
+      this.weather?.isInPaintBomb?.(
+        this.bobber.sprite.x,
+        this.bobber.sprite.y
+      ) ?? false
     );
   }
 
@@ -304,7 +321,13 @@ export class FishingSystem {
     const bobberTex =
       ITEMS[this.inventory.getEquippedBobberId()]?.textureKey ?? "bobber_red";
     this.bobber.setTexture(bobberTex);
-    this.bobber.setPaintBrushLine(rodId === "paint_brush_rod");
+    const isPaintBrush =
+      rodId === "paint_brush_rod" || rodId === "paint_brush_composition_rod";
+    const skinId = this.inventory.getActiveRodSkinId(rodId);
+    const golfSkin =
+      skinId === "golf_club" || skinId === "golf_club_composition";
+    this.bobber.setGolfClubLine(isPaintBrush && golfSkin);
+    this.bobber.setPaintBrushLine(isPaintBrush && !golfSkin);
 
     this.pendingCast = { castX, surfaceY, depthY, zone, lineDepth };
     this.bobberOnTip = true;
@@ -314,13 +337,20 @@ export class FishingSystem {
     this.bobber.stickTo(tip.x, tip.y, tip.x, tip.y);
     this.onCastCameraFollow?.();
 
-    const skinId = this.inventory.getActiveRodSkinId(rodId);
+    const castSkin =
+      skinId === "default" ||
+      skinId === "mastery_gold" ||
+      skinId === "mastery_rainbow"
+        ? null
+        : skinId;
     this.player.playFishCast(
       rodId,
       () => {
         this.releaseBobberCast();
       },
-      skinId === "default" ? null : skinId
+      castSkin,
+      this.inventory.isMasteryGoldLookActive(rodId),
+      this.inventory.isMasteryRainbowLookActive(rodId)
     );
 
     return true;
@@ -354,6 +384,12 @@ export class FishingSystem {
     });
   }
 
+  /** Starfish bobber — only mutated or sized fish approach. */
+  private fishMatchesBobberAttract(fish: Fish): boolean {
+    if (!this.inventory.attractsMutatedOnly()) return true;
+    return fish.mutation != null || fish.size !== "normal";
+  }
+
   private pickAndApproachFish(
     bobberX: number,
     bobberY: number,
@@ -372,13 +408,18 @@ export class FishingSystem {
         f.state === "idle" &&
         inReach(f) &&
         nearBobber(f) &&
+        this.fishMatchesBobberAttract(f) &&
         f.sprite.x >= zone.left - 40 &&
         f.sprite.x <= zone.right + 40
     );
 
     if (pool.length === 0) {
       pool = this.fishList.filter(
-        (f) => f.state === "idle" && inReach(f) && nearBobber(f)
+        (f) =>
+          f.state === "idle" &&
+          inReach(f) &&
+          nearBobber(f) &&
+          this.fishMatchesBobberAttract(f)
       );
     }
 
@@ -425,6 +466,7 @@ export class FishingSystem {
         f.state === "idle" &&
         !f.isDespawning() &&
         !f.ignoresBobber() &&
+        this.fishMatchesBobberAttract(f) &&
         f.depthBelowSurface() <= reach + 6 &&
         f.distanceTo(bobberX, bobberY) <= PORTAL_PULL_RADIUS_PX &&
         f.sprite.x >= zone.left - 40 &&
@@ -678,6 +720,12 @@ export class FishingSystem {
     ) {
       return "thunder";
     }
+    // Paint Bomb column always grants Painted
+    if (
+      this.weather?.isInPaintBomb?.(this.bobber.sprite.x, this.bobber.sprite.y)
+    ) {
+      return "painted";
+    }
     // Dolphins: half chance for rod / mutation-bobber / full-moon rolls
     const dolphinMult = fish.speciesId === "dolphin" ? 0.5 : 1;
     // Full Moon: Lunar 5% / Moonlight 10% on unmutated fish
@@ -729,7 +777,9 @@ export class FishingSystem {
       fish.mutation,
       mutMult,
       rodChanceBonus,
-      dolphinMult
+      dolphinMult,
+      undefined,
+      this.inventory.getBobberRodMutationBonuses()
     );
   }
 
@@ -741,6 +791,7 @@ export class FishingSystem {
       guaranteeConfetti?: boolean;
       guaranteeLunar?: boolean;
       guaranteePainted?: boolean;
+      fossilFroze?: boolean;
       recoilKicks?: number;
       bubbleCatch?: boolean;
       blackHoleDuplicateChance?: number;
@@ -762,6 +813,7 @@ export class FishingSystem {
     }
 
     this.lastCaughtFish = [];
+    this.lastRodXpGrant = null;
     if (success && hooked.length > 0) {
       for (const fish of hooked) {
         const mutation =
@@ -849,16 +901,6 @@ export class FishingSystem {
               });
             }
           }
-          const rodId = this.inventory.getEquippedRodId();
-          if (rodId === "recoil_rod") {
-            this.inventory.recordRecoilMasteryCatch(1);
-          }
-          if (
-            rodId === "portal_rod" &&
-            ITEMS[fish.speciesId]?.rarity === "legendary"
-          ) {
-            this.inventory.recordPortalMasteryLegendary(1);
-          }
           if (mutation === "event_horizon") {
             this.inventory.recordSurferMasteryEventHorizon(1);
           }
@@ -877,6 +919,51 @@ export class FishingSystem {
             fish.resetIdle();
           }
         });
+      }
+      // Fossil Rod: 55% gift a random fish from this water.
+      // Oasis/Dusty from freeze only apply to that gifted fish (never the direct catch).
+      if (
+        this.inventory.getEquippedRodId() === "fossil_rod" &&
+        this.lastCaughtFish.length > 0 &&
+        Math.random() < 0.55
+      ) {
+        const primary = hooked[0]!;
+        const habitat = primary.habitat;
+        const luck = this.fishingStats().luck;
+        const giftSpecies = rollFishSpecies(luck, habitat);
+        let giftMutation: FishMutationId | null = null;
+        if (meta?.fossilFroze) {
+          giftMutation = Math.random() < 0.3 ? "oasis" : "dusty";
+        }
+        const giftSize = rollFishSize();
+        const gifted = this.inventory.addItem(
+          giftSpecies,
+          1,
+          giftMutation,
+          giftSize
+        );
+        if (gifted) {
+          this.lastCaughtFish.push({
+            speciesId: giftSpecies,
+            mutation: giftMutation,
+            size: giftSize,
+            duplicate: true,
+          });
+        }
+      }
+      // Grant rod XP for every fish landed this cast (overflow levels automatically).
+      if (this.lastCaughtFish.length > 0) {
+        let totalXp = 0;
+        for (const entry of this.lastCaughtFish) {
+          totalXp += fishMasteryXp(entry.speciesId);
+        }
+        const xpMult = this.inventory.getBobberMasteryXpMult();
+        if (xpMult !== 1) {
+          totalXp = Math.round(totalXp * xpMult);
+        }
+        const rodId = this.inventory.getEquippedRodId();
+        const grant = this.inventory.grantRodMasteryXp(rodId, totalXp);
+        this.lastRodXpGrant = grant.xpGained > 0 ? grant : null;
       }
       this.lastCatchMutation = this.lastCaughtFish[0]?.mutation ?? null;
       this.lastCatchSize = this.lastCaughtFish[0]?.size ?? null;

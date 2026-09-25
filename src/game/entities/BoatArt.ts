@@ -58,6 +58,22 @@ export function generateBoatArt(scene: Phaser.Scene): void {
   }
   g.generateTexture("stellar_surfer_duck", BW, BH);
 
+  // Golden Surfer — gold mastery board
+  g.clear();
+  drawStellarSurferGold(g);
+  if (scene.textures.exists("stellar_surfer_gold")) {
+    scene.textures.remove("stellar_surfer_gold");
+  }
+  g.generateTexture("stellar_surfer_gold", BW, BH);
+
+  // Rainbow Surfer — prismatic mastery board
+  g.clear();
+  drawStellarSurferRainbow(g);
+  if (scene.textures.exists("stellar_surfer_rainbow")) {
+    scene.textures.remove("stellar_surfer_rainbow");
+  }
+  g.generateTexture("stellar_surfer_rainbow", BW, BH);
+
   g.destroy();
 
   if (!scene.anims.exists("sail-idle")) {
@@ -631,4 +647,162 @@ function drawStellarSurferDuck(g: Phaser.GameObjects.Graphics): void {
   g.fillEllipse(ox + 50, oy + 28, 14, 5);
   g.fillStyle(0xfff0a0, 0.5);
   g.fillEllipse(ox + 48, oy + 27, 8, 2.5);
+}
+
+/** Golden mastery surfboard — same silhouette, gold palette. */
+function drawStellarSurferGold(g: Phaser.GameObjects.Graphics): void {
+  const ox = 18;
+  const oy = 10;
+
+  g.fillStyle(0xb8962e, 0.28);
+  g.fillEllipse(ox + 52, oy + 42, 96, 8);
+
+  g.fillStyle(0x5a4008, 1);
+  g.beginPath();
+  g.moveTo(ox + 4, oy + 30);
+  g.lineTo(ox + 22, oy + 18);
+  g.lineTo(ox + 88, oy + 16);
+  g.lineTo(ox + 108, oy + 26);
+  g.lineTo(ox + 100, oy + 36);
+  g.lineTo(ox + 16, oy + 38);
+  g.closePath();
+  g.fillPath();
+
+  g.fillStyle(0xd4af37, 1);
+  g.beginPath();
+  g.moveTo(ox + 10, oy + 30);
+  g.lineTo(ox + 26, oy + 20);
+  g.lineTo(ox + 86, oy + 18);
+  g.lineTo(ox + 102, oy + 26);
+  g.lineTo(ox + 94, oy + 34);
+  g.lineTo(ox + 20, oy + 36);
+  g.closePath();
+  g.fillPath();
+
+  g.fillStyle(0xffe066, 0.65);
+  g.fillEllipse(ox + 52, oy + 26, 70, 14);
+  g.fillStyle(0xfff3c4, 0.4);
+  g.fillEllipse(ox + 48, oy + 24, 40, 8);
+
+  g.lineStyle(2.2, 0xfff8e0, 0.9);
+  g.lineBetween(ox + 18, oy + 22, ox + 96, oy + 20);
+  g.lineBetween(ox + 16, oy + 34, ox + 94, oy + 32);
+  g.lineStyle(1.5, 0xffd700, 0.85);
+  g.lineBetween(ox + 24, oy + 27, ox + 90, oy + 25);
+
+  g.fillStyle(0x8a6010, 1);
+  g.fillTriangle(ox + 8, oy + 32, ox + 2, oy + 40, ox + 18, oy + 36);
+  g.fillTriangle(ox + 100, oy + 28, ox + 112, oy + 24, ox + 104, oy + 36);
+
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(ox + 34, oy + 24, 1.4);
+  g.fillCircle(ox + 58, oy + 22, 1.2);
+  g.fillStyle(0xffe066, 0.95);
+  g.fillCircle(ox + 46, oy + 30, 1.5);
+  g.fillCircle(ox + 76, oy + 28, 1.3);
+
+  const stx = ox + 96;
+  const sty = oy + 22;
+  g.fillStyle(0xffe066);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+    const a2 = a + Math.PI / 5;
+    g.fillTriangle(
+      stx,
+      sty,
+      stx + Math.cos(a) * 6,
+      sty + Math.sin(a) * 6,
+      stx + Math.cos(a2) * 2.4,
+      sty + Math.sin(a2) * 2.4
+    );
+  }
+  g.fillStyle(0xffffff);
+  g.fillCircle(stx, sty, 1.4);
+
+  g.lineStyle(1.5, 0xffd700, 0.6);
+  g.strokeEllipse(ox + 52, oy + 27, 40, 8);
+}
+
+/** Rainbow mastery surfboard — prismatic color bands. */
+function drawStellarSurferRainbow(g: Phaser.GameObjects.Graphics): void {
+  const ox = 18;
+  const oy = 10;
+
+  g.fillStyle(0x8844ff, 0.25);
+  g.fillEllipse(ox + 52, oy + 42, 96, 8);
+
+  g.fillStyle(0x1a0a28, 1);
+  g.beginPath();
+  g.moveTo(ox + 4, oy + 30);
+  g.lineTo(ox + 22, oy + 18);
+  g.lineTo(ox + 88, oy + 16);
+  g.lineTo(ox + 108, oy + 26);
+  g.lineTo(ox + 100, oy + 36);
+  g.lineTo(ox + 16, oy + 38);
+  g.closePath();
+  g.fillPath();
+
+  g.fillStyle(0x2a1848, 1);
+  g.beginPath();
+  g.moveTo(ox + 10, oy + 30);
+  g.lineTo(ox + 26, oy + 20);
+  g.lineTo(ox + 86, oy + 18);
+  g.lineTo(ox + 102, oy + 26);
+  g.lineTo(ox + 94, oy + 34);
+  g.lineTo(ox + 20, oy + 36);
+  g.closePath();
+  g.fillPath();
+
+  // Prismatic washes
+  g.fillStyle(0xff3355, 0.55);
+  g.fillEllipse(ox + 36, oy + 26, 28, 10);
+  g.fillStyle(0xffee33, 0.5);
+  g.fillEllipse(ox + 52, oy + 24, 30, 10);
+  g.fillStyle(0x44dd66, 0.5);
+  g.fillEllipse(ox + 66, oy + 26, 28, 10);
+  g.fillStyle(0x3388ff, 0.45);
+  g.fillEllipse(ox + 78, oy + 25, 24, 9);
+  g.fillStyle(0x8844ff, 0.4);
+  g.fillEllipse(ox + 48, oy + 30, 50, 6);
+
+  g.lineStyle(2.2, 0xffffff, 0.75);
+  g.lineBetween(ox + 18, oy + 22, ox + 96, oy + 20);
+  g.lineStyle(1.6, 0xff44cc, 0.85);
+  g.lineBetween(ox + 16, oy + 34, ox + 94, oy + 32);
+  g.lineStyle(1.4, 0xffee33, 0.8);
+  g.lineBetween(ox + 24, oy + 27, ox + 90, oy + 25);
+
+  g.fillStyle(0x3a1860, 1);
+  g.fillTriangle(ox + 8, oy + 32, ox + 2, oy + 40, ox + 18, oy + 36);
+  g.fillTriangle(ox + 100, oy + 28, ox + 112, oy + 24, ox + 104, oy + 36);
+
+  g.fillStyle(0xffffff, 0.95);
+  g.fillCircle(ox + 34, oy + 24, 1.4);
+  g.fillStyle(0xff3355, 0.95);
+  g.fillCircle(ox + 46, oy + 30, 1.5);
+  g.fillStyle(0x44dd66, 0.95);
+  g.fillCircle(ox + 58, oy + 22, 1.2);
+  g.fillStyle(0x3388ff, 0.95);
+  g.fillCircle(ox + 76, oy + 28, 1.3);
+
+  const stx = ox + 96;
+  const sty = oy + 22;
+  g.fillStyle(0xffee33);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+    const a2 = a + Math.PI / 5;
+    g.fillTriangle(
+      stx,
+      sty,
+      stx + Math.cos(a) * 6,
+      sty + Math.sin(a) * 6,
+      stx + Math.cos(a2) * 2.4,
+      sty + Math.sin(a2) * 2.4
+    );
+  }
+  g.fillStyle(0xffffff);
+  g.fillCircle(stx, sty, 1.4);
+
+  g.lineStyle(1.5, 0xff44cc, 0.55);
+  g.strokeEllipse(ox + 52, oy + 27, 40, 8);
 }

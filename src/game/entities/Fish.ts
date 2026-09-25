@@ -209,7 +209,9 @@ export class Fish {
             ? CAVE_FISH_MAX_DEPTH_PX
             : this.habitat === "hotspring"
               ? 150
-              : undefined;
+              : this.habitat === "dustspire"
+                ? 170
+                : undefined;
     const y =
       this.surfaceY +
       rollSpawnDepthOffset(
@@ -269,7 +271,10 @@ export class Fish {
     if (
       this.mutation !== "starstruck" &&
       this.mutation !== "event_horizon" &&
-      this.mutation !== "gate"
+      this.mutation !== "gate" &&
+      this.mutation !== "oasis" &&
+      this.mutation !== "sandy" &&
+      this.mutation !== "fossilized"
     ) {
       return;
     }
@@ -389,7 +394,9 @@ export class Fish {
           ? 155
           : this.habitat === "cave"
             ? CAVE_FISH_MAX_DEPTH_PX
-            : 165;
+            : this.habitat === "dustspire"
+              ? 170
+              : 165;
     this.approachTargetY = Phaser.Math.Clamp(
       bobberY + 10,
       this.surfaceY + 16,
@@ -797,7 +804,9 @@ export class Fish {
             ? CAVE_FISH_MAX_DEPTH_PX
             : this.habitat === "hotspring"
               ? 150
-              : 165);
+              : this.habitat === "dustspire"
+                ? 170
+                : 165);
     if (this.sprite.y < minY) {
       this.sprite.y = minY;
       const body = this.sprite.body as Phaser.Physics.Arcade.Body;

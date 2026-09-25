@@ -445,7 +445,9 @@ export function rollAppraiseBonuses(): AppraiseRollResult {
   tryMut(0.15, "albino", 1);
   tryPair(0.1, "glowing", "amber", 2);
   tryMut(0.08, "electric", 3);
+  tryMut(0.08, "dusty", 3);
   tryPair(0.07, "earthly", "neon", 4);
+  tryMut(0.07, "sandy", 4);
   tryMut(0.06, "ash", 5);
   tryMut(0.03, "sprout", 6);
   tryMut(0.02, "tranquil", 7);
